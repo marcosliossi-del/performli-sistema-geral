@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+/* ─── Performli Design System ─────────────────────────────────────────────── */
+
+:root {
+  /* Brand Colors */
+  --color-meia-noite:  #05141C;
+  --color-classico:    #38435C;
+  --color-ceu:         #95BBE2;
+  --color-nanquim:     #87919E;
+  --color-branco-dama: #EBEBEB;
+
+  /* UI Tokens - Dark Mode (default) */
+  --background:        #05141C;
+  --background-card:   #38435C;
+  --background-hover:  #2D3A4D;
+  --background-sidebar:#0A1E2C;
+  --foreground:        #EBEBEB;
+  --foreground-muted:  #87919E;
+  --border:            #38435C;
+  --accent:            #95BBE2;
+  --accent-foreground: #05141C;
+
+  /* Status Colors */
+  --status-otimo:   #22C55E;
+  --status-regular: #EAB308;
+  --status-ruim:    #EF4444;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--background-card);
+  --color-card-hover: var(--background-hover);
+  --color-sidebar: var(--background-sidebar);
+  --color-muted: var(--foreground-muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-foreground);
+  --color-otimo: var(--status-otimo);
+  --color-regular: var(--status-regular);
+  --color-ruim: var(--status-ruim);
+
+  /* Performli Brand */
+  --color-meia-noite:  var(--color-meia-noite);
+  --color-classico:    var(--color-classico);
+  --color-ceu:         var(--color-ceu);
+  --color-nanquim:     var(--color-nanquim);
+  --color-branco-dama: var(--color-branco-dama);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--foreground-muted);
+}
+
+/* ─── Utility classes ─────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--background-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.badge-otimo {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22C55E;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.badge-regular {
+  background: rgba(234, 179, 8, 0.15);
+  color: #EAB308;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.badge-ruim {
+  background: rgba(239, 68, 68, 0.15);
+  color: #EF4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}

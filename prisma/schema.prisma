@@ -1,0 +1,352 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── AUTH / TEAM ─────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  MANAGER
+  ANALYST
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(ANALYST)
+  avatarUrl    String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  managedClients  ClientAssignment[]
+  tasks           Task[]
+  operations      Operation[]
+  aiConversations AIConversation[]
+  alerts          Alert[]           @relation("TriggeredAlerts")
+}
+
+// ─── CLIENTS ─────────────────────────────────────────────────────────────────
+
+enum ClientStatus {
+  ACTIVE
+  PAUSED
+  CHURNED
+}
+
+model Client {
+  id        String       @id @default(cuid())
+  name      String
+  slug      String       @unique
+  logoUrl   String?
+  industry  String?
+  website   String?
+  status    ClientStatus @default(ACTIVE)
+  notes     String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  assignments      ClientAssignment[]
+  platformAccounts PlatformAccount[]
+  goals            Goal[]
+  metricSnapshots  MetricSnapshot[]
+  healthScores     HealthScore[]
+  alerts           Alert[]
+  operations       Operation[]
+  tasks            Task[]
+  insights         ClientInsight[]
+}
+
+model ClientAssignment {
+  id         String   @id @default(cuid())
+  clientId   String
+  userId     String
+  isPrimary  Boolean  @default(false)
+  assignedAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, userId])
+}
+
+// ─── PLATFORM ACCOUNTS ───────────────────────────────────────────────────────
+
+enum Platform {
+  META_ADS
+  GOOGLE_ADS
+  GA4
+}
+
+model PlatformAccount {
+  id             String    @id @default(cuid())
+  clientId       String
+  platform       Platform
+  externalId     String
+  name           String?
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  active         Boolean   @default(true)
+  lastSyncAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  client          Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  metricSnapshots MetricSnapshot[]
+  syncLogs        SyncLog[]
+
+  @@unique([clientId, platform, externalId])
+}
+
+// ─── METRICS ─────────────────────────────────────────────────────────────────
+
+enum MetricType {
+  ROAS
+  CPL
+  CPA
+  INVESTMENT
+  CONVERSIONS
+  SALES
+  CTR
+  CPC
+  IMPRESSIONS
+  REACH
+  FREQUENCY
+  CLICKS
+  SPEND
+}
+
+model MetricSnapshot {
+  id                String   @id @default(cuid())
+  clientId          String
+  platformAccountId String
+  date              DateTime @db.Date
+
+  spend           Decimal? @db.Decimal(12, 2)
+  impressions     Int?
+  clicks          Int?
+  reach           Int?
+  frequency       Decimal? @db.Decimal(8, 4)
+  ctr             Decimal? @db.Decimal(8, 4)
+  cpc             Decimal? @db.Decimal(10, 4)
+  conversions     Int?
+  conversionValue Decimal? @db.Decimal(12, 2)
+  roas            Decimal? @db.Decimal(8, 4)
+  cpl             Decimal? @db.Decimal(10, 4)
+  cpa             Decimal? @db.Decimal(10, 4)
+  rawData         Json?
+
+  syncedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  client          Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  platformAccount PlatformAccount @relation(fields: [platformAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([platformAccountId, date])
+  @@index([clientId, date])
+  @@index([date])
+}
+
+// ─── GOALS ───────────────────────────────────────────────────────────────────
+
+enum GoalPeriod {
+  WEEKLY
+  MONTHLY
+}
+
+model Goal {
+  id          String     @id @default(cuid())
+  clientId    String
+  metric      MetricType
+  period      GoalPeriod
+  targetValue Decimal    @db.Decimal(12, 4)
+  startDate   DateTime   @db.Date
+  endDate     DateTime   @db.Date
+  notes       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  client       Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  healthScores HealthScore[]
+
+  @@unique([clientId, metric, period, startDate])
+  @@index([clientId, startDate])
+}
+
+// ─── HEALTH SCORES ───────────────────────────────────────────────────────────
+
+enum HealthStatus {
+  OTIMO
+  REGULAR
+  RUIM
+}
+
+model HealthScore {
+  id             String       @id @default(cuid())
+  clientId       String
+  goalId         String
+  metric         MetricType
+  period         GoalPeriod
+  periodStart    DateTime     @db.Date
+  periodEnd      DateTime     @db.Date
+  targetValue    Decimal      @db.Decimal(12, 4)
+  actualValue    Decimal      @db.Decimal(12, 4)
+  achievementPct Decimal      @db.Decimal(8, 4)
+  status         HealthStatus
+  calculatedAt   DateTime     @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  goal   Goal   @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, goalId, periodStart])
+  @@index([clientId, periodStart])
+  @@index([status])
+}
+
+// ─── ALERTS ──────────────────────────────────────────────────────────────────
+
+enum AlertType {
+  STATUS_DROPPED_TO_RUIM
+  STATUS_DROPPED_TO_REGULAR
+  STATUS_IMPROVED_TO_OTIMO
+  SYNC_FAILED
+  BUDGET_EXHAUSTED
+}
+
+model Alert {
+  id          String    @id @default(cuid())
+  clientId    String
+  type        AlertType
+  title       String
+  body        String
+  read        Boolean   @default(false)
+  triggeredBy String?
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User?  @relation("TriggeredAlerts", fields: [triggeredBy], references: [id])
+
+  @@index([clientId, read])
+  @@index([createdAt])
+}
+
+// ─── TASKS ───────────────────────────────────────────────────────────────────
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  status      TaskStatus   @default(PENDING)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+  clientId    String?
+  assignedTo  String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  client Client? @relation(fields: [clientId], references: [id])
+  user   User    @relation(fields: [assignedTo], references: [id])
+}
+
+// ─── OPERATIONS (Registro de Operações) ──────────────────────────────────────
+
+model Operation {
+  id        String   @id @default(cuid())
+  clientId  String
+  userId    String
+  subject   String
+  requested String
+  done      String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([clientId, createdAt])
+}
+
+// ─── AI ──────────────────────────────────────────────────────────────────────
+
+enum AIAgentType {
+  ANTI_CHURN
+  PERSONA
+  CAMPAIGN
+}
+
+model AIConversation {
+  id        String      @id @default(cuid())
+  userId    String
+  clientId  String?
+  agentType AIAgentType
+  title     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AIMessage[]
+}
+
+model AIMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  createdAt      DateTime @default(now())
+
+  conversation AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model ClientInsight {
+  id        String   @id @default(cuid())
+  clientId  String
+  content   String
+  metric    String?
+  dismissed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+// ─── SYNC LOG ────────────────────────────────────────────────────────────────
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model SyncLog {
+  id                String     @id @default(cuid())
+  platformAccountId String
+  platform          Platform
+  startedAt         DateTime   @default(now())
+  completedAt       DateTime?
+  status            SyncStatus @default(RUNNING)
+  recordsUpserted   Int        @default(0)
+  errorMessage      String?
+
+  platformAccount PlatformAccount @relation(fields: [platformAccountId], references: [id], onDelete: Cascade)
+}
