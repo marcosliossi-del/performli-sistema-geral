@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   BarChart3,
   Bot,
+  Bell,
   ChevronDown,
   ChevronRight,
 } from 'lucide-react'
@@ -22,6 +23,7 @@ const navigation = [
     label: 'MENU PRINCIPAL',
     items: [
       { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+      { name: 'Alertas', href: '/alerts', icon: Bell },
       { name: 'Minhas Tarefas', href: '/tasks', icon: CheckSquare },
     ],
   },

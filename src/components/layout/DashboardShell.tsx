@@ -8,9 +8,10 @@ import type { SessionPayload } from '@/lib/session'
 interface DashboardShellProps {
   children: React.ReactNode
   session: SessionPayload
+  unreadAlerts: number
 }
 
-export function DashboardShell({ children, session }: DashboardShellProps) {
+export function DashboardShell({ children, session, unreadAlerts }: DashboardShellProps) {
   const [viewMode, setViewMode] = useState<'ADMIN' | 'GESTOR'>(
     session.role === 'ADMIN' ? 'ADMIN' : 'GESTOR'
   )
@@ -23,7 +24,7 @@ export function DashboardShell({ children, session }: DashboardShellProps) {
           session={session}
           viewMode={viewMode}
           onViewModeChange={session.role === 'ADMIN' ? setViewMode : undefined}
-          unreadAlerts={3}
+          unreadAlerts={unreadAlerts}
         />
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>

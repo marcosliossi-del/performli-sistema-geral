@@ -1,6 +1,7 @@
 'use client'
 
 import { Bell, Search, LogOut, ChevronDown } from 'lucide-react'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { logout } from '@/app/actions/auth'
 import type { SessionPayload } from '@/lib/session'
@@ -74,14 +75,17 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
         )}
 
         {/* Alerts */}
-        <button className="relative w-9 h-9 flex items-center justify-center rounded-lg text-[#87919E] hover:bg-[#38435C] transition-colors">
+        <Link
+          href="/alerts"
+          className="relative w-9 h-9 flex items-center justify-center rounded-lg text-[#87919E] hover:bg-[#38435C] transition-colors"
+        >
           <Bell size={16} />
           {unreadAlerts > 0 && (
             <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-[#EF4444] text-white text-[9px] font-bold rounded-full flex items-center justify-center">
               {unreadAlerts > 9 ? '9+' : unreadAlerts}
             </span>
           )}
-        </button>
+        </Link>
 
         {/* User menu */}
         <div className="relative">

@@ -7,17 +7,9 @@ import { Progress } from '@/components/ui/progress'
 import { healthLabels, healthBgClasses } from '@/lib/health'
 import { HealthStatus } from '@prisma/client'
 import { formatCurrency, timeAgo } from '@/lib/utils'
-import {
-  ArrowLeft,
-  Plus,
-  RefreshCw,
-  Target,
-  AlertTriangle,
-  CheckCircle2,
-  BookOpen,
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { ArrowLeft, Target, AlertTriangle, CheckCircle2, BookOpen } from 'lucide-react'
 import { GoalFormModal } from '@/components/clients/GoalFormModal'
+import { SyncButton } from '@/components/clients/SyncButton'
 
 const platformColors: Record<string, string> = {
   META_ADS: '#1877F2',
@@ -85,10 +77,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ s
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm">
-            <RefreshCw size={14} />
-            Sincronizar
-          </Button>
+          <SyncButton clientId={client.id} />
           <GoalFormModal clientId={client.id} />
         </div>
       </div>
