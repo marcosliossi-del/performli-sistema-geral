@@ -12,7 +12,7 @@ interface ClientHealth {
   name: string
   slug: string
   logoUrl?: string | null
-  primaryManager?: string
+  primaryManager?: string | null
   overallStatus: HealthStatus
   achievementPct: number
   metrics: {
