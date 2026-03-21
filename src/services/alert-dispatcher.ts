@@ -16,6 +16,8 @@ import { prisma } from '@/lib/prisma'
 import { HealthStatus, MetricType, AlertType } from '@prisma/client'
 import { metricLabels } from '@/lib/dal'
 import { getWeekRange } from '@/lib/utils'
+import { sendEmail } from '@/lib/email'
+import { alertDroppedEmail, alertImprovedEmail } from '@/lib/email-templates'
 import type { ScoredMetric } from './health-scorer'
 
 const STATUS_RANK: Record<HealthStatus, number> = {
@@ -132,6 +134,58 @@ export async function dispatchAlertsForClient(
       data: { clientId, ...alert },
     })
     alertsCreated++
+
+    // Send email to assigned managers for degradation alerts
+    if (alert.type === 'STATUS_DROPPED_TO_RUIM' || alert.type === 'STATUS_DROPPED_TO_REGULAR' || alert.type === 'STATUS_IMPROVED_TO_OTIMO') {
+      const client = await prisma.client.findUnique({
+        where: { id: clientId },
+        select: {
+          name: true,
+          slug: true,
+          assignments: {
+            include: { user: { select: { email: true } } },
+          },
+        },
+      })
+
+      if (client) {
+        const emails = client.assignments.map((a) => a.user.email).filter(Boolean)
+        if (emails.length > 0) {
+          const actual = Number(hs.actualValue)
+          const target = Number(hs.targetValue)
+          const pct = Math.round(Number(score.achievementPct))
+          const label = metricLabels[score.metric] ?? score.metric
+          const fmtVal = (v: number) =>
+            score.metric === 'ROAS' ? `${v.toFixed(2)}x`
+            : ['CPL', 'CPA', 'CPC', 'INVESTMENT', 'SPEND'].includes(score.metric) ? `R$ ${v.toFixed(2)}`
+            : score.metric === 'CTR' ? `${v.toFixed(2)}%`
+            : v.toLocaleString('pt-BR')
+
+          if (alert.type === 'STATUS_IMPROVED_TO_OTIMO') {
+            const html = alertImprovedEmail({
+              clientName: client.name,
+              clientSlug: client.slug,
+              metricLabel: label,
+              actualValue: fmtVal(actual),
+              achievementPct: pct,
+            })
+            await sendEmail({ to: emails, subject: `✅ ${client.name} — ${label} atingiu Ótimo!`, html })
+          } else {
+            const html = alertDroppedEmail({
+              clientName: client.name,
+              clientSlug: client.slug,
+              metricLabel: label,
+              newStatus: score.status as 'RUIM' | 'REGULAR',
+              actualValue: fmtVal(actual),
+              targetValue: fmtVal(target),
+              achievementPct: pct,
+            })
+            const statusLabel = score.status === 'RUIM' ? '🔴 Ruim' : '🟡 Regular'
+            await sendEmail({ to: emails, subject: `${statusLabel} — ${client.name}: ${label} caiu`, html })
+          }
+        }
+      }
+    }
   }
 
   return alertsCreated

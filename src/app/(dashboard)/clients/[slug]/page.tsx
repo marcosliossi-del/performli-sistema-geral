@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { requireSession, getClientDetail, metricLabels } from '@/lib/dal'
+import { requireSession, getClientDetail, getClientMetricHistory, metricLabels } from '@/lib/dal'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardValue } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -12,6 +12,7 @@ import { GoalFormModal } from '@/components/clients/GoalFormModal'
 import { SyncButton } from '@/components/clients/SyncButton'
 import { LinkAccountModal } from '@/components/clients/LinkAccountModal'
 import { MetaSyncButton } from '@/components/clients/MetaSyncButton'
+import { MetricsChartsGrid } from '@/components/clients/MetricsChartsGrid'
 
 const platformColors: Record<string, string> = {
   META_ADS: '#1877F2',
@@ -29,6 +30,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ s
   await requireSession()
   const client = await getClientDetail(slug)
   if (!client) notFound()
+  const metricHistory = await getClientMetricHistory(client.id, 14)
 
   const overallStatus: HealthStatus | null =
     client.goals.length === 0
@@ -236,6 +238,12 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ s
             })}
           </div>
         )}
+      </div>
+
+      {/* Metric charts */}
+      <div>
+        <h2 className="text-sm font-semibold text-[#EBEBEB] mb-3">Histórico — últimos 14 dias</h2>
+        <MetricsChartsGrid data={metricHistory} />
       </div>
 
       {/* Recent operations */}

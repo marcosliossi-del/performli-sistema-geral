@@ -229,3 +229,88 @@ export const metricLabels: Record<string, string> = {
   CLICKS: 'Cliques',
   SPEND: 'Gasto',
 }
+
+// ─── Metric history (charts) ──────────────────────────────────────────────────
+
+export type MetricHistoryPoint = {
+  date: string // 'YYYY-MM-DD'
+  spend: number | null
+  impressions: number | null
+  clicks: number | null
+  reach: number | null
+  conversions: number | null
+  roas: number | null
+  ctr: number | null
+  cpc: number | null
+  cpl: number | null
+}
+
+/**
+ * Returns the last `days` of daily aggregated MetricSnapshots for a client
+ * (summing across all platform accounts).
+ */
+export const getClientMetricHistory = cache(async (clientId: string, days = 14): Promise<MetricHistoryPoint[]> => {
+  const since = new Date()
+  since.setDate(since.getDate() - days + 1)
+  since.setHours(0, 0, 0, 0)
+
+  const snapshots = await prisma.metricSnapshot.findMany({
+    where: { clientId, date: { gte: since } },
+    orderBy: { date: 'asc' },
+  })
+
+  // Group by date string, aggregate across accounts
+  const byDate = new Map<string, {
+    spend: number; impressions: number; clicks: number; reach: number;
+    conversions: number; conversionValue: number; hasData: boolean;
+    ctrSum: number; cpcSum: number; cplSum: number; count: number;
+  }>()
+
+  for (const s of snapshots) {
+    const key = s.date.toISOString().slice(0, 10)
+    if (!byDate.has(key)) {
+      byDate.set(key, { spend: 0, impressions: 0, clicks: 0, reach: 0, conversions: 0, conversionValue: 0, hasData: false, ctrSum: 0, cpcSum: 0, cplSum: 0, count: 0 })
+    }
+    const d = byDate.get(key)!
+    d.hasData = true
+    d.count++
+    d.spend += Number(s.spend ?? 0)
+    d.impressions += s.impressions ?? 0
+    d.clicks += s.clicks ?? 0
+    d.reach += s.reach ?? 0
+    d.conversions += s.conversions ?? 0
+    d.conversionValue += Number(s.conversionValue ?? 0)
+    d.ctrSum += Number(s.ctr ?? 0)
+    d.cpcSum += Number(s.cpc ?? 0)
+    d.cplSum += Number(s.cpl ?? 0)
+  }
+
+  // Fill every day in range (including days with no data as null)
+  const result: MetricHistoryPoint[] = []
+  for (let i = 0; i < days; i++) {
+    const d = new Date(since)
+    d.setDate(since.getDate() + i)
+    const key = d.toISOString().slice(0, 10)
+    const agg = byDate.get(key)
+
+    if (!agg || !agg.hasData) {
+      result.push({ date: key, spend: null, impressions: null, clicks: null, reach: null, conversions: null, roas: null, ctr: null, cpc: null, cpl: null })
+    } else {
+      const roas = agg.spend > 0 ? agg.conversionValue / agg.spend : null
+      result.push({
+        date: key,
+        spend: agg.spend,
+        impressions: agg.impressions || null,
+        clicks: agg.clicks || null,
+        reach: agg.reach || null,
+        conversions: agg.conversions || null,
+        roas,
+        ctr: agg.count > 0 ? agg.ctrSum / agg.count : null,
+        cpc: agg.count > 0 ? agg.cpcSum / agg.count : null,
+        cpl: agg.count > 0 ? agg.cplSum / agg.count : null,
+      })
+    }
+  }
+
+  return result
+})
