@@ -7,9 +7,11 @@ import { Progress } from '@/components/ui/progress'
 import { healthLabels, healthBgClasses } from '@/lib/health'
 import { HealthStatus } from '@prisma/client'
 import { formatCurrency, timeAgo } from '@/lib/utils'
-import { ArrowLeft, Target, AlertTriangle, CheckCircle2, BookOpen } from 'lucide-react'
+import { ArrowLeft, Target, BookOpen, RefreshCw } from 'lucide-react'
 import { GoalFormModal } from '@/components/clients/GoalFormModal'
 import { SyncButton } from '@/components/clients/SyncButton'
+import { LinkAccountModal } from '@/components/clients/LinkAccountModal'
+import { MetaSyncButton } from '@/components/clients/MetaSyncButton'
 
 const platformColors: Record<string, string> = {
   META_ADS: '#1877F2',
@@ -108,22 +110,33 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ s
         </Card>
 
         <Card>
-          <CardTitle>Plataformas</CardTitle>
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="flex items-center justify-between">
+            <CardTitle>Plataformas</CardTitle>
+            <LinkAccountModal clientId={client.id} clientSlug={slug} />
+          </div>
+          <div className="mt-2 space-y-2">
             {client.platformAccounts.length === 0 ? (
               <p className="text-sm text-[#87919E]">Nenhuma conta vinculada</p>
             ) : (
               client.platformAccounts.map((acc) => (
-                <div key={acc.id} className="flex items-center gap-1.5">
-                  <span
-                    className="w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center text-white flex-shrink-0"
-                    style={{ backgroundColor: platformColors[acc.platform] ?? '#38435C' }}
-                  >
-                    {acc.platform[0]}
-                  </span>
-                  <span className="text-xs text-[#87919E]">
-                    {platformNames[acc.platform] ?? acc.platform}
-                  </span>
+                <div key={acc.id} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center text-white flex-shrink-0"
+                      style={{ backgroundColor: platformColors[acc.platform] ?? '#38435C' }}
+                    >
+                      {acc.platform[0]}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs text-[#EBEBEB] truncate">
+                        {acc.name ?? platformNames[acc.platform] ?? acc.platform}
+                      </p>
+                      <p className="text-[10px] text-[#87919E] font-mono truncate">{acc.externalId}</p>
+                    </div>
+                  </div>
+                  {acc.platform === 'META_ADS' && (
+                    <MetaSyncButton platformAccountId={acc.id} />
+                  )}
                 </div>
               ))
             )}
