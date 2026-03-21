@@ -1,24 +1,39 @@
 'use client'
 
-import { Bell, Sun, Search, LogOut, User } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { useState } from 'react'
+import { Bell, Search, LogOut, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { logout } from '@/app/actions/auth'
+import type { SessionPayload } from '@/lib/session'
+import { useState } from 'react'
 
 interface TopNavProps {
+  session: SessionPayload
   viewMode?: 'ADMIN' | 'GESTOR'
   onViewModeChange?: (mode: 'ADMIN' | 'GESTOR') => void
   unreadAlerts?: number
 }
 
-export function TopNav({ viewMode = 'ADMIN', onViewModeChange, unreadAlerts = 0 }: TopNavProps) {
-  const [searchOpen, setSearchOpen] = useState(false)
+const roleLabels: Record<SessionPayload['role'], string> = {
+  ADMIN: 'Admin',
+  MANAGER: 'Gestor',
+  ANALYST: 'Analista',
+}
+
+export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAlerts = 0 }: TopNavProps) {
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+
+  const initials = session.name
+    .split(' ')
+    .slice(0, 2)
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase()
 
   return (
     <header className="h-16 flex items-center justify-between px-6 bg-[#05141C] border-b border-[#38435C] sticky top-0 z-40">
       {/* Search */}
-      <div className="flex items-center gap-3 flex-1 max-w-md">
-        <div className="relative flex-1">
+      <div className="flex-1 max-w-md">
+        <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#87919E]" />
           <input
             type="text"
@@ -30,7 +45,7 @@ export function TopNav({ viewMode = 'ADMIN', onViewModeChange, unreadAlerts = 0 
 
       {/* Right controls */}
       <div className="flex items-center gap-3">
-        {/* View Mode Toggle */}
+        {/* View Mode Toggle — only for ADMIN */}
         {onViewModeChange && (
           <div className="flex items-center bg-[#0A1E2C] border border-[#38435C] rounded-lg p-1">
             <button
@@ -58,11 +73,6 @@ export function TopNav({ viewMode = 'ADMIN', onViewModeChange, unreadAlerts = 0 
           </div>
         )}
 
-        {/* Theme toggle (placeholder) */}
-        <button className="w-9 h-9 flex items-center justify-center rounded-lg text-[#87919E] hover:bg-[#38435C] transition-colors">
-          <Sun size={16} />
-        </button>
-
         {/* Alerts */}
         <button className="relative w-9 h-9 flex items-center justify-center rounded-lg text-[#87919E] hover:bg-[#38435C] transition-colors">
           <Bell size={16} />
@@ -73,10 +83,46 @@ export function TopNav({ viewMode = 'ADMIN', onViewModeChange, unreadAlerts = 0 
           )}
         </button>
 
-        {/* User avatar */}
-        <button className="w-9 h-9 flex items-center justify-center rounded-full bg-[#38435C] text-[#95BBE2] hover:bg-[#2D3A4D] transition-colors">
-          <User size={16} />
-        </button>
+        {/* User menu */}
+        <div className="relative">
+          <button
+            onClick={() => setUserMenuOpen(!userMenuOpen)}
+            className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-lg hover:bg-[#38435C] transition-colors"
+          >
+            <div className="w-8 h-8 rounded-full bg-[#38435C] flex items-center justify-center text-[#95BBE2] text-xs font-bold">
+              {initials}
+            </div>
+            <div className="text-left hidden sm:block">
+              <p className="text-xs font-medium text-[#EBEBEB] leading-none">{session.name.split(' ')[0]}</p>
+              <p className="text-[10px] text-[#87919E] mt-0.5">{roleLabels[session.role]}</p>
+            </div>
+            <ChevronDown size={12} className="text-[#87919E]" />
+          </button>
+
+          {userMenuOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setUserMenuOpen(false)}
+              />
+              <div className="absolute right-0 mt-2 w-48 bg-[#0A1E2C] border border-[#38435C] rounded-xl shadow-xl z-20 py-1 overflow-hidden">
+                <div className="px-4 py-3 border-b border-[#38435C]">
+                  <p className="text-sm font-medium text-[#EBEBEB] truncate">{session.name}</p>
+                  <p className="text-xs text-[#87919E] truncate mt-0.5">{session.email}</p>
+                </div>
+                <form action={logout}>
+                  <button
+                    type="submit"
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-[#EF4444] hover:bg-[#38435C]/50 transition-colors"
+                  >
+                    <LogOut size={14} />
+                    Sair
+                  </button>
+                </form>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </header>
   )
