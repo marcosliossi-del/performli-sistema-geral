@@ -12,8 +12,9 @@
 const WINDSOR_BASE = 'https://connectors.windsor.ai'
 
 // ── Meta Ads (facebook) ───────────────────────────────────────────────────────
-// Campos solicitados à Windsor. Se Windsor renomear algum campo,
-// ajuste aqui — os transformers fazem o mapeamento.
+// Windsor facebook connector usa os nomes exatos da Meta Graph API Insights.
+// Campos confirmados como válidos. ROAS e conversion_value são calculados
+// a partir de outros campos no transformer quando não disponíveis.
 const META_FIELDS = [
   'date',
   'account_id',
@@ -26,21 +27,20 @@ const META_FIELDS = [
   'ctr',
   'cpc',
   'conversions',
-  'conversion_value',   // Windsor: receita de conversão (não "revenue")
-  'roas',               // Windsor: ROAS (não "purchase_roas")
-  'cost_per_result',    // Windsor: CPL / CPA
+  // 'conversion_value' e 'roas' rejeitados pela API Windsor/Meta
+  // ROAS é calculado no transformer via conversionValue / spend
 ].join(',')
 
 // ── GA4 (googleanalytics4) ────────────────────────────────────────────────────
+// Campo 'pageviews' e 'engagementRate' rejeitados pelo Windsor GA4 connector.
+// Usando apenas campos confirmados como válidos.
 const GA4_FIELDS = [
   'date',
   'account_id',
   'sessions',
-  'pageviews',          // Windsor usa "pageviews", não "page_views"
   'users',
-  'engagementRate',     // Windsor usa camelCase para métricas GA4
   'conversions',
-  'totalRevenue',       // Windsor usa "totalRevenue", não "revenue"
+  'totalRevenue',       // confirmado válido pelo Windsor GA4
 ].join(',')
 
 // ── Tipos de resposta ─────────────────────────────────────────────────────────
@@ -57,18 +57,13 @@ export interface WindsorMetaRow {
   ctr?: number | string
   cpc?: number | string
   conversions?: number | string
-  conversion_value?: number | string
-  roas?: number | string
-  cost_per_result?: number | string
 }
 
 export interface WindsorGA4Row {
   date: string
   account_id?: string
   sessions?: number | string
-  pageviews?: number | string
   users?: number | string
-  engagementRate?: number | string
   conversions?: number | string
   totalRevenue?: number | string
 }
