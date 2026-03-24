@@ -20,15 +20,15 @@ const META_FIELDS = [
   'account_name',
   'spend',
   'impressions',
-  'clicks',             // link clicks
+  'clicks',
   'reach',
   'frequency',
-  'ctr',                // percentual, ex: 2.5
+  'ctr',
   'cpc',
-  'conversions',        // total conversions
-  'revenue',            // conversion value / receita
-  'purchase_roas',      // ROAS
-  'cost_per_conversion', // CPL / CPA
+  'conversions',
+  'conversion_value',   // Windsor: receita de conversão (não "revenue")
+  'roas',               // Windsor: ROAS (não "purchase_roas")
+  'cost_per_result',    // Windsor: CPL / CPA
 ].join(',')
 
 // ── GA4 (googleanalytics4) ────────────────────────────────────────────────────
@@ -57,9 +57,9 @@ export interface WindsorMetaRow {
   ctr?: number | string
   cpc?: number | string
   conversions?: number | string
-  revenue?: number | string
-  purchase_roas?: number | string
-  cost_per_conversion?: number | string
+  conversion_value?: number | string
+  roas?: number | string
+  cost_per_result?: number | string
 }
 
 export interface WindsorGA4Row {

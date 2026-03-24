@@ -25,14 +25,14 @@ export interface WindsorTransformedSnapshot {
 export function transformWindsorMeta(row: WindsorMetaRow): WindsorTransformedSnapshot {
   const spend = toNum(row.spend)
   const conversions = toNum(row.conversions) || null
-  const conversionValue = toNum(row.revenue) || null
+  const conversionValue = toNum(row.conversion_value) || null
 
-  let roas: number | null = toNum(row.purchase_roas) || null
+  let roas: number | null = toNum(row.roas) || null
   if (!roas && conversionValue && spend > 0) {
     roas = conversionValue / spend
   }
 
-  let cpl: number | null = toNum(row.cost_per_conversion) || null
+  let cpl: number | null = toNum(row.cost_per_result) || null
   if (!cpl && conversions && spend > 0) {
     cpl = spend / conversions
   }
