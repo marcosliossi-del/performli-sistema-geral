@@ -123,6 +123,12 @@ export async function syncGA4Account(
       data: { status: 'SUCCESS', completedAt: new Date(), recordsUpserted },
     })
 
+    // Auto-dismiss stale SYNC_FAILED alerts for this account now that sync succeeded
+    await prisma.alert.updateMany({
+      where: { clientId: account.clientId, type: 'SYNC_FAILED', read: false },
+      data: { read: true },
+    })
+
     const { created, updated, scores } = await recalculateClientHealth(account.clientId)
     const alertsCreated = await dispatchAlertsForClient(account.clientId, scores)
 
