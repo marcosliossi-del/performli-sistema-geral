@@ -2,14 +2,14 @@
 
 import { useState, useTransition } from 'react'
 import { Plus, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
-import { validateGA4Property, linkGA4Account } from '@/app/actions/platformAccounts'
+import { linkGA4Account } from '@/app/actions/platformAccounts'
 import { useRouter } from 'next/navigation'
 
 interface LinkGA4ModalProps {
   clientId: string
 }
 
-type Step = 'form' | 'verifying' | 'linking' | 'done'
+type Step = 'form' | 'linking' | 'done'
 
 export function LinkGA4Modal({ clientId }: LinkGA4ModalProps) {
   const [open, setOpen] = useState(false)
@@ -18,7 +18,7 @@ export function LinkGA4Modal({ clientId }: LinkGA4ModalProps) {
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [successName, setSuccessName] = useState<string | null>(null)
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   const router = useRouter()
 
   function reset() {
@@ -34,40 +34,30 @@ export function LinkGA4Modal({ clientId }: LinkGA4ModalProps) {
     reset()
   }
 
-  function handleVerifyAndLink() {
+  function handleLink() {
     const trimmedId = propertyId.trim()
     if (!trimmedId) {
-      setError('Informe o ID da propriedade GA4.')
+      setError('Informe o identificador da propriedade GA4.')
       return
     }
     setError(null)
-    setStep('verifying')
+    setStep('linking')
 
     startTransition(async () => {
-      const validation = await validateGA4Property(trimmedId)
-      if (!validation.valid) {
-        setError(validation.error ?? 'Propriedade inválida ou sem acesso.')
-        setStep('form')
-        return
-      }
-
-      setStep('linking')
       const result = await linkGA4Account(clientId, trimmedId, name.trim() || undefined)
       if (result.error) {
         setError(result.error)
         setStep('form')
         return
       }
-
       setSuccessName(result.accountName ?? trimmedId)
       setStep('done')
       router.refresh()
     })
   }
 
-  const stepLabel = {
-    form: 'Informe o ID da propriedade',
-    verifying: 'Verificando acesso...',
+  const stepLabel: Record<Step, string> = {
+    form: 'Informe o identificador da propriedade',
     linking: 'Vinculando propriedade...',
     done: 'Propriedade vinculada com sucesso!',
   }
@@ -85,7 +75,6 @@ export function LinkGA4Modal({ clientId }: LinkGA4ModalProps) {
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl">
-            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#38435C]">
               <div>
                 <h2 className="text-[#EBEBEB] font-semibold">Vincular propriedade GA4</h2>
@@ -100,34 +89,30 @@ export function LinkGA4Modal({ clientId }: LinkGA4ModalProps) {
             </div>
 
             <div className="px-6 py-5 space-y-4">
-              {/* Step: form / verifying / linking */}
               {step !== 'done' && (
                 <>
                   <div>
                     <label className="block text-xs font-medium text-[#87919E] mb-1.5">
-                      ID da propriedade GA4
+                      Identificador da propriedade no Windsor
                     </label>
                     <input
                       type="text"
                       className="w-full bg-[#05141C] border border-[#38435C] rounded-xl px-3 py-2.5 text-sm text-[#EBEBEB] placeholder-[#87919E] focus:outline-none focus:border-[#E37400] font-mono"
-                      placeholder="123456789 ou properties/123456789"
+                      placeholder="Nome ou ID da propriedade"
                       value={propertyId}
                       onChange={(e) => setPropertyId(e.target.value)}
-                      disabled={step !== 'form'}
+                      disabled={step === 'linking'}
                     />
                     <p className="text-[10px] text-[#87919E] mt-1">
-                      Encontre em{' '}
-                      <span className="text-[#E37400]">
-                        Analytics → Admin → Detalhes da propriedade
-                      </span>
-                      . A Service Account configurada deve ter acesso de leitura.
+                      Use o mesmo identificador configurado na conta Windsor
+                      (nome da propriedade GA4).
                     </p>
                   </div>
 
                   <div>
                     <label className="block text-xs font-medium text-[#87919E] mb-1.5">
-                      Nome da propriedade{' '}
-                      <span className="text-[#87919E] font-normal">(opcional)</span>
+                      Nome de exibição{' '}
+                      <span className="font-normal">(opcional)</span>
                     </label>
                     <input
                       type="text"
@@ -135,7 +120,7 @@ export function LinkGA4Modal({ clientId }: LinkGA4ModalProps) {
                       placeholder="Ex: Site Principal"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      disabled={step !== 'form'}
+                      disabled={step === 'linking'}
                     />
                   </div>
 
@@ -147,23 +132,22 @@ export function LinkGA4Modal({ clientId }: LinkGA4ModalProps) {
                   )}
 
                   <button
-                    onClick={handleVerifyAndLink}
-                    disabled={step !== 'form' || !propertyId.trim()}
+                    onClick={handleLink}
+                    disabled={step === 'linking' || !propertyId.trim()}
                     className="w-full flex items-center justify-center gap-2 bg-[#E37400] hover:bg-[#E37400]/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl py-2.5 text-sm transition-colors"
                   >
-                    {step === 'verifying' || step === 'linking' ? (
+                    {step === 'linking' ? (
                       <>
                         <Loader2 size={14} className="animate-spin" />
-                        {step === 'verifying' ? 'Verificando...' : 'Vinculando...'}
+                        Vinculando...
                       </>
                     ) : (
-                      'Verificar e vincular'
+                      'Vincular propriedade'
                     )}
                   </button>
                 </>
               )}
 
-              {/* Step: done */}
               {step === 'done' && (
                 <div className="flex flex-col items-center py-6 text-center gap-3">
                   <CheckCircle2 size={40} className="text-[#22C55E]" />

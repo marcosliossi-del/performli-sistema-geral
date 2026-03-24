@@ -1,9 +1,9 @@
 /**
- * GA4 Sync
+ * GA4 Sync — via Windsor.ai
  *
  * Fluxo completo por conta de plataforma:
  *   1. Cria SyncLog (RUNNING)
- *   2. Busca relatório diário da GA4 Data API
+ *   2. Busca relatório diário via Windsor Connector (googleanalytics4)
  *   3. Transforma e faz upsert de MetricSnapshot
  *   4. Atualiza lastSyncAt na PlatformAccount
  *   5. Finaliza SyncLog (SUCCESS ou FAILED)
@@ -11,14 +11,14 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import { GA4Client } from './client'
-import { transformGA4Row } from './transformers'
+import { WindsorClient } from '@/services/windsor/client'
+import { transformWindsorGA4 } from '@/services/windsor/transformers'
 import { recalculateClientHealth } from '@/services/health-scorer'
 import { dispatchAlertsForClient } from '@/services/alert-dispatcher'
 
 interface SyncOptions {
-  since?: string // YYYY-MM-DD (default: 7 dias atrás)
-  until?: string // YYYY-MM-DD (default: hoje)
+  since?: string
+  until?: string
 }
 
 export interface GA4SyncResult {
@@ -63,32 +63,24 @@ export async function syncGA4Account(
   }
 
   const syncLog = await prisma.syncLog.create({
-    data: {
-      platformAccountId,
-      platform: 'GA4',
-      status: 'RUNNING',
-    },
+    data: { platformAccountId, platform: 'GA4', status: 'RUNNING' },
   })
 
   const since = options.since ?? defaultSince()
   const until = options.until ?? formatDate(new Date())
 
   try {
-    const ga4Client = new GA4Client()
-    const rows = await ga4Client.getReport(account.externalId, since, until)
+    const windsor = new WindsorClient()
+    // Para GA4 no Windsor, o identifier é o nome da propriedade (externalId)
+    const rows = await windsor.getGA4Report(account.externalId, since, until)
 
     let recordsUpserted = 0
 
     for (const row of rows) {
-      const snapshot = transformGA4Row(row)
+      const snapshot = transformWindsorGA4(row)
 
       await prisma.metricSnapshot.upsert({
-        where: {
-          platformAccountId_date: {
-            platformAccountId,
-            date: snapshot.date,
-          },
-        },
+        where: { platformAccountId_date: { platformAccountId, date: snapshot.date } },
         update: {
           impressions: snapshot.impressions,
           clicks: snapshot.clicks,

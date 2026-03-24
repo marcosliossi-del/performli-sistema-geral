@@ -491,7 +491,109 @@ export const getTeamMembers = cache(async () => {
   })
 })
 
-// ─── Anti-churn ───────────────────────────────────────────────────────────────
+// ─── Managers overview ────────────────────────────────────────────────────────
+
+export type ManagerClientRow = {
+  id: string
+  name: string
+  slug: string
+  overallStatus: HealthStatus | null
+  platforms: string[]
+  goalsTotal: number
+  goalsHit: number   // metas com status OTIMO
+}
+
+export type ManagerWithStats = {
+  id: string
+  name: string
+  role: string
+  clientCount: number
+  goalsHit: number   // clientes com overallStatus OTIMO ("meta batida")
+  goalsOff: number   // clientes com overallStatus RUIM ou sem dados
+  clients: ManagerClientRow[]
+}
+
+export const getManagersOverview = cache(async (): Promise<ManagerWithStats[]> => {
+  const { start: weekStart } = getWeekRange()
+
+  // Todos os usuários com atribuições a clientes ativos
+  const users = await prisma.user.findMany({
+    where: {
+      active: true,
+      managedClients: { some: { client: { status: 'ACTIVE' } } },
+    },
+    select: {
+      id: true,
+      name: true,
+      role: true,
+      managedClients: {
+        where: { client: { status: 'ACTIVE' } },
+        include: {
+          client: {
+            include: {
+              platformAccounts: { where: { active: true }, select: { platform: true } },
+              healthScores: {
+                where: { periodStart: { gte: weekStart } },
+                select: { status: true, metric: true },
+              },
+              goals: {
+                where: {
+                  period: 'WEEKLY',
+                  startDate: { lte: new Date() },
+                  endDate: { gte: weekStart },
+                },
+                select: { id: true },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { name: 'asc' },
+  })
+
+  return users.map((user) => {
+    const clientRows: ManagerClientRow[] = user.managedClients.map((assignment) => {
+      const c = assignment.client
+      const scores = c.healthScores
+
+      const overallStatus: HealthStatus | null =
+        scores.length === 0
+          ? null
+          : scores.some((s) => s.status === 'RUIM')
+          ? 'RUIM'
+          : scores.some((s) => s.status === 'REGULAR')
+          ? 'REGULAR'
+          : 'OTIMO'
+
+      return {
+        id: c.id,
+        name: c.name,
+        slug: c.slug,
+        overallStatus,
+        platforms: [...new Set(c.platformAccounts.map((p) => p.platform))],
+        goalsTotal: c.goals.length,
+        goalsHit: scores.filter((s) => s.status === 'OTIMO').length,
+      }
+    })
+
+    const goalsHit = clientRows.filter((c) => c.overallStatus === 'OTIMO').length
+    const goalsOff = clientRows.filter(
+      (c) => c.overallStatus === 'RUIM' || c.overallStatus === null
+    ).length
+
+    return {
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      clientCount: clientRows.length,
+      goalsHit,
+      goalsOff,
+      clients: clientRows,
+    }
+  })
+})
+
 
 export type AtRiskClient = {
   id: string

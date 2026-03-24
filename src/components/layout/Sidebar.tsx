@@ -16,6 +16,7 @@ import {
   UsersRound,
   ChevronDown,
   ChevronRight,
+  PieChart,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -48,7 +49,8 @@ const navigation = [
   {
     label: 'AGÊNCIA',
     items: [
-      { name: 'Equipe', href: '/team', icon: UsersRound },
+      { name: 'Gestores', href: '/managers', icon: PieChart },
+      { name: 'Equipe', href: '/team', icon: Users },
     ],
   },
 ]

@@ -1,9 +1,9 @@
 /**
- * Meta Ads Sync
+ * Meta Ads Sync — via Windsor.ai
  *
  * Fluxo completo por conta de plataforma:
  *   1. Cria SyncLog (RUNNING)
- *   2. Busca insights da Graph API (últimos 7 dias ou intervalo especificado)
+ *   2. Busca insights diários via Windsor Connector (facebook)
  *   3. Transforma e faz upsert de MetricSnapshot
  *   4. Atualiza lastSyncAt na PlatformAccount
  *   5. Finaliza SyncLog (SUCCESS ou FAILED)
@@ -11,14 +11,14 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import { MetaAdsClient } from './client'
-import { transformMetaInsight } from './transformers'
+import { WindsorClient } from '@/services/windsor/client'
+import { transformWindsorMeta } from '@/services/windsor/transformers'
 import { recalculateClientHealth } from '@/services/health-scorer'
 import { dispatchAlertsForClient } from '@/services/alert-dispatcher'
 
 interface SyncOptions {
-  since?: string // YYYY-MM-DD (default: 7 days ago)
-  until?: string // YYYY-MM-DD (default: today)
+  since?: string // YYYY-MM-DD (default: 7 dias atrás)
+  until?: string // YYYY-MM-DD (default: hoje)
 }
 
 export interface SyncResult {
@@ -37,7 +37,7 @@ function formatDate(date: Date): string {
 
 function defaultSince(): string {
   const d = new Date()
-  d.setDate(d.getDate() - 6) // 7-day window (today + 6 previous days)
+  d.setDate(d.getDate() - 6)
   return formatDate(d)
 }
 
@@ -56,54 +56,30 @@ export async function syncMetaAccount(
       adAccountId: '',
       status: 'FAILED',
       recordsUpserted: 0,
-      errorMessage: 'PlatformAccount not found',
+      errorMessage: 'PlatformAccount não encontrada',
       healthScoresUpdated: 0,
       alertsCreated: 0,
     }
   }
 
-  if (!account.accessToken) {
-    return {
-      platformAccountId,
-      adAccountId: account.externalId,
-      status: 'FAILED',
-      recordsUpserted: 0,
-      errorMessage: 'No access token configured for this account',
-      healthScoresUpdated: 0,
-      alertsCreated: 0,
-    }
-  }
-
-  // Create SyncLog
   const syncLog = await prisma.syncLog.create({
-    data: {
-      platformAccountId,
-      platform: 'META_ADS',
-      status: 'RUNNING',
-    },
+    data: { platformAccountId, platform: 'META_ADS', status: 'RUNNING' },
   })
 
   const since = options.since ?? defaultSince()
   const until = options.until ?? formatDate(new Date())
 
   try {
-    const metaClient = new MetaAdsClient(account.accessToken)
-
-    // Fetch insights from Graph API
-    const insights = await metaClient.getInsights(account.externalId, since, until)
+    const windsor = new WindsorClient()
+    const rows = await windsor.getMetaInsights(account.externalId, since, until)
 
     let recordsUpserted = 0
 
-    for (const insight of insights) {
-      const snapshot = transformMetaInsight(insight)
+    for (const row of rows) {
+      const snapshot = transformWindsorMeta(row)
 
       await prisma.metricSnapshot.upsert({
-        where: {
-          platformAccountId_date: {
-            platformAccountId,
-            date: snapshot.date,
-          },
-        },
+        where: { platformAccountId_date: { platformAccountId, date: snapshot.date } },
         update: {
           spend: snapshot.spend,
           impressions: snapshot.impressions,
@@ -140,19 +116,16 @@ export async function syncMetaAccount(
       recordsUpserted++
     }
 
-    // Update lastSyncAt
     await prisma.platformAccount.update({
       where: { id: platformAccountId },
       data: { lastSyncAt: new Date() },
     })
 
-    // Finalize SyncLog
     await prisma.syncLog.update({
       where: { id: syncLog.id },
       data: { status: 'SUCCESS', completedAt: new Date(), recordsUpserted },
     })
 
-    // Recalculate health + dispatch alerts
     const { created, updated, scores } = await recalculateClientHealth(account.clientId)
     const alertsCreated = await dispatchAlertsForClient(account.clientId, scores)
 
@@ -172,7 +145,6 @@ export async function syncMetaAccount(
       data: { status: 'FAILED', completedAt: new Date(), errorMessage },
     })
 
-    // Create SYNC_FAILED alert
     await prisma.alert.create({
       data: {
         clientId: account.clientId,
