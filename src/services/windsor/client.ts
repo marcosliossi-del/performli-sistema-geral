@@ -37,7 +37,7 @@ const GA4_FIELDS = [
   'account_id',
   'sessions',
   'screen_page_views',  // page views (não "pageviews")
-  'users',
+  'active_users',       // usuários ativos (não "users")
   'engagement_rate',    // snake_case (não "engagementRate")
   'conversions',
   'totalRevenue',       // camelCase confirmado válido
@@ -66,7 +66,7 @@ export interface WindsorGA4Row {
   account_id?: string
   sessions?: number | string
   screen_page_views?: number | string
-  users?: number | string
+  active_users?: number | string
   engagement_rate?: number | string
   conversions?: number | string
   totalRevenue?: number | string

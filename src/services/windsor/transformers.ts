@@ -68,7 +68,7 @@ export function transformWindsorMeta(row: WindsorMetaRow): WindsorTransformedSna
 export function transformWindsorGA4(row: WindsorGA4Row): WindsorTransformedSnapshot {
   const sessions = Math.round(toNum(row.sessions))
   const pageViews = Math.round(toNum(row.screen_page_views))
-  const users = Math.round(toNum(row.users))
+  const users = Math.round(toNum(row.active_users))
   const engagementRate = toNum(row.engagement_rate) * 100 // decimal → %
   const conversions = Math.round(toNum(row.conversions)) || null
   const revenue = toNum(row.totalRevenue) || null
