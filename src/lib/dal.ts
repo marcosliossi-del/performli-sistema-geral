@@ -1391,6 +1391,15 @@ export const getGoalPaceMetrics = cache(async (clientId: string): Promise<GoalPa
   })
 })
 
+// ─── Campaign AI Insight (último gerado) ─────────────────────────────────────
+
+export const getLatestCampaignInsight = cache(async (clientId: string) => {
+  return prisma.clientInsight.findFirst({
+    where: { clientId, metric: 'CAMPAIGN_ANALYSIS', dismissed: false },
+    orderBy: { createdAt: 'desc' },
+  })
+})
+
 // ─── Campaign breakdown (Meta Ads, por campanha/adset) ────────────────────────
 
 export type CampaignRow = {

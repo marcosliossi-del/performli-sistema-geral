@@ -3,7 +3,7 @@ import Link from 'next/link'
 import {
   requireSession, getClientDetail, getClientMetricHistory,
   getClientKPIs, getGoalPaceMetrics, getClientChat, getClientWeeklyReport,
-  getClientCampaigns, metricLabels,
+  getClientCampaigns, getLatestCampaignInsight, metricLabels,
 } from '@/lib/dal'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardValue } from '@/components/ui/card'
@@ -23,6 +23,7 @@ import { ClientChatPanel } from '@/components/clients/ClientChatPanel'
 import { WeeklyReportCard } from '@/components/clients/WeeklyReportCard'
 import { GoalPaceCard } from '@/components/clients/GoalPaceCard'
 import { CampaignBreakdownTable } from '@/components/clients/CampaignBreakdownTable'
+import { CampaignInsightCard } from '@/components/clients/CampaignInsightCard'
 
 const platformColors: Record<string, string> = {
   META_ADS: '#1877F2',
@@ -85,13 +86,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ s
   const client = await getClientDetail(slug)
   if (!client) notFound()
 
-  const [metricHistory, kpis, paceGoals, chat, weeklyReport, campaigns] = await Promise.all([
+  const [metricHistory, kpis, paceGoals, chat, weeklyReport, campaigns, campaignInsight] = await Promise.all([
     getClientMetricHistory(client.id, 14),
     getClientKPIs(client.id),
     getGoalPaceMetrics(client.id),
     getClientChat(client.id),
     getClientWeeklyReport(client.id),
     getClientCampaigns(client.id, 7),
+    getLatestCampaignInsight(client.id),
   ])
 
   const weeklyGoals = client.goals.filter((g) => g.period === 'WEEKLY')
@@ -418,8 +420,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ s
       </div>
 
       {/* ── Campanhas de Anúncio ─────────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
           <div>
             <h2 className="text-sm font-semibold text-[#EBEBEB]">Campanhas de Anúncio</h2>
             <p className="text-[10px] text-[#87919E] mt-0.5">
@@ -428,6 +430,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ s
           </div>
         </div>
         <CampaignBreakdownTable campaigns={campaigns} periodDays={7} />
+        <CampaignInsightCard
+          clientId={client.id}
+          clientSlug={slug}
+          existingInsight={campaignInsight
+            ? { content: campaignInsight.content, createdAt: campaignInsight.createdAt }
+            : null
+          }
+        />
       </div>
 
       {/* ── Relatório Semanal ─────────────────────────────────────────────── */}
