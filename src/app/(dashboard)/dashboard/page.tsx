@@ -1,8 +1,10 @@
 import { requireSession } from '@/lib/dal'
-import { getDashboardData, getClientsOperationalTable } from '@/lib/dal'
+import { getDashboardData, getClientsOperationalTable, getManagerStats } from '@/lib/dal'
 import { HealthSummaryCards } from '@/components/dashboard/HealthSummaryCards'
 import { ClientHealthGrid } from '@/components/dashboard/ClientHealthGrid'
-import { OperationalClientTable } from '@/components/dashboard/OperationalClientTable'
+import { OperationalTableWithFilter } from '@/components/dashboard/OperationalTableWithFilter'
+import { ManagerCards } from '@/components/dashboard/ManagerCards'
+import { DashboardAIChat } from '@/components/dashboard/DashboardAIChat'
 import { Card } from '@/components/ui/card'
 import {
   AlertTriangle,
@@ -28,10 +30,11 @@ const alertIcons = {
 
 export default async function DashboardPage() {
   const session = await requireSession()
-  const [{ clients, totals, alerts, oscillationAlerts, lastSyncAt }, operationalRows] =
+  const [{ clients, totals, alerts, oscillationAlerts, lastSyncAt }, operationalRows, managerStats] =
     await Promise.all([
       getDashboardData(session.userId, session.role),
       getClientsOperationalTable(session.userId, session.role),
+      session.role === 'ADMIN' ? getManagerStats() : Promise.resolve([]),
     ])
 
   return (
@@ -105,6 +108,11 @@ export default async function DashboardPage() {
         </div>
       )}
 
+      {/* Manager cards (admin only) */}
+      {managerStats.length > 0 && (
+        <ManagerCards managers={managerStats} />
+      )}
+
       {/* Operational metrics table */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -113,8 +121,18 @@ export default async function DashboardPage() {
             <p className="text-[#87919E] text-xs mt-0.5">Resultados do mês atual por cliente</p>
           </div>
         </div>
-        <OperationalClientTable rows={operationalRows} />
+        <OperationalTableWithFilter rows={operationalRows} />
       </div>
+
+      {/* AI Chat */}
+      <DashboardAIChat
+        context={{
+          totalClients: totals.total,
+          healthyClients: totals.otimo,
+          warningClients: totals.regular,
+          criticalClients: totals.ruim,
+        }}
+      />
 
       {/* Main grid */}
       <div className="grid grid-cols-3 gap-6">

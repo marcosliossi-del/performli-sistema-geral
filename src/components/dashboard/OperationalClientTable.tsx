@@ -18,6 +18,8 @@ export type OperationalRow = {
   cps: number | null
   taxaConversao: number | null
   overallStatus: HealthStatus | null
+  budgetConsumed?: number | null
+  budgetPlanned?: number | null
 }
 
 interface Props {
@@ -32,6 +34,31 @@ function fmt(value: number | null, type: 'currency' | 'number' | 'roas' | 'perce
     case 'roas':     return `${formatNumber(value, 2)}x`
     case 'percent':  return `${formatNumber(value, 2)}%`
   }
+}
+
+function BudgetCell({ consumed, planned }: { consumed: number; planned: number }) {
+  const pct = planned > 0 ? Math.min((consumed / planned) * 100, 100) : 0
+  const barColor =
+    pct >= 100 ? 'bg-[#EF4444]' : pct >= 80 ? 'bg-[#EAB308]' : 'bg-[#22C55E]'
+
+  return (
+    <div className="min-w-[110px]">
+      <div className="flex items-center justify-between mb-1 gap-1">
+        <span className="text-xs text-[#EBEBEB] whitespace-nowrap">
+          {formatCurrency(consumed)}
+        </span>
+        <span className="text-xs text-[#87919E] whitespace-nowrap">
+          / {formatCurrency(planned)}
+        </span>
+      </div>
+      <div className="h-1 bg-[#38435C] rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${barColor}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  )
 }
 
 export function OperationalClientTable({ rows }: Props) {
@@ -65,6 +92,9 @@ export function OperationalClientTable({ rows }: Props) {
             </th>
             <th className="text-right text-xs font-semibold text-[#87919E] uppercase tracking-wider px-4 py-3">
               Gasto
+            </th>
+            <th className="text-left text-xs font-semibold text-[#87919E] uppercase tracking-wider px-4 py-3">
+              Budget
             </th>
             <th className="text-right text-xs font-semibold text-[#87919E] uppercase tracking-wider px-4 py-3">
               CPS
@@ -140,6 +170,15 @@ export function OperationalClientTable({ rows }: Props) {
                 <span className="text-sm text-[#EBEBEB]">
                   {fmt(row.gasto, 'currency')}
                 </span>
+              </td>
+
+              {/* Budget */}
+              <td className="px-4 py-3.5">
+                {row.budgetPlanned ? (
+                  <BudgetCell consumed={row.budgetConsumed ?? 0} planned={row.budgetPlanned} />
+                ) : (
+                  <span className="text-sm text-[#87919E]">—</span>
+                )}
               </td>
 
               {/* CPS */}
