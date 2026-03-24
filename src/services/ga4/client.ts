@@ -15,6 +15,13 @@ export interface GA4Row {
   newUsers: string
 }
 
+export interface GA4ItemRow {
+  itemName: string
+  itemCategory: string
+  itemRevenue: string
+  itemsPurchased: string
+}
+
 interface ServiceAccountKey {
   client_email: string
   private_key: string
@@ -151,6 +158,66 @@ export class GA4Client {
     } catch (err) {
       return { valid: false, error: err instanceof Error ? err.message : String(err) }
     }
+  }
+
+  /**
+   * Busca o relatório de itens (produtos) de e-commerce para um período.
+   * Retorna os top produtos por receita, com nome, categoria, receita e unidades vendidas.
+   */
+  async getItemReport(
+    propertyId: string,
+    since: string, // "YYYY-MM-DD"
+    until: string, // "YYYY-MM-DD"
+    limit = 10
+  ): Promise<GA4ItemRow[]> {
+    const token = await getAccessToken(this.serviceAccount)
+    const normalized = normalizePropertyId(propertyId)
+
+    const body = {
+      dateRanges: [{ startDate: since, endDate: until }],
+      dimensions: [
+        { name: 'itemName' },
+        { name: 'itemCategory' },
+      ],
+      metrics: [
+        { name: 'itemRevenue' },
+        { name: 'itemsPurchased' },
+      ],
+      orderBys: [{ metric: { metricName: 'itemRevenue' }, desc: true }],
+      limit,
+    }
+
+    const res = await fetch(`${GA4_BASE}/${normalized}:runReport`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      next: { revalidate: 0 },
+    })
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(
+        `GA4 item report error ${res.status}: ${(err as { error?: { message?: string } })?.error?.message ?? res.statusText}`
+      )
+    }
+
+    const json = await res.json()
+    const rows = (
+      json.rows ?? []
+    ) as Array<{
+      dimensionValues: { value: string }[]
+      metricValues: { value: string }[]
+    }>
+
+    return rows.map((row) => ({
+      itemName: row.dimensionValues[0].value,
+      itemCategory: row.dimensionValues[1].value,
+      itemRevenue: row.metricValues[0].value,
+      itemsPurchased: row.metricValues[1].value,
+    }))
   }
 
   /**

@@ -9,6 +9,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { prisma } from '@/lib/prisma'
+import { GA4Client } from '@/services/ga4/client'
 import { getWeekRange, getMonthRange, formatCurrency } from '@/lib/utils'
 
 const anthropic = new Anthropic()
@@ -36,9 +37,19 @@ export async function generateWeeklyReportForClient(clientId: string): Promise<s
 
   const client = await prisma.client.findUnique({
     where: { id: clientId },
-    select: { name: true, industry: true },
+    select: {
+      name: true,
+      industry: true,
+      platformAccounts: {
+        where: { platform: 'GA4', active: true },
+        select: { externalId: true },
+        take: 1,
+      },
+    },
   })
   if (!client) return null
+
+  const ga4PropertyId = client.platformAccounts[0]?.externalId ?? null
 
   // Snapshots da semana passada
   const [lastWeekSnaps, prevWeekSnaps, monthSnaps, goals] = await Promise.all([
@@ -100,6 +111,33 @@ export async function generateWeeklyReportForClient(clientId: string): Promise<s
   const pctChange = (curr: number, prev: number) =>
     prev > 0 ? ((curr - prev) / prev) * 100 : null
 
+  // Busca top produtos da semana via GA4 Data API direta
+  let topProductsStr = 'dados de produto não disponíveis (GA4 não configurado ou sem dados)'
+  if (ga4PropertyId) {
+    try {
+      const ga4 = new GA4Client()
+      const since = lastWeekStart.toISOString().split('T')[0]
+      const until = lastWeekEnd.toISOString().split('T')[0]
+      const items = await ga4.getItemReport(ga4PropertyId, since, until, 5)
+
+      if (items.length > 0) {
+        topProductsStr = items
+          .map((item, i) => {
+            const rev = parseFloat(item.itemRevenue)
+            const qty = parseInt(item.itemsPurchased)
+            const name = item.itemName === '(not set)' ? 'Produto sem nome' : item.itemName
+            const cat = item.itemCategory && item.itemCategory !== '(not set)' ? ` [${item.itemCategory}]` : ''
+            return `${i + 1}. ${name}${cat} — ${formatCurrency(rev)} (${qty} un.)`
+          })
+          .join('\n')
+      } else {
+        topProductsStr = 'nenhuma venda de produto registrada no período'
+      }
+    } catch {
+      topProductsStr = 'dados de produto indisponíveis no momento'
+    }
+  }
+
   const roasMetaStr = roasGoal
     ? `${Number(roasGoal.targetValue).toFixed(2)}x`
     : 'não definida'
@@ -153,7 +191,9 @@ ESTRUTURA OBRIGATÓRIA DO RELATÓRIO (siga exatamente):
 [Máximo 5 linhas. Traga: faturamento com variação, compras com variação, sessões com variação e ROAS realizado vs meta. Seja direto — número, emoji e 1 adjetivo/contexto curto por linha. Sem explicações longas.]
 
 👗 O que mais vendeu
-[Máximo 4 linhas. Se não houver dados de produto, comente sobre a distribuição de vendas no período de forma genérica e consultiva. Baseie-se nos dados disponíveis.]
+TOP PRODUTOS DA SEMANA (dados reais do GA4):
+${topProductsStr}
+[Baseie-se nos dados acima. Destaque o produto/categoria líder em receita. Se houver uma categoria dominante, mencione. Máximo 4 linhas no relatório final, sem repetir os números — resuma de forma consultiva e natural.]
 
 🚀 Próximos passos
 [3 ações curtas, em primeira pessoa do plural. 1 linha cada.]
