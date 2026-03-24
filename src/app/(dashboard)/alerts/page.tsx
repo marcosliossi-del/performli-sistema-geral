@@ -4,15 +4,17 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { markAlertRead, markAllAlertsRead } from '@/app/actions/alerts'
 import { timeAgo } from '@/lib/utils'
-import { AlertTriangle, CheckCircle2, TrendingDown, Bell, BellOff } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, TrendingDown, Bell, BellOff, ArrowDownRight, ArrowUpRight } from 'lucide-react'
 import { AlertType } from '@prisma/client'
 
 const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string; label: string }> = {
-  STATUS_DROPPED_TO_RUIM:    { icon: AlertTriangle, color: 'text-[#EF4444]', label: 'Performance Ruim' },
-  STATUS_DROPPED_TO_REGULAR: { icon: TrendingDown,  color: 'text-[#EAB308]', label: 'Performance Regular' },
-  STATUS_IMPROVED_TO_OTIMO:  { icon: CheckCircle2,  color: 'text-[#22C55E]', label: 'Melhora para Ótimo' },
-  SYNC_FAILED:               { icon: AlertTriangle, color: 'text-[#EAB308]', label: 'Falha de Sync' },
-  BUDGET_EXHAUSTED:          { icon: AlertTriangle, color: 'text-[#EF4444]', label: 'Orçamento Esgotado' },
+  STATUS_DROPPED_TO_RUIM:    { icon: AlertTriangle,  color: 'text-[#EF4444]', label: 'Performance Ruim' },
+  STATUS_DROPPED_TO_REGULAR: { icon: TrendingDown,   color: 'text-[#EAB308]', label: 'Performance Regular' },
+  STATUS_IMPROVED_TO_OTIMO:  { icon: CheckCircle2,   color: 'text-[#22C55E]', label: 'Melhora para Ótimo' },
+  SYNC_FAILED:               { icon: AlertTriangle,  color: 'text-[#EAB308]', label: 'Falha de Sync' },
+  BUDGET_EXHAUSTED:          { icon: AlertTriangle,  color: 'text-[#EF4444]', label: 'Orçamento Esgotado' },
+  KPI_DROP_24H:              { icon: ArrowDownRight, color: 'text-[#EF4444]', label: 'Queda 24h' },
+  KPI_SPIKE_24H:             { icon: ArrowUpRight,   color: 'text-[#22C55E]', label: 'Alta 24h' },
 }
 
 export default async function AlertsPage() {

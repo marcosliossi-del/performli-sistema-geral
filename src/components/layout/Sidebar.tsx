@@ -13,16 +13,16 @@ import {
   BarChart3,
   Bot,
   Bell,
-  UsersRound,
+  PieChart,
   ChevronDown,
   ChevronRight,
-  PieChart,
+  Activity,
 } from 'lucide-react'
 import { useState } from 'react'
 
 const navigation = [
   {
-    label: 'MENU PRINCIPAL',
+    label: 'PRINCIPAL',
     items: [
       { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
       { name: 'Alertas', href: '/alerts', icon: Bell },
@@ -41,9 +41,9 @@ const navigation = [
     ],
   },
   {
-    label: 'IA',
+    label: 'INTELIGÊNCIA',
     items: [
-      { name: 'Agentes IA Suporte', href: '/ai-agents', icon: Bot },
+      { name: 'Agentes IA', href: '/ai-agents', icon: Bot },
     ],
   },
   {
@@ -77,16 +77,16 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3">
+      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
         {navigation.map((section) => (
-          <div key={section.label} className="mb-5">
-            {section.label === 'CLIENTES' ? (
+          <div key={section.label} className="mb-4">
+            {section.expandable ? (
               <>
                 <button
                   onClick={() => setClientsOpen(!clientsOpen)}
-                  className="flex items-center justify-between w-full px-2 mb-1"
+                  className="flex items-center justify-between w-full px-2 mb-1.5 group"
                 >
-                  <span className="text-[10px] font-semibold text-[#87919E] tracking-widest uppercase">
+                  <span className="text-[10px] font-semibold text-[#87919E] tracking-widest uppercase group-hover:text-[#EBEBEB] transition-colors">
                     {section.label}
                   </span>
                   {clientsOpen ? (
@@ -105,7 +105,7 @@ export function Sidebar() {
               </>
             ) : (
               <>
-                <p className="text-[10px] font-semibold text-[#87919E] tracking-widest uppercase px-2 mb-1">
+                <p className="text-[10px] font-semibold text-[#87919E] tracking-widest uppercase px-2 mb-1.5">
                   {section.label}
                 </p>
                 <div className="space-y-0.5">
@@ -121,9 +121,12 @@ export function Sidebar() {
 
       {/* Bottom */}
       <div className="p-3 border-t border-[#38435C]">
-        <div className="flex items-center gap-2 px-2">
-          <div className="w-2 h-2 rounded-full bg-[#22C55E]" />
+        <div className="flex items-center gap-2 px-2 py-1">
+          <div className="relative flex-shrink-0">
+            <Activity size={14} className="text-[#22C55E]" />
+          </div>
           <span className="text-xs text-[#87919E]">Sistema online</span>
+          <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
         </div>
       </div>
     </aside>
@@ -151,7 +154,10 @@ function NavItem({
       )}
     >
       <Icon size={16} className="flex-shrink-0" />
-      {item.name}
+      <span className="truncate">{item.name}</span>
+      {isActive && (
+        <div className="ml-auto w-1 h-4 rounded-full bg-[#95BBE2]/60 flex-shrink-0" />
+      )}
     </Link>
   )
 }

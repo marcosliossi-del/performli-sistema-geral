@@ -1,5 +1,5 @@
 import { Card, CardTitle, CardValue } from '@/components/ui/card'
-import { TrendingUp, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { TrendingUp, AlertTriangle, CheckCircle2, Users } from 'lucide-react'
 
 interface HealthSummaryCardsProps {
   total: number
@@ -20,6 +20,10 @@ export function HealthSummaryCards({
 }: HealthSummaryCardsProps) {
   const label = viewMode === 'ADMIN' ? 'clientes' : `seus clientes`
 
+  const otimoPct = total > 0 ? Math.round((otimo / total) * 100) : 0
+  const regularPct = total > 0 ? Math.round((regular / total) * 100) : 0
+  const ruimPct = total > 0 ? Math.round((ruim / total) * 100) : 0
+
   return (
     <div className="space-y-4">
       {/* Summary sentence */}
@@ -32,14 +36,45 @@ export function HealthSummaryCards({
           e{' '}
           <span className="text-[#EF4444] font-semibold">{ruim} com performance ruim</span>.
         </p>
+        {/* Progress bar breakdown */}
+        {total > 0 && (
+          <div className="mt-3 flex h-2 rounded-full overflow-hidden gap-0.5">
+            {otimo > 0 && (
+              <div
+                className="bg-[#22C55E] rounded-l-full transition-all"
+                style={{ width: `${otimoPct}%` }}
+                title={`Ótimo: ${otimo} (${otimoPct}%)`}
+              />
+            )}
+            {regular > 0 && (
+              <div
+                className="bg-[#EAB308] transition-all"
+                style={{ width: `${regularPct}%` }}
+                title={`Regular: ${regular} (${regularPct}%)`}
+              />
+            )}
+            {ruim > 0 && (
+              <div
+                className="bg-[#EF4444] rounded-r-full transition-all"
+                style={{ width: `${ruimPct}%` }}
+                title={`Ruim: ${ruim} (${ruimPct}%)`}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* KPI cards */}
       <div className="grid grid-cols-4 gap-4">
         <Card className="border-l-4 border-l-[#95BBE2]">
-          <CardTitle>Total de Clientes</CardTitle>
-          <CardValue>{total}</CardValue>
-          <p className="text-xs text-[#87919E] mt-1">↑ 12% vs mês anterior</p>
+          <div className="flex items-start justify-between">
+            <div>
+              <CardTitle>Total de Clientes</CardTitle>
+              <CardValue>{total}</CardValue>
+              <p className="text-xs text-[#87919E] mt-1">clientes ativos</p>
+            </div>
+            <Users size={20} className="text-[#95BBE2] mt-1" />
+          </div>
         </Card>
 
         <Card className="border-l-4 border-l-[#22C55E]">
@@ -47,7 +82,9 @@ export function HealthSummaryCards({
             <div>
               <CardTitle>Ótimo</CardTitle>
               <CardValue className="text-[#22C55E]">{otimo}</CardValue>
-              <p className="text-xs text-[#87919E] mt-1">≥ 90% da meta</p>
+              <p className="text-xs text-[#87919E] mt-1">
+                {otimoPct}% — ≥ 90% da meta
+              </p>
             </div>
             <CheckCircle2 size={20} className="text-[#22C55E] mt-1" />
           </div>
@@ -58,7 +95,9 @@ export function HealthSummaryCards({
             <div>
               <CardTitle>Regular</CardTitle>
               <CardValue className="text-[#EAB308]">{regular}</CardValue>
-              <p className="text-xs text-[#87919E] mt-1">70–89% da meta</p>
+              <p className="text-xs text-[#87919E] mt-1">
+                {regularPct}% — 70–89% da meta
+              </p>
             </div>
             <TrendingUp size={20} className="text-[#EAB308] mt-1" />
           </div>
@@ -69,7 +108,9 @@ export function HealthSummaryCards({
             <div>
               <CardTitle>Ruim</CardTitle>
               <CardValue className="text-[#EF4444]">{ruim}</CardValue>
-              <p className="text-xs text-[#87919E] mt-1">{'< '}70% da meta</p>
+              <p className="text-xs text-[#87919E] mt-1">
+                {ruimPct}% — {'< '}70% da meta
+              </p>
             </div>
             <AlertTriangle size={20} className="text-[#EF4444] mt-1" />
           </div>

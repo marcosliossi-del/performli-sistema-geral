@@ -108,18 +108,152 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
   const regular = summaries.filter((c) => c.overallStatus === 'REGULAR').length
   const ruim = summaries.filter((c) => c.overallStatus === 'RUIM').length
 
-  // Recent alerts
+  // Recent alerts (non-oscillation)
   const alerts = await prisma.alert.findMany({
     where:
       role === 'ADMIN'
-        ? { read: false }
-        : { read: false, client: { assignments: { some: { userId } } } },
+        ? { read: false, type: { notIn: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] } }
+        : { read: false, type: { notIn: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, client: { assignments: { some: { userId } } } },
     include: { client: { select: { name: true } } },
     orderBy: { createdAt: 'desc' },
     take: 5,
   })
 
-  return { clients: summaries, totals: { total: summaries.length, otimo, regular, ruim }, alerts }
+  // Today's oscillation alerts (KPI_DROP_24H / KPI_SPIKE_24H)
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const oscillationAlerts = await prisma.alert.findMany({
+    where:
+      role === 'ADMIN'
+        ? { type: { in: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, createdAt: { gte: todayStart } }
+        : {
+            type: { in: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] },
+            createdAt: { gte: todayStart },
+            client: { assignments: { some: { userId } } },
+          },
+    include: { client: { select: { name: true, slug: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+  })
+
+  // Last sync timestamp (most recent lastSyncAt across all platform accounts)
+  const lastSyncAccount = await prisma.platformAccount.findFirst({
+    where:
+      role === 'ADMIN'
+        ? { active: true, lastSyncAt: { not: null } }
+        : { active: true, lastSyncAt: { not: null }, client: { assignments: { some: { userId } } } },
+    orderBy: { lastSyncAt: 'desc' },
+    select: { lastSyncAt: true },
+  })
+
+  return {
+    clients: summaries,
+    totals: { total: summaries.length, otimo, regular, ruim },
+    alerts,
+    oscillationAlerts,
+    lastSyncAt: lastSyncAccount?.lastSyncAt ?? null,
+  }
+})
+
+// ─── Operational dashboard table ──────────────────────────────────────────────
+
+export type ClientOperationalRow = {
+  id: string
+  name: string
+  slug: string
+  primaryManager: string | null
+  // e-commerce KPIs (current month, null = no data yet)
+  vendas: number | null         // conversions (purchases)
+  cpa: number | null            // cost per acquisition
+  roas: number | null           // return on ad spend
+  gasto: number | null          // total ad spend
+  cps: number | null            // cost per session
+  taxaConversao: number | null  // conversion rate %
+  // health
+  overallStatus: HealthStatus | null
+}
+
+export const getClientsOperationalTable = cache(async (
+  userId: string,
+  role: string,
+): Promise<ClientOperationalRow[]> => {
+  const today = new Date()
+  const { start: monthStart } = getMonthRange(today)
+
+  const where: Prisma.ClientWhereInput =
+    role === 'ADMIN'
+      ? { status: 'ACTIVE' }
+      : { status: 'ACTIVE', assignments: { some: { userId } } }
+
+  const { start: weekStart } = getWeekRange()
+
+  const clients = await prisma.client.findMany({
+    where,
+    include: {
+      assignments: {
+        where: { isPrimary: true },
+        include: { user: { select: { name: true } } },
+        take: 1,
+      },
+      metricSnapshots: {
+        where: { date: { gte: monthStart, lte: today } },
+        select: {
+          spend: true,
+          clicks: true,
+          conversions: true,
+          conversionValue: true,
+        },
+      },
+      healthScores: {
+        where: { periodStart: { gte: weekStart } },
+        select: { status: true },
+      },
+    },
+    orderBy: { name: 'asc' },
+  })
+
+  return clients.map((c): ClientOperationalRow => {
+    const snaps = c.metricSnapshots
+
+    const ga4  = snaps.filter((x) => Number(x.spend ?? 0) === 0)
+    const ads  = snaps.filter((x) => Number(x.spend ?? 0) > 0)
+
+    const spend     = ads.reduce((s, x) => s + Number(x.spend ?? 0), 0)
+    const sessions  = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
+    const purchases = snaps.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const ga4Rev    = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+    const adRev     = ads.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+    const revenue   = ga4Rev > 0 ? ga4Rev : adRev
+
+    const roas          = spend > 0 && revenue > 0 ? revenue / spend : null
+    const cpa           = spend > 0 && purchases > 0 ? spend / purchases : null
+    const cps           = spend > 0 && sessions > 0 ? spend / sessions : null
+    const taxaConversao = sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null
+
+    const scores = c.healthScores
+    const overallStatus: HealthStatus | null =
+      scores.length === 0
+        ? null
+        : scores.some((s) => s.status === 'RUIM')
+        ? 'RUIM'
+        : scores.some((s) => s.status === 'REGULAR')
+        ? 'REGULAR'
+        : 'OTIMO'
+
+    return {
+      id: c.id,
+      name: c.name,
+      slug: c.slug,
+      primaryManager: c.assignments[0]?.user.name ?? null,
+      vendas: purchases > 0 ? purchases : null,
+      cpa,
+      roas,
+      gasto: spend > 0 ? spend : null,
+      cps,
+      taxaConversao,
+      overallStatus,
+    }
+  })
 })
 
 // ─── Clients list ─────────────────────────────────────────────────────────────
