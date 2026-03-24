@@ -86,16 +86,52 @@ function aggregateSnapshots(snapshots: Snapshot[], metric: MetricType): number |
     return total > 0 ? total : null
   }
 
+  // Helper: prefer GA4 ecommerce_purchases over Meta actions_purchase to avoid double-counting
+  const purchasesNoDouble = (() => {
+    const ga4p = snapshots.filter((x) => toNum(x.spend) === 0).reduce((s, x) => s + toNum(x.conversions), 0)
+    const adp  = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.conversions), 0)
+    return ga4p > 0 ? ga4p : adp
+  })
+
+  if (metric === 'ROAS') {
+    // Compute as total revenue / total spend (same logic as KPI cards) — never average daily ROAS
+    const spend  = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.spend), 0)
+    const ga4Rev = snapshots.filter((x) => toNum(x.spend) === 0).reduce((s, x) => s + toNum(x.conversionValue), 0)
+    const adRev  = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.conversionValue), 0)
+    const revenue = ga4Rev > 0 ? ga4Rev : adRev
+    return spend > 0 && revenue > 0 ? revenue / spend : null
+  }
+
+  if (metric === 'CPA') {
+    const spend = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.spend), 0)
+    const purchases = purchasesNoDouble()
+    return spend > 0 && purchases > 0 ? spend / purchases : null
+  }
+
+  if (metric === 'CPL') {
+    const spend = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.spend), 0)
+    const purchases = purchasesNoDouble()
+    return spend > 0 && purchases > 0 ? spend / purchases : null
+  }
+
+  if (metric === 'CONVERSIONS') {
+    const val = purchasesNoDouble()
+    return val > 0 ? val : null
+  }
+
+  if (metric === 'SALES') {
+    // Same as FATURAMENTO — prefer GA4 revenue
+    const ga4Rev = snapshots.filter((x) => toNum(x.spend) === 0).reduce((s, x) => s + toNum(x.conversionValue), 0)
+    const adRev  = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.conversionValue), 0)
+    const total  = ga4Rev > 0 ? ga4Rev : adRev
+    return total > 0 ? total : null
+  }
+
   // ── Métricas diretas ──────────────────────────────────────────────────────
   const values = snapshots.map((s) => {
     switch (metric) {
-      case 'ROAS':         return toNum(s.roas) || null
-      case 'CPL':          return toNum(s.cpl) || null
-      case 'CPA':          return toNum(s.cpa) || null
       case 'INVESTMENT':
       case 'SPEND':        return toNum(s.spend) || null
-      case 'CONVERSIONS':  return toNum(s.conversions) || null
-      case 'SALES':        return toNum(s.conversionValue) || null
       case 'CTR':          return toNum(s.ctr) || null
       case 'CPC':          return toNum(s.cpc) || null
       case 'IMPRESSIONS':  return toNum(s.impressions) || null
@@ -108,7 +144,7 @@ function aggregateSnapshots(snapshots: Snapshot[], metric: MetricType): number |
 
   if (values.length === 0) return null
 
-  const SUM_METRICS: MetricType[] = ['INVESTMENT', 'SPEND', 'CONVERSIONS', 'SALES', 'IMPRESSIONS', 'REACH', 'CLICKS']
+  const SUM_METRICS: MetricType[] = ['INVESTMENT', 'SPEND', 'IMPRESSIONS', 'REACH', 'CLICKS']
   if (SUM_METRICS.includes(metric)) {
     return values.reduce((a, b) => a + b, 0)
   }

@@ -232,9 +232,12 @@ export const getClientsOperationalTable = cache(async (
     const ga4  = snaps.filter((x) => Number(x.spend ?? 0) === 0)
     const ads  = snaps.filter((x) => Number(x.spend ?? 0) > 0)
 
-    const spend     = ads.reduce((s, x) => s + Number(x.spend ?? 0), 0)
-    const sessions  = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
-    const purchases = snaps.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const spend        = ads.reduce((s, x) => s + Number(x.spend ?? 0), 0)
+    const sessions     = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
+    // Prefer GA4 ecommerce_purchases to avoid double-counting with Meta actions_purchase
+    const ga4Purchases = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const adPurchases  = ads.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const purchases    = ga4Purchases > 0 ? ga4Purchases : adPurchases
     const ga4Rev    = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
     const adRev     = ads.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
     const revenue   = ga4Rev > 0 ? ga4Rev : adRev
@@ -460,8 +463,10 @@ export const getClientKPIs = cache(async (clientId: string): Promise<ClientKPIs>
     const adImpr      = ads.reduce((s, x) => s + (x.impressions ?? 0), 0)  // impressões de anúncio
     const sessions    = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)       // sessões do site (GA4)
 
-    // Compras: ecommercePurchases do GA4 + actions_purchase do Meta (ambos já corrigidos nos transformers)
-    const purchases   = snaps.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    // Prefer GA4 ecommerce_purchases to avoid double-counting with Meta actions_purchase
+    const ga4Purchases = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const adPurchases  = ads.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const purchases    = ga4Purchases > 0 ? ga4Purchases : adPurchases
 
     // Faturamento: prefere GA4 totalRevenue (todas as vendas), cai em Meta se GA4 = 0
     const ga4Revenue  = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)

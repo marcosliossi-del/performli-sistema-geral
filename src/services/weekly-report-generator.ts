@@ -77,7 +77,10 @@ export async function generateWeeklyReportForClient(clientId: string): Promise<s
     const ads = snaps.filter((x) => Number(x.spend ?? 0) > 0)
     const spend = ads.reduce((s, x) => s + Number(x.spend ?? 0), 0)
     const sessions = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
-    const purchases = snaps.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    // Prefer GA4 ecommerce_purchases to avoid double-counting with Meta actions_purchase
+    const ga4Purchases = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const adPurchases = ads.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const purchases = ga4Purchases > 0 ? ga4Purchases : adPurchases
     const ga4Rev = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
     const adRev = ads.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
     const revenue = ga4Rev > 0 ? ga4Rev : adRev
