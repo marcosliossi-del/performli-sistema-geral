@@ -106,10 +106,10 @@ function aggregateSnapshots(snapshots: Snapshot[], metric: MetricType): number |
   }
 
   if (metric === 'CAC') {
-    // CAC = spend / novos usuários GA4 (visitantes únicos pela primeira vez)
-    const spend    = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.spend), 0)
-    const newUsers = snapshots.filter((x) => toNum(x.spend) === 0).reduce((s, x) => s + toNum((x as { newUsers?: unknown }).newUsers), 0)
-    return spend > 0 && newUsers > 0 ? spend / newUsers : null
+    // CAC = spend / novos compradores (purchases GA4)
+    const spend     = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.spend), 0)
+    const purchases = snapshots.filter((x) => toNum(x.spend) === 0).reduce((s, x) => s + toNum(x.conversions), 0)
+    return spend > 0 && purchases > 0 ? spend / purchases : null
   }
 
   if (metric === 'CONVERSIONS') {

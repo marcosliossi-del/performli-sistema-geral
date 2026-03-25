@@ -543,7 +543,7 @@ export const getClientKPIs = cache(async (
       cps:           sessions > 0 && totalSpend > 0 ? totalSpend / sessions : null,
       cpm:           adImpr > 0 && metaSpend > 0 ? (metaSpend / adImpr) * 1000 : null,
       cpa:           purchases > 0 && totalSpend > 0 ? totalSpend / purchases : null,
-      cac:           newUsers > 0 && totalSpend > 0 ? totalSpend / newUsers : null,
+      cac:           purchases > 0 && totalSpend > 0 ? totalSpend / purchases : null,
     }
   }
 
