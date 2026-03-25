@@ -36,9 +36,8 @@ function formatDate(date: Date): string {
 }
 
 function defaultSince(): string {
-  const d = new Date()
-  d.setDate(d.getDate() - 6)
-  return formatDate(d)
+  const now = new Date()
+  return formatDate(new Date(now.getFullYear(), now.getMonth(), 1))
 }
 
 export async function syncMetaAccount(
