@@ -65,14 +65,20 @@ export function MetaSyncButton({ platformAccountId }: MetaSyncButtonProps) {
 
   if (state === 'error') {
     return (
-      <button
-        onClick={handleSync}
-        title={errorMsg ?? 'Erro'}
-        className="flex items-center gap-1 text-[#EF4444] hover:text-[#EF4444]/80 transition-colors"
-      >
-        <AlertCircle size={12} />
-        <span className="text-[10px]">Erro · Tentar de novo</span>
-      </button>
+      <div className="flex flex-col gap-1">
+        <button
+          onClick={handleSync}
+          className="flex items-center gap-1 text-[#EF4444] hover:text-[#EF4444]/80 transition-colors"
+        >
+          <AlertCircle size={12} />
+          <span className="text-[10px]">Erro · Tentar de novo</span>
+        </button>
+        {errorMsg && (
+          <span className="text-[9px] text-[#EF4444]/70 max-w-[200px] break-words leading-tight">
+            {errorMsg}
+          </span>
+        )}
+      </div>
     )
   }
 
