@@ -42,6 +42,7 @@ type Snapshot = {
   reach: unknown
   clicks: unknown
   frequency: unknown
+  platformAccount: { platform: string }
 }
 
 /** Agrega MetricSnapshots em um único valor por métrica */
@@ -52,55 +53,44 @@ function aggregateSnapshots(snapshots: Snapshot[], metric: MetricType): number |
   // ── Métricas derivadas (requerem numerador + denominador separados) ─────────
   // GA4 tem spend=0; ad platforms (Meta/Google) têm spend>0.
   // Sessões vêm do GA4 (clicks); spend/impressões vêm dos ad platforms.
+  // Helpers: separa GA4 de plataformas de anúncio pelo campo platform
+  const isGA4 = (x: Snapshot) => x.platformAccount.platform === 'GA4'
+  const isAd  = (x: Snapshot) => x.platformAccount.platform !== 'GA4'
+
+  // Receita e compras sempre do GA4
+  const ga4Revenue  = snapshots.filter(isGA4).reduce((s, x) => s + toNum(x.conversionValue), 0)
+  const ga4Purchases = snapshots.filter(isGA4).reduce((s, x) => s + toNum(x.conversions), 0)
+  const ga4Sessions  = snapshots.filter(isGA4).reduce((s, x) => s + toNum(x.clicks), 0)
+  // Investimento de todas as plataformas de anúncio
+  const totalSpend   = snapshots.filter(isAd).reduce((s, x) => s + toNum(x.spend), 0)
+
   if (metric === 'TAXA_CONVERSAO') {
-    const purchases = snapshots.reduce((s, x) => s + toNum(x.conversions), 0)
-    const sessions  = snapshots
-      .filter((x) => toNum(x.spend) === 0)     // GA4 only
-      .reduce((s, x) => s + toNum(x.clicks), 0)
-    return sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null
+    return ga4Sessions > 0 && ga4Purchases > 0 ? (ga4Purchases / ga4Sessions) * 100 : null
   }
 
   if (metric === 'TICKET_MEDIO') {
-    const ga4Rev  = snapshots.filter((x) => toNum(x.spend) === 0).reduce((s, x) => s + toNum(x.conversionValue), 0)
-    const adRev   = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.conversionValue), 0)
-    const revenue = ga4Rev > 0 ? ga4Rev : adRev
-    const purchases = snapshots.reduce((s, x) => s + toNum(x.conversions), 0)
-    return purchases > 0 && revenue > 0 ? revenue / purchases : null
+    return ga4Purchases > 0 && ga4Revenue > 0 ? ga4Revenue / ga4Purchases : null
   }
 
   if (metric === 'CPS') {
-    const spend    = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.spend), 0)
-    const sessions = snapshots.filter((x) => toNum(x.spend) === 0).reduce((s, x) => s + toNum(x.clicks), 0)
-    return sessions > 0 && spend > 0 ? spend / sessions : null
+    return ga4Sessions > 0 && totalSpend > 0 ? totalSpend / ga4Sessions : null
   }
 
   if (metric === 'CPM') {
-    const spend       = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.spend), 0)
-    const adImpressions = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.impressions), 0)
-    return adImpressions > 0 && spend > 0 ? (spend / adImpressions) * 1000 : null
+    const adImpressions = snapshots.filter(isAd).reduce((s, x) => s + toNum(x.impressions), 0)
+    return adImpressions > 0 && totalSpend > 0 ? (totalSpend / adImpressions) * 1000 : null
   }
 
   if (metric === 'FATURAMENTO') {
-    const ga4Rev = snapshots.filter((x) => toNum(x.spend) === 0).reduce((s, x) => s + toNum(x.conversionValue), 0)
-    const adRev  = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.conversionValue), 0)
-    const total  = ga4Rev > 0 ? ga4Rev : adRev
-    return total > 0 ? total : null
+    return ga4Revenue > 0 ? ga4Revenue : null
   }
 
-  // Helper: prefer GA4 ecommerce_purchases over Meta actions_purchase to avoid double-counting
-  const purchasesNoDouble = (() => {
-    const ga4p = snapshots.filter((x) => toNum(x.spend) === 0).reduce((s, x) => s + toNum(x.conversions), 0)
-    const adp  = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.conversions), 0)
-    return ga4p > 0 ? ga4p : adp
-  })
+  // Helper de compras (usado abaixo)
+  const purchasesNoDouble = (() => ga4Purchases)
 
   if (metric === 'ROAS') {
-    // Compute as total revenue / total spend (same logic as KPI cards) — never average daily ROAS
-    const spend  = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.spend), 0)
-    const ga4Rev = snapshots.filter((x) => toNum(x.spend) === 0).reduce((s, x) => s + toNum(x.conversionValue), 0)
-    const adRev  = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.conversionValue), 0)
-    const revenue = ga4Rev > 0 ? ga4Rev : adRev
-    return spend > 0 && revenue > 0 ? revenue / spend : null
+    // GA4 receita / investimento total (Meta + Google + TikTok)
+    return totalSpend > 0 && ga4Revenue > 0 ? ga4Revenue / totalSpend : null
   }
 
   if (metric === 'CPA') {
@@ -244,8 +234,11 @@ export async function recalculateClientHealth(clientId: string): Promise<{
     },
   })
 
+  const snapInclude = { platformAccount: { select: { platform: true } } } as const
+
   const weeklySnapshots = await prisma.metricSnapshot.findMany({
     where: { clientId, date: { gte: weekStart, lte: weekEnd } },
+    include: snapInclude,
   })
 
   const weeklyResult = await processGoals(clientId, weeklyGoals, weeklySnapshots, weekStart, weekEnd)
@@ -262,6 +255,7 @@ export async function recalculateClientHealth(clientId: string): Promise<{
 
   const monthlySnapshots = await prisma.metricSnapshot.findMany({
     where: { clientId, date: { gte: monthStart, lte: today } },
+    include: snapInclude,
   })
 
   const monthlyResult = await processGoals(clientId, monthlyGoals, monthlySnapshots, monthStart, monthEnd)
