@@ -17,11 +17,15 @@ export function MetaSyncButton({ platformAccountId }: MetaSyncButtonProps) {
     setState('loading')
     setErrorMsg(null)
 
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 65_000)
+
     try {
       const res = await fetch('/api/sync/meta', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platformAccountId }),
+        signal: controller.signal,
       })
 
       const data = await res.json()
@@ -42,9 +46,11 @@ export function MetaSyncButton({ platformAccountId }: MetaSyncButtonProps) {
       setState('ok')
       router.refresh()
       setTimeout(() => setState('idle'), 3000)
-    } catch {
+    } catch (err) {
       setState('error')
-      setErrorMsg('Erro de conexão')
+      setErrorMsg((err as Error).name === 'AbortError' ? 'Tempo esgotado (65s)' : 'Erro de conexão')
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 

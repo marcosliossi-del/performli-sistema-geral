@@ -4,5 +4,13 @@
       "path": "/api/cron/daily",
       "schedule": "0 12 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "src/app/api/sync/**": {
+      "maxDuration": 60
+    },
+    "src/app/api/cron/**": {
+      "maxDuration": 60
+    }
+  }
 }

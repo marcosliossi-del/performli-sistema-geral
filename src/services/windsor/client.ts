@@ -147,7 +147,7 @@ export class WindsorClient {
     })
 
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 45_000)
+    const timeout = setTimeout(() => controller.abort(), 25_000)
 
     let res: Response
     try {

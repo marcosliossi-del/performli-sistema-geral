@@ -71,7 +71,12 @@ export async function syncMetaAccount(
 
   try {
     const windsor = new WindsorClient()
-    const rows = await windsor.getMetaInsights(account.externalId, since, until)
+
+    // Busca insights diários e por campanha em paralelo para reduzir tempo total
+    const [rows, campaignRows] = await Promise.all([
+      windsor.getMetaInsights(account.externalId, since, until),
+      windsor.getMetaCampaignInsights(account.externalId, since, until),
+    ])
 
     let recordsUpserted = 0
 
@@ -117,7 +122,6 @@ export async function syncMetaAccount(
     }
 
     // ── Campaign-level sync ────────────────────────────────────────────────
-    const campaignRows = await windsor.getMetaCampaignInsights(account.externalId, since, until)
     for (const row of campaignRows) {
       const snap = transformWindsorMetaCampaign(row)
       const adSetId = snap.adSetId ?? '' // empty string = sem adset (único constraint não aceita NULL)
