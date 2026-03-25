@@ -36,9 +36,9 @@ function formatDate(date: Date): string {
 }
 
 function defaultSince(): string {
-  const d = new Date()
-  d.setDate(d.getDate() - 6)
-  return formatDate(d)
+  const now = new Date()
+  // Início do mês atual (para cobrir o mês inteiro em cada sync)
+  return formatDate(new Date(now.getFullYear(), now.getMonth(), 1))
 }
 
 export async function syncGA4Account(
