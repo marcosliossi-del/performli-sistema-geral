@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
-import { CalendarRange, ChevronDown } from 'lucide-react'
+import { CalendarRange, ChevronDown, Loader2 } from 'lucide-react'
 
 type Preset = {
   label: string
@@ -78,15 +78,17 @@ function detectPreset(from: string, to: string): string | null {
 interface DateRangePickerProps {
   from: string
   to: string
+  clientId?: string
 }
 
-export function DateRangePicker({ from, to }: DateRangePickerProps) {
+export function DateRangePicker({ from, to, clientId }: DateRangePickerProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [open, setOpen] = useState(false)
   const [customFrom, setCustomFrom] = useState(from)
   const [customTo, setCustomTo] = useState(to)
+  const [syncing, setSyncing] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   const activePreset = detectPreset(from, to)
@@ -99,28 +101,57 @@ export function DateRangePicker({ from, to }: DateRangePickerProps) {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  function applyDates(newFrom: string, newTo: string) {
+  async function applyDates(newFrom: string, newTo: string) {
+    setOpen(false)
+
+    if (clientId) {
+      setSyncing(true)
+      try {
+        await Promise.all([
+          fetch(`/api/sync/meta?since=${newFrom}&until=${newTo}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId }),
+          }),
+          fetch(`/api/sync/ga4?since=${newFrom}&until=${newTo}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId }),
+          }),
+        ])
+      } catch {
+        // silently continue
+      } finally {
+        setSyncing(false)
+      }
+    }
+
     const params = new URLSearchParams(searchParams.toString())
     params.set('from', newFrom)
     params.set('to', newTo)
     router.push(`${pathname}?${params.toString()}`)
-    setOpen(false)
   }
 
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#0A1E2C] border border-[#38435C] text-xs text-[#EBEBEB] hover:border-[#95BBE2] transition-colors"
+        onClick={() => !syncing && setOpen((v) => !v)}
+        disabled={syncing}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#0A1E2C] border border-[#38435C] text-xs text-[#EBEBEB] hover:border-[#95BBE2] transition-colors disabled:opacity-60 disabled:cursor-wait"
       >
-        <CalendarRange size={13} className="text-[#95BBE2]" />
-        <span>{formatRange(from, to)}</span>
-        <ChevronDown size={12} className={`text-[#87919E] transition-transform ${open ? 'rotate-180' : ''}`} />
+        {syncing ? (
+          <Loader2 size={13} className="text-[#95BBE2] animate-spin" />
+        ) : (
+          <CalendarRange size={13} className="text-[#95BBE2]" />
+        )}
+        <span>{syncing ? 'Sincronizando...' : formatRange(from, to)}</span>
+        {!syncing && (
+          <ChevronDown size={12} className={`text-[#87919E] transition-transform ${open ? 'rotate-180' : ''}`} />
+        )}
       </button>
 
       {open && (
         <div className="absolute right-0 top-full mt-1 z-50 bg-[#0A1E2C] border border-[#38435C] rounded-xl shadow-xl w-72 p-3">
-          {/* Presets */}
           <div className="space-y-0.5 mb-3">
             {PRESETS.map((p) => {
               const dates = p.getDates()
@@ -142,10 +173,8 @@ export function DateRangePicker({ from, to }: DateRangePickerProps) {
             })}
           </div>
 
-          {/* Divisor */}
           <div className="h-px bg-[#38435C] mb-3" />
 
-          {/* Custom */}
           <p className="text-[10px] text-[#87919E] uppercase tracking-wide mb-2">Personalizado</p>
           <div className="flex items-center gap-2 mb-2">
             <div className="flex-1">

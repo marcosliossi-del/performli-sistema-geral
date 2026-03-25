@@ -246,7 +246,7 @@ export default async function ClientDetailPage({
               {kpis.daysElapsed} dias · vs. período anterior equivalente
             </p>
           </div>
-          <DateRangePicker from={activeFrom} to={activeTo} />
+          <DateRangePicker from={activeFrom} to={activeTo} clientId={client.id} />
         </div>
 
         {!hasData ? (
