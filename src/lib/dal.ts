@@ -22,7 +22,7 @@ export type ClientHealthSummary = {
   slug: string
   logoUrl: string | null
   primaryManager: string | null
-  overallStatus: HealthStatus
+  overallStatus: HealthStatus | null
   achievementPct: number
   trend: 'up' | 'down' | 'stable'
   metrics: { name: string; status: HealthStatus; pct: number }[]
@@ -30,8 +30,9 @@ export type ClientHealthSummary = {
 
 export const getDashboardData = cache(async (userId: string, role: string) => {
   const { start: weekStart } = getWeekRange()
-  const prevWeekStart = new Date(weekStart)
-  prevWeekStart.setDate(prevWeekStart.getDate() - 7)
+  const { start: monthStart } = getMonthRange()
+  // Fetch from start of month so monthly health scores (periodStart=1st) are included
+  const fetchFrom = monthStart < weekStart ? monthStart : weekStart
 
   // For MANAGER: only their clients. For ADMIN: all clients.
   const clientsWhere: Prisma.ClientWhereInput =
@@ -48,7 +49,7 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
         take: 1,
       },
       healthScores: {
-        where: { periodStart: { gte: prevWeekStart } },
+        where: { periodStart: { gte: fetchFrom } },
         orderBy: { calculatedAt: 'desc' },
       },
     },
@@ -57,8 +58,14 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
 
   const summaries: ClientHealthSummary[] = clients.map((client) => {
     const allScores = client.healthScores
-    const scores = allScores.filter((s) => s.periodStart >= weekStart)
-    const prevScores = allScores.filter((s) => s.periodStart < weekStart)
+
+    // Prefer current-week WEEKLY scores; fall back to current-month MONTHLY scores
+    const weeklyScores  = allScores.filter((s) => s.period === 'WEEKLY'  && s.periodStart >= weekStart)
+    const monthlyScores = allScores.filter((s) => s.period === 'MONTHLY' && s.periodStart >= monthStart)
+    const scores = weeklyScores.length > 0 ? weeklyScores : monthlyScores
+
+    // Previous reference: last week's weekly scores or previous monthly scores
+    const prevScores = allScores.filter((s) => !scores.includes(s))
 
     const avgOf = (arr: typeof scores) =>
       arr.length > 0
@@ -77,15 +84,15 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
         ? 'down'
         : 'stable'
 
-    // Overall = worst status
-    const overallStatus: HealthStatus =
-      scores.some((s) => s.status === 'RUIM')
+    // Overall = worst status; null when no scores (sem metas configuradas)
+    const overallStatus: HealthStatus | null =
+      scores.length === 0
+        ? null
+        : scores.some((s) => s.status === 'RUIM')
         ? 'RUIM'
         : scores.some((s) => s.status === 'REGULAR')
         ? 'REGULAR'
-        : scores.length > 0
-        ? 'OTIMO'
-        : 'RUIM'
+        : 'OTIMO'
 
     return {
       id: client.id,

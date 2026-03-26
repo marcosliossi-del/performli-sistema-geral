@@ -13,7 +13,7 @@ interface ClientHealth {
   slug: string
   logoUrl?: string | null
   primaryManager?: string | null
-  overallStatus: HealthStatus
+  overallStatus: HealthStatus | null
   achievementPct: number
   metrics: {
     name: string
@@ -99,9 +99,13 @@ function ClientCard({ client }: { client: ClientHealth }) {
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <TrendIcon size={14} className={trendColor} />
-            <Badge variant={client.overallStatus.toLowerCase() as 'otimo' | 'regular' | 'ruim'}>
-              {healthLabels[client.overallStatus]}
-            </Badge>
+            {client.overallStatus ? (
+              <Badge variant={client.overallStatus.toLowerCase() as 'otimo' | 'regular' | 'ruim'}>
+                {healthLabels[client.overallStatus]}
+              </Badge>
+            ) : (
+              <span className="text-[10px] text-[#87919E] px-2 py-0.5 rounded-full bg-[#38435C]/50">Sem metas</span>
+            )}
           </div>
         </div>
 
