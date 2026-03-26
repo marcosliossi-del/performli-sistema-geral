@@ -97,6 +97,7 @@ export async function syncMetaAccount(
           conversionValue: snapshot.conversionValue,
           roas:            snapshot.roas,
           cpl:             snapshot.cpl,
+          newUsers:        null,
           rawData:         snapshot.rawData as object,
           syncedAt:        new Date(),
         },

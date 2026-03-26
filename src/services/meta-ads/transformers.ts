@@ -129,7 +129,7 @@ export function transformMetaInsight(record: MetaInsightRecord): TransformedSnap
   const cpl = leads > 0 ? spend / leads : null
 
   return {
-    date: new Date(record.date_start + 'T00:00:00'),
+    date: new Date(record.date_start + 'T00:00:00Z'),
     spend,
     impressions: parseInt(record.impressions || '0'),
     clicks:      parseInt(record.clicks || '0'),
@@ -153,7 +153,7 @@ export function transformMetaCampaignInsight(record: MetaCampaignInsightRecord):
   const cpl = purchases && spend > 0 ? Math.round((spend / purchases) * 100) / 100 : null
 
   return {
-    date:         new Date(record.date_start + 'T00:00:00'),
+    date:         new Date(record.date_start + 'T00:00:00Z'),
     campaignId:   record.campaign_id   ?? 'unknown',
     campaignName: record.campaign_name ?? 'Campanha sem nome',
     adSetId:      record.adset_id   ?? null,

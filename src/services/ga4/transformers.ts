@@ -40,7 +40,7 @@ export interface GA4TransformedSnapshot {
  */
 function parseGA4Date(yyyymmdd: string): Date {
   const iso = `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`
-  return new Date(iso + 'T00:00:00')
+  return new Date(iso + 'T00:00:00Z')
 }
 
 export function transformGA4Row(row: GA4Row): GA4TransformedSnapshot {
