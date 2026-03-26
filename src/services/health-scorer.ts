@@ -85,44 +85,32 @@ function aggregateSnapshots(snapshots: Snapshot[], metric: MetricType): number |
     return ga4Revenue > 0 ? ga4Revenue : null
   }
 
-  // Helper de compras (usado abaixo)
-  const purchasesNoDouble = (() => ga4Purchases)
-
   if (metric === 'ROAS') {
     // GA4 receita / investimento total (Meta + Google + TikTok)
     return totalSpend > 0 && ga4Revenue > 0 ? ga4Revenue / totalSpend : null
   }
 
   if (metric === 'CPA') {
-    const spend = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.spend), 0)
-    const purchases = purchasesNoDouble()
-    return spend > 0 && purchases > 0 ? spend / purchases : null
+    return totalSpend > 0 && ga4Purchases > 0 ? totalSpend / ga4Purchases : null
   }
 
   if (metric === 'CPL') {
-    const spend = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.spend), 0)
-    const purchases = purchasesNoDouble()
-    return spend > 0 && purchases > 0 ? spend / purchases : null
+    return totalSpend > 0 && ga4Purchases > 0 ? totalSpend / ga4Purchases : null
   }
 
   if (metric === 'CAC') {
-    // CAC = spend / novos compradores (purchases GA4)
-    const spend     = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.spend), 0)
-    const purchases = snapshots.filter((x) => toNum(x.spend) === 0).reduce((s, x) => s + toNum(x.conversions), 0)
-    return spend > 0 && purchases > 0 ? spend / purchases : null
+    // CAC = investimento total / novos compradores (purchases GA4)
+    return totalSpend > 0 && ga4Purchases > 0 ? totalSpend / ga4Purchases : null
   }
 
   if (metric === 'CONVERSIONS') {
-    const val = purchasesNoDouble()
+    const val = ga4Purchases
     return val > 0 ? val : null
   }
 
   if (metric === 'SALES') {
-    // Same as FATURAMENTO — prefer GA4 revenue
-    const ga4Rev = snapshots.filter((x) => toNum(x.spend) === 0).reduce((s, x) => s + toNum(x.conversionValue), 0)
-    const adRev  = snapshots.filter((x) => toNum(x.spend) > 0).reduce((s, x) => s + toNum(x.conversionValue), 0)
-    const total  = ga4Rev > 0 ? ga4Rev : adRev
-    return total > 0 ? total : null
+    // Faturamento sempre do GA4
+    return ga4Revenue > 0 ? ga4Revenue : null
   }
 
   // ── Métricas diretas ──────────────────────────────────────────────────────

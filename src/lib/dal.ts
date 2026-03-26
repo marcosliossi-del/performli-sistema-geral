@@ -206,6 +206,7 @@ export const getClientsOperationalTable = cache(async (
           conversions: true,
           conversionValue: true,
           date: true,
+          platformAccount: { select: { platform: true } },
         },
       },
       healthScores: {
@@ -229,8 +230,8 @@ export const getClientsOperationalTable = cache(async (
   return clients.map((c): ClientOperationalRow => {
     const snaps = c.metricSnapshots
 
-    const ga4  = snaps.filter((x) => Number(x.spend ?? 0) === 0)
-    const ads  = snaps.filter((x) => Number(x.spend ?? 0) > 0)
+    const ga4  = snaps.filter((x) => x.platformAccount.platform === 'GA4')
+    const ads  = snaps.filter((x) => x.platformAccount.platform !== 'GA4')
 
     const spend        = ads.reduce((s, x) => s + Number(x.spend ?? 0), 0)
     const sessions     = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)

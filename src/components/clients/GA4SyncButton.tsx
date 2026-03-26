@@ -17,13 +17,18 @@ export function GA4SyncButton({ platformAccountId }: GA4SyncButtonProps) {
     setState('loading')
     setErrorMsg(null)
 
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 65_000)
+
     try {
       const res = await fetch('/api/sync/ga4', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platformAccountId }),
+        signal: controller.signal,
       })
 
+      clearTimeout(timeoutId)
       const data = await res.json()
 
       if (!res.ok || !data.ok) {
@@ -42,9 +47,10 @@ export function GA4SyncButton({ platformAccountId }: GA4SyncButtonProps) {
       setState('ok')
       router.refresh()
       setTimeout(() => setState('idle'), 3000)
-    } catch {
+    } catch (err) {
+      clearTimeout(timeoutId)
       setState('error')
-      setErrorMsg('Erro de conexão')
+      setErrorMsg((err as Error).name === 'AbortError' ? 'Tempo esgotado (65s)' : 'Erro de conexão')
     }
   }
 
