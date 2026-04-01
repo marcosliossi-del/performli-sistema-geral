@@ -4,7 +4,7 @@ import {
   requireSession, getClientDetail, getClientMetricHistory,
   getClientKPIs, getGoalPaceMetrics, getClientChat, getClientWeeklyReport,
   getClientCampaigns, getLatestCampaignInsight, metricLabels,
-  getClientDailyRevenue, getClientMonthlyComparison,
+  getClientDailyRevenue, getClientMonthlyComparison, getClientInteractions,
 } from '@/lib/dal'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardValue } from '@/components/ui/card'
@@ -28,6 +28,7 @@ import { CampaignBreakdownTable } from '@/components/clients/CampaignBreakdownTa
 import { CampaignInsightCard } from '@/components/clients/CampaignInsightCard'
 import { RevenuePaceChart } from '@/components/clients/RevenuePaceChart'
 import { MonthlyComparisonChart } from '@/components/clients/MonthlyComparisonChart'
+import { InteractionTimeline } from '@/components/clients/InteractionTimeline'
 
 const platformColors: Record<string, string> = {
   META_ADS: '#1877F2',
@@ -104,7 +105,7 @@ export default async function ClientDetailPage({
   const activeFrom = from ?? defaultFrom
   const activeTo = to ?? defaultTo
 
-  const [metricHistory, kpis, paceGoals, chat, weeklyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison] = await Promise.all([
+  const [metricHistory, kpis, paceGoals, chat, weeklyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions] = await Promise.all([
     getClientMetricHistory(client.id, 14),
     getClientKPIs(client.id, activeFrom, activeTo),
     getGoalPaceMetrics(client.id),
@@ -114,6 +115,7 @@ export default async function ClientDetailPage({
     getLatestCampaignInsight(client.id),
     getClientDailyRevenue(client.id, activeFrom, activeTo),
     getClientMonthlyComparison(client.id),
+    getClientInteractions(client.id),
   ])
 
   const weeklyGoals = client.goals.filter((g) => g.period === 'WEEKLY')
@@ -548,6 +550,11 @@ export default async function ClientDetailPage({
           </div>
         </div>
       )}
+
+      {/* ── Histórico de Interações CRM ───────────────────────────────────── */}
+      <div className="card p-5">
+        <InteractionTimeline clientId={client.id} interactions={interactions} />
+      </div>
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { slugify } from '@/lib/utils'
+import { PipelineStage } from '@prisma/client'
 
 export type ClientFormState = {
   error?: string
@@ -20,6 +21,12 @@ export async function createClient(
   const website = (formData.get('website') as string)?.trim()
   const notes = (formData.get('notes') as string)?.trim()
   const managerId = formData.get('managerId') as string
+  const email = (formData.get('email') as string)?.trim()
+  const phone = (formData.get('phone') as string)?.trim()
+  const document = (formData.get('document') as string)?.trim()
+  const contractValueRaw = (formData.get('contractValue') as string)?.trim()
+  const contractStartRaw = (formData.get('contractStart') as string)?.trim()
+  const pipelineStageRaw = (formData.get('pipelineStage') as string)?.trim()
 
   if (!name) return { error: 'Nome do cliente é obrigatório.' }
 
@@ -32,6 +39,7 @@ export async function createClient(
   }
 
   const assignedUserId = managerId || session.userId
+  const pipelineStage = (pipelineStageRaw as PipelineStage) || 'ATIVO'
 
   const client = await prisma.client.create({
     data: {
@@ -40,7 +48,13 @@ export async function createClient(
       industry: industry || null,
       website: website || null,
       notes: notes || null,
-      status: 'ACTIVE',
+      email: email || null,
+      phone: phone || null,
+      document: document || null,
+      contractValue: contractValueRaw ? parseFloat(contractValueRaw) : null,
+      contractStart: contractStartRaw ? new Date(contractStartRaw) : null,
+      pipelineStage,
+      status: pipelineStage === 'CHURNED' ? 'CHURNED' : 'ACTIVE',
       assignments: {
         create: { userId: assignedUserId, isPrimary: true },
       },

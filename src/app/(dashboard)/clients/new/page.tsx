@@ -7,6 +7,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ArrowLeft, UserPlus } from 'lucide-react'
 
+const PIPELINE_STAGES = [
+  { value: 'LEAD',       label: 'Lead'       },
+  { value: 'PROPOSTA',   label: 'Proposta'   },
+  { value: 'NEGOCIACAO', label: 'Negociação' },
+  { value: 'ATIVO',      label: 'Ativo'      },
+  { value: 'CHURNED',    label: 'Churned'    },
+]
+
 const initialState: ClientFormState = {}
 
 const industries = [
@@ -80,6 +88,63 @@ export default function NewClientPage() {
               Website
             </label>
             <Input name="website" type="url" placeholder="https://seusite.com.br" />
+          </div>
+
+          {/* CRM divider */}
+          <div className="border-t border-[#38435C] pt-4">
+            <p className="text-xs font-semibold text-[#95BBE2] uppercase tracking-wider mb-4">CRM & Pipeline</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">
+              Etapa no Pipeline
+            </label>
+            <select
+              name="pipelineStage"
+              defaultValue="ATIVO"
+              className="w-full h-10 px-3 rounded-lg bg-[#0A1E2C] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2] transition-colors"
+            >
+              {PIPELINE_STAGES.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">
+                E-mail
+              </label>
+              <Input name="email" type="email" placeholder="contato@cliente.com" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">
+                Telefone
+              </label>
+              <Input name="phone" placeholder="(11) 99999-9999" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">
+                CNPJ / CPF
+              </label>
+              <Input name="document" placeholder="00.000.000/0001-00" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">
+                Valor do Contrato (R$)
+              </label>
+              <Input name="contractValue" type="number" step="0.01" min="0" placeholder="5000.00" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">
+              Início do Contrato
+            </label>
+            <Input name="contractStart" type="date" />
           </div>
 
           <div className="space-y-1.5">

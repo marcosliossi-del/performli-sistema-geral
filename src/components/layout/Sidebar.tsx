@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Activity,
   Building2,
+  Kanban,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -35,6 +36,7 @@ const navigation = [
     expandable: true,
     items: [
       { name: 'Meus Clientes', href: '/clients', icon: Users },
+      { name: 'Pipeline CRM', href: '/pipeline', icon: Kanban },
       { name: 'Novo Onboarding', href: '/clients/new', icon: UserPlus },
       { name: 'Registro de Operações', href: '/operations', icon: BookOpen },
       { name: 'Anti Churn & Retenção', href: '/anti-churn', icon: ShieldAlert },

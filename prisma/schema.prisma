@@ -32,6 +32,7 @@ model User {
   alerts            Alert[]              @relation("TriggeredAlerts")
   chatMessages      ClientChatMessage[]
   weeklyChecklists  WeeklyChecklist[]
+  interactions      ClientInteraction[]
 }
 
 // ─── CLIENTS ─────────────────────────────────────────────────────────────────
@@ -42,17 +43,42 @@ enum ClientStatus {
   CHURNED
 }
 
+enum PipelineStage {
+  LEAD
+  PROPOSTA
+  NEGOCIACAO
+  ATIVO
+  CHURNED
+}
+
+enum InteractionType {
+  LIGACAO
+  REUNIAO
+  EMAIL
+  WHATSAPP
+  NOTA
+  PROPOSTA_ENVIADA
+  CONTRATO_ASSINADO
+}
+
 model Client {
-  id        String       @id @default(cuid())
-  name      String
-  slug      String       @unique
-  logoUrl   String?
-  industry  String?
-  website   String?
-  status    ClientStatus @default(ACTIVE)
-  notes     String?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id             String        @id @default(cuid())
+  name           String
+  slug           String        @unique
+  logoUrl        String?
+  industry       String?
+  website        String?
+  email          String?
+  phone          String?
+  document       String?
+  status         ClientStatus  @default(ACTIVE)
+  pipelineStage  PipelineStage @default(ATIVO)
+  contractValue  Decimal?
+  contractStart  DateTime?
+  tags           String[]
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   assignments       ClientAssignment[]
   platformAccounts  PlatformAccount[]
@@ -67,6 +93,21 @@ model Client {
   chat              ClientChat?
   churnRiskScores   ChurnRiskScore[]
   weeklyReports     WeeklyReport[]
+  interactions      ClientInteraction[]
+}
+
+model ClientInteraction {
+  id          String          @id @default(cuid())
+  clientId    String
+  userId      String
+  type        InteractionType
+  description String
+  createdAt   DateTime        @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([clientId, createdAt])
 }
 
 model ClientAssignment {

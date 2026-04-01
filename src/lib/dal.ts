@@ -1810,3 +1810,95 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
     atRiskClients,
   }
 })
+
+// ─── CRM Pipeline ─────────────────────────────────────────────────────────────
+
+export type PipelineClient = {
+  id: string
+  name: string
+  slug: string
+  industry: string | null
+  email: string | null
+  phone: string | null
+  contractValue: number | null
+  contractStart: Date | null
+  tags: string[]
+  pipelineStage: string
+  primaryManager: string | null
+  updatedAt: Date
+}
+
+export const getPipelineClients = cache(async (userId: string, role: string) => {
+  const where =
+    role === 'ADMIN'
+      ? {}
+      : { assignments: { some: { userId } } }
+
+  const clients = await prisma.client.findMany({
+    where,
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      industry: true,
+      email: true,
+      phone: true,
+      contractValue: true,
+      contractStart: true,
+      tags: true,
+      pipelineStage: true,
+      updatedAt: true,
+      assignments: {
+        where: { isPrimary: true },
+        select: { user: { select: { name: true } } },
+        take: 1,
+      },
+    },
+    orderBy: { name: 'asc' },
+  })
+
+  return clients.map((c): PipelineClient => ({
+    id:              c.id,
+    name:            c.name,
+    slug:            c.slug,
+    industry:        c.industry,
+    email:           c.email,
+    phone:           c.phone,
+    contractValue:   c.contractValue ? Number(c.contractValue) : null,
+    contractStart:   c.contractStart,
+    tags:            c.tags,
+    pipelineStage:   c.pipelineStage,
+    primaryManager:  c.assignments[0]?.user.name ?? null,
+    updatedAt:       c.updatedAt,
+  }))
+})
+
+export type ClientInteractionItem = {
+  id: string
+  type: string
+  description: string
+  createdAt: Date
+  userName: string
+}
+
+export const getClientInteractions = cache(async (clientId: string): Promise<ClientInteractionItem[]> => {
+  const rows = await prisma.clientInteraction.findMany({
+    where: { clientId },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: {
+      id: true,
+      type: true,
+      description: true,
+      createdAt: true,
+      user: { select: { name: true } },
+    },
+  })
+  return rows.map((r) => ({
+    id:          r.id,
+    type:        r.type,
+    description: r.description,
+    createdAt:   r.createdAt,
+    userName:    r.user.name,
+  }))
+})
