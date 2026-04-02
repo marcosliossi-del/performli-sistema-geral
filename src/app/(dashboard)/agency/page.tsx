@@ -4,7 +4,7 @@ import { requireSession, getAgencyOverview } from '@/lib/dal'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import { healthLabels, healthBgClasses } from '@/lib/health'
 import { HealthStatus } from '@prisma/client'
-import { TrendingUp, TrendingDown, Minus, Users, DollarSign, BarChart2, ShoppingCart } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Users, DollarSign, BarChart2, ShoppingCart, Heart, UserMinus } from 'lucide-react'
 
 function HealthDot({ status }: { status: HealthStatus | null }) {
   if (!status) return <span className="w-2 h-2 rounded-full bg-[#38435C] inline-block" />
@@ -229,12 +229,63 @@ export default async function AgencyPage() {
         </div>
       )}
 
+      {/* LTV & Churn Rate */}
+      <div className="grid grid-cols-2 gap-4">
+        {/* LTV */}
+        <div className="bg-[#0A1E2C] border border-[#38435C] rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Heart size={16} className="text-[#95BBE2]" />
+            <h2 className="text-sm font-semibold text-[#EBEBEB]">LTV — Valor dos Contratos</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-[#87919E] mb-1">LTV Total da Base</p>
+              <p className="text-2xl font-bold text-[#EBEBEB]">{formatCurrency(data.totalLTV)}</p>
+              <p className="text-[10px] text-[#87919E] mt-1">soma dos contratos ativos</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#87919E] mb-1">LTV Médio por Cliente</p>
+              <p className="text-2xl font-bold text-[#EBEBEB]">
+                {data.avgLTV !== null ? formatCurrency(data.avgLTV) : '—'}
+              </p>
+              <p className="text-[10px] text-[#87919E] mt-1">clientes com contrato cadastrado</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Churn Rate */}
+        <div className="bg-[#0A1E2C] border border-[#38435C] rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <UserMinus size={16} className="text-[#EF4444]" />
+            <h2 className="text-sm font-semibold text-[#EBEBEB]">Churn Rate</h2>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <p className="text-xs text-[#87919E] mb-1">Taxa de Churn</p>
+              <p className={`text-2xl font-bold ${data.churnRate !== null && data.churnRate > 20 ? 'text-[#EF4444]' : data.churnRate !== null && data.churnRate > 10 ? 'text-[#EAB308]' : 'text-[#22C55E]'}`}>
+                {data.churnRate !== null ? `${data.churnRate}%` : '—'}
+              </p>
+              <p className="text-[10px] text-[#87919E] mt-1">churned / total histórico</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#87919E] mb-1">Churned Total</p>
+              <p className="text-2xl font-bold text-[#EF4444]">{data.churnedClients}</p>
+              <p className="text-[10px] text-[#87919E] mt-1">clientes perdidos</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#87919E] mb-1">Churn este mês</p>
+              <p className={`text-2xl font-bold ${data.churnedThisMonth > 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'}`}>
+                {data.churnedThisMonth}
+              </p>
+              <p className="text-[10px] text-[#87919E] mt-1">saídas no mês atual</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* All clients link */}
       <div className="flex justify-end">
-        <Link
-          href="/clients"
-          className="text-sm text-[#95BBE2] hover:text-[#95BBE2]/80 transition-colors"
-        >
+        <Link href="/clients" className="text-sm text-[#95BBE2] hover:text-[#95BBE2]/80 transition-colors">
           Ver todos os clientes →
         </Link>
       </div>

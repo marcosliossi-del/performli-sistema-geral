@@ -131,6 +131,51 @@ export async function linkGA4Account(
   return { success: true, accountName: name ?? `GA4 — ${externalId}` }
 }
 
+// ── Google Ads ────────────────────────────────────────────────────────────────
+
+export async function validateGoogleAdsAccount(customerId: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const { GoogleAdsClient } = await import('@/services/google-ads/client')
+    const client = new GoogleAdsClient()
+    return client.validateCustomer(customerId)
+  } catch (e) {
+    return { valid: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function linkGoogleAdsAccount(
+  clientId: string,
+  customerId: string,
+  name?: string
+): Promise<LinkAccountState> {
+  const session = await requireSession()
+
+  if (session.role !== 'ADMIN') {
+    const assignment = await prisma.clientAssignment.findFirst({ where: { clientId, userId: session.userId } })
+    if (!assignment) return { error: 'Você não tem permissão para vincular contas a este cliente.' }
+  }
+
+  const externalId = customerId.replace(/-/g, '').trim()
+
+  const existing = await prisma.platformAccount.findUnique({
+    where: { clientId_platform_externalId: { clientId, platform: 'GOOGLE_ADS', externalId } },
+  })
+
+  if (existing) {
+    if (existing.active) return { error: 'Esta conta Google Ads já está vinculada a este cliente.' }
+    await prisma.platformAccount.update({ where: { id: existing.id }, data: { active: true, name: name ?? existing.name } })
+    revalidatePath('/clients')
+    return { success: true, accountName: name ?? existing.name ?? externalId }
+  }
+
+  await prisma.platformAccount.create({
+    data: { clientId, platform: 'GOOGLE_ADS', externalId, name: name ?? `Google Ads — ${externalId}` },
+  })
+
+  revalidatePath('/clients')
+  return { success: true, accountName: name ?? `Google Ads — ${externalId}` }
+}
+
 // ── Desvincular ───────────────────────────────────────────────────────────────
 
 export async function unlinkPlatformAccount(platformAccountId: string): Promise<{ error?: string }> {

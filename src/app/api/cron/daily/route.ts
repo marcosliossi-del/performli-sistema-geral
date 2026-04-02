@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { syncAllMetaAccounts } from '@/services/meta-ads/sync'
 import { syncAllGA4Accounts } from '@/services/ga4/sync'
+import { syncAllGoogleAdsAccounts } from '@/services/google-ads/sync'
 import { recalculateAllClientsHealth } from '@/services/health-scorer'
 import { detectOscillationsForAll } from '@/services/oscillation-detector'
 import { scoreAllClientsChurnRisk } from '@/services/churn-scorer'
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
   const isMonday = new Date().getDay() === 1
 
   const summary: Record<string, unknown> = {
-    synced: { meta: { ok: false }, ga4: { ok: false } },
+    synced: { meta: { ok: false }, ga4: { ok: false }, googleAds: { ok: false } },
     healthScores: { ok: false },
     alerts: { ok: false },
     churnRisk: { ok: false },
@@ -60,8 +61,17 @@ export async function POST(request: NextRequest) {
     ;(summary.synced as Record<string, unknown>).ga4 = { ok: true, accounts: ga4Results.length }
   } catch (err) {
     ;(summary.synced as Record<string, unknown>).ga4 = {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      ok: false, error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // ── Step 2b: Sync Google Ads ───────────────────────────────────────────────
+  try {
+    const gadsResults = await syncAllGoogleAdsAccounts()
+    ;(summary.synced as Record<string, unknown>).googleAds = { ok: true, accounts: gadsResults.length }
+  } catch (err) {
+    ;(summary.synced as Record<string, unknown>).googleAds = {
+      ok: false, error: err instanceof Error ? err.message : String(err),
     }
   }
 

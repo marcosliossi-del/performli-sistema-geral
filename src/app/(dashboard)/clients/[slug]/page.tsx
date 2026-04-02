@@ -19,6 +19,8 @@ import { LinkAccountModal } from '@/components/clients/LinkAccountModal'
 import { LinkGA4Modal } from '@/components/clients/LinkGA4Modal'
 import { MetaSyncButton } from '@/components/clients/MetaSyncButton'
 import { GA4SyncButton } from '@/components/clients/GA4SyncButton'
+import { GoogleAdsSyncButton } from '@/components/clients/GoogleAdsSyncButton'
+import { LinkGoogleAdsModal } from '@/components/clients/LinkGoogleAdsModal'
 import { MetricsChartsGrid } from '@/components/clients/MetricsChartsGrid'
 import { DateRangePicker } from '@/components/clients/DateRangePicker'
 import { ClientChatPanel } from '@/components/clients/ClientChatPanel'
@@ -211,6 +213,7 @@ export default async function ClientDetailPage({
             <div className="flex items-center gap-3">
               <LinkAccountModal clientId={client.id} clientSlug={slug} />
               <LinkGA4Modal clientId={client.id} />
+              <LinkGoogleAdsModal clientId={client.id} />
             </div>
           </div>
           <div className="mt-2 space-y-2">
@@ -231,8 +234,9 @@ export default async function ClientDetailPage({
                       <p className="text-[10px] text-[#87919E] font-mono truncate">{acc.externalId}</p>
                     </div>
                   </div>
-                  {acc.platform === 'META_ADS' && <MetaSyncButton platformAccountId={acc.id} />}
-                  {acc.platform === 'GA4' && <GA4SyncButton platformAccountId={acc.id} />}
+                  {acc.platform === 'META_ADS'   && <MetaSyncButton platformAccountId={acc.id} />}
+                  {acc.platform === 'GA4'        && <GA4SyncButton platformAccountId={acc.id} />}
+                  {acc.platform === 'GOOGLE_ADS' && <GoogleAdsSyncButton platformAccountId={acc.id} clientId={client.id} />}
                 </div>
               ))
             )}

@@ -1686,12 +1686,24 @@ export type AgencyOverview = {
   byManager: AgencyManagerRow[]
   topClients: AgencyClientRow[]
   atRiskClients: AgencyClientRow[]
+  // LTV & Churn
+  totalLTV: number
+  avgLTV: number | null
+  churnedClients: number
+  churnedThisMonth: number
+  churnRate: number | null // churned / (active + churned)
 }
 
 export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const { start: weekStart } = getWeekRange()
+
+  // Churn stats (independent of active clients)
+  const churnedTotal = await prisma.client.count({ where: { status: 'CHURNED' } })
+  const churnedThisMonth = await prisma.client.count({
+    where: { status: 'CHURNED', updatedAt: { gte: monthStart } },
+  })
 
   // All active clients with assignments and health scores
   const clients = await prisma.client.findMany({
@@ -1700,6 +1712,7 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
       id: true,
       name: true,
       slug: true,
+      contractValue: true,
       assignments: {
         where: { isPrimary: true },
         select: { user: { select: { id: true, name: true } } },
@@ -1798,6 +1811,12 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
     .filter((c) => c.status === 'RUIM')
     .sort((a, b) => a.name.localeCompare(b.name))
 
+  // LTV: sum of contractValue for all active clients
+  const totalLTV = clients.reduce((sum, c) => sum + (c.contractValue ? Number(c.contractValue) : 0), 0)
+  const clientsWithLTV = clients.filter((c) => c.contractValue && Number(c.contractValue) > 0).length
+
+  const totalAll = clients.length + churnedTotal
+
   return {
     totalRevenue,
     totalSpend,
@@ -1808,6 +1827,11 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
     byManager,
     topClients,
     atRiskClients,
+    totalLTV,
+    avgLTV: clientsWithLTV > 0 ? totalLTV / clientsWithLTV : null,
+    churnedClients: churnedTotal,
+    churnedThisMonth,
+    churnRate: totalAll > 0 ? Math.round((churnedTotal / totalAll) * 1000) / 10 : null,
   }
 })
 
