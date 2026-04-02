@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { slugify } from '@/lib/utils'
 
-export type UpdateClientState = { error?: string; success?: boolean }
+export type UpdateClientState = { error?: string; success?: boolean; slug?: string }
 
 export async function updateClient(
   clientId: string,
@@ -52,7 +52,7 @@ export async function updateClient(
 
   revalidatePath(`/clients/${updated.slug}`)
   revalidatePath('/clients')
-  return { success: true }
+  return { success: true, slug: updated.slug }
 }
 
 export async function deleteClient(clientId: string): Promise<UpdateClientState> {

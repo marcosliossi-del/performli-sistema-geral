@@ -71,7 +71,7 @@ export function EditClientModal({ client, onClose }: Props) {
         setError(result.error)
       } else {
         onClose()
-        window.location.reload()
+        window.location.href = `/clients/${result.slug}`
       }
     } catch {
       setError('Erro ao salvar. Tente novamente.')
