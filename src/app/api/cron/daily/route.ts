@@ -8,6 +8,7 @@ import { scoreAllClientsChurnRisk } from '@/services/churn-scorer'
 import { checkBudgetWarnings } from '@/services/budget-monitor'
 import { generateAllWeeklyReports } from '@/services/weekly-report-generator'
 import { generateAllWeeklyChecklists } from '@/services/weekly-checklist-generator'
+import { sendDailyDigest } from '@/services/notifications/daily-digest'
 
 /**
  * POST /api/cron/daily
@@ -164,6 +165,19 @@ export async function POST(request: NextRequest) {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
       }
+    }
+  }
+
+  // ── Step 8: WhatsApp daily digest ─────────────────────────────────────────
+  try {
+    const digestResult = await sendDailyDigest()
+    summary.whatsappDigest = digestResult.skipped
+      ? { ok: true, skipped: true }
+      : { ok: true, sent: digestResult.sent }
+  } catch (err) {
+    summary.whatsappDigest = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
     }
   }
 
