@@ -7,26 +7,30 @@ import { Plus, X, Target, Calendar } from 'lucide-react'
 import { createGoal } from '@/app/actions/goals'
 
 const WEEKLY_METRICS = [
-  { value: 'ROAS',          label: 'ROAS',                   hint: 'ex: 4.0' },
-  { value: 'FATURAMENTO',   label: 'Faturamento (R$)',        hint: 'ex: 50000' },
-  { value: 'TAXA_CONVERSAO',label: 'Taxa de Conversão (%)',   hint: 'ex: 2.5' },
-  { value: 'TICKET_MEDIO',  label: 'Ticket Médio (R$)',       hint: 'ex: 300' },
-  { value: 'CPS',           label: 'Custo por Sessão (R$)',   hint: 'ex: 0.50' },
-  { value: 'CPL',           label: 'CPL (Custo por Lead)',    hint: 'ex: 25.00' },
-  { value: 'CPA',           label: 'CPA (Custo por Aquisição)', hint: 'ex: 60.00' },
-  { value: 'CONVERSIONS',   label: 'Conversões / Compras',    hint: 'ex: 80' },
-  { value: 'CTR',           label: 'CTR (%)',                 hint: 'ex: 2.5' },
-  { value: 'CPC',           label: 'CPC (R$)',                hint: 'ex: 1.50' },
+  { value: 'ROAS',          label: 'ROAS',                      hint: 'ex: 4.0'   },
+  { value: 'FATURAMENTO',   label: 'Faturamento (R$)',           hint: 'ex: 50000' },
+  { value: 'INVESTMENT',    label: 'Investimento Semanal (R$)',  hint: 'ex: 2500'  },
+  { value: 'CAC',           label: 'CAC (Custo por Aquisição)',  hint: 'ex: 80.00' },
+  { value: 'TAXA_CONVERSAO',label: 'Taxa de Conversão (%)',      hint: 'ex: 2.5'   },
+  { value: 'TICKET_MEDIO',  label: 'Ticket Médio (R$)',          hint: 'ex: 300'   },
+  { value: 'CPS',           label: 'Custo por Sessão (R$)',      hint: 'ex: 0.50'  },
+  { value: 'CPL',           label: 'CPL (Custo por Lead)',       hint: 'ex: 25.00' },
+  { value: 'CPA',           label: 'CPA (Custo por Aquisição)',  hint: 'ex: 60.00' },
+  { value: 'CONVERSIONS',   label: 'Conversões / Compras',       hint: 'ex: 80'    },
+  { value: 'CTR',           label: 'CTR (%)',                    hint: 'ex: 2.5'   },
+  { value: 'CPC',           label: 'CPC (R$)',                   hint: 'ex: 1.50'  },
 ]
 
 const MONTHLY_METRICS = [
-  { value: 'SPEND',         label: 'Budget do Mês (R$)',      hint: 'ex: 10000' },
-  { value: 'ROAS',          label: 'ROAS Esperado',           hint: 'ex: 4.0' },
-  { value: 'FATURAMENTO',   label: 'Faturamento Meta (R$)',   hint: 'ex: 80000' },
-  { value: 'CONVERSIONS',   label: 'Compras Meta',            hint: 'ex: 200' },
-  { value: 'TAXA_CONVERSAO',label: 'Taxa de Conversão (%)',   hint: 'ex: 2.5' },
-  { value: 'TICKET_MEDIO',  label: 'Ticket Médio (R$)',       hint: 'ex: 350' },
-  { value: 'CPS',           label: 'Custo por Sessão (R$)',   hint: 'ex: 0.50' },
+  { value: 'ROAS',          label: 'ROAS Esperado',             hint: 'ex: 4.0'    },
+  { value: 'FATURAMENTO',   label: 'Faturamento Meta (R$)',     hint: 'ex: 80000'  },
+  { value: 'INVESTMENT',    label: 'Investimento do Mês (R$)',  hint: 'ex: 10000'  },
+  { value: 'SPEND',         label: 'Budget Total do Mês (R$)',  hint: 'ex: 10000'  },
+  { value: 'CAC',           label: 'CAC Meta (R$)',             hint: 'ex: 80.00'  },
+  { value: 'CONVERSIONS',   label: 'Compras Meta',              hint: 'ex: 200'    },
+  { value: 'TAXA_CONVERSAO',label: 'Taxa de Conversão (%)',     hint: 'ex: 2.5'    },
+  { value: 'TICKET_MEDIO',  label: 'Ticket Médio (R$)',         hint: 'ex: 350'    },
+  { value: 'CPS',           label: 'Custo por Sessão (R$)',     hint: 'ex: 0.50'   },
 ]
 
 interface GoalFormModalProps {
