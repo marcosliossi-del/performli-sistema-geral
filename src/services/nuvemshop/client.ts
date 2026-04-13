@@ -9,6 +9,7 @@
  * Variáveis de ambiente do app:
  *   NUVEMSHOP_APP_ID        — ID do aplicativo
  *   NUVEMSHOP_APP_SECRET    — Client secret do aplicativo
+ *   NUVEMSHOP_USER_AGENT    — Email cadastrado como User-Agent
  *   NEXT_PUBLIC_APP_URL     — URL base do app (para redirect OAuth)
  */
 
@@ -130,7 +131,7 @@ export class NuvemshopClient {
       headers: {
         'Authentication': `bearer ${this.accessToken}`,
         'Content-Type': 'application/json',
-        'User-Agent': 'Performli/1.0',
+        'User-Agent': process.env.NUVEMSHOP_USER_AGENT || 'Performli/1.0 (kyn.leonardo@gmail.com)',
         ...options.headers,
       },
     })
