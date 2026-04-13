@@ -161,7 +161,7 @@ export async function generateWeeklyReportForClient(clientId: string): Promise<s
 
   const periodoStr = `${lastWeekStart.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} a ${lastWeekEnd.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`
 
-  const prompt = `Você é o assistente de tráfego pago e performance da Arkza, especializado em e-commerces.
+  const prompt = `Você é o assistente de tráfego pago e performance da Performli, especializado em e-commerces.
 Gere um relatório semanal curto, direto e consultivo para ser enviado via WhatsApp ao cliente. Sem markdown, use apenas emojis como marcadores, frases curtas e linha em branco entre blocos.
 
 DADOS DO CLIENTE:
