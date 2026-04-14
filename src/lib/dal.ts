@@ -1388,9 +1388,6 @@ export type ManagerMRR = {
 
 export const getManagersMRR = cache(async (): Promise<ManagerMRR[]> => {
   const today = new Date()
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
-  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-  const { start: weekStart, end: weekEnd } = getWeekRange()
 
   // Apenas gestores de tráfego ativos com clientes atribuídos
   const managers = await prisma.user.findMany({
@@ -1411,14 +1408,12 @@ export const getManagersMRR = cache(async (): Promise<ManagerMRR[]> => {
               goals: {
                 where: {
                   metric: { in: ['SPEND', 'INVESTMENT'] },
-                  OR: [
-                    // Meta mensal direta (INVESTMENT ou SPEND do mês)
-                    { period: 'MONTHLY', startDate: { lte: monthEnd }, endDate: { gte: monthStart } },
-                    // Meta semanal de investimento (será convertida × 4.33)
-                    { period: 'WEEKLY',  startDate: { lte: weekEnd },  endDate: { gte: weekStart } },
-                  ],
+                  // Qualquer meta ativa (startDate no passado, endDate no futuro ou presente)
+                  startDate: { lte: today },
+                  endDate: { gte: today },
                 },
                 select: { targetValue: true, period: true },
+                orderBy: { endDate: 'desc' },
               },
             },
           },
