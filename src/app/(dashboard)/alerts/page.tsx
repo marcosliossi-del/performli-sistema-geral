@@ -21,8 +21,9 @@ const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string
 export default async function AlertsPage() {
   const session = await requireSession()
 
+  const isViewAll = session.role === 'ADMIN' || session.role === 'CS'
   const where =
-    session.role === 'ADMIN'
+    isViewAll
       ? {}
       : { client: { assignments: { some: { userId: session.userId } } } }
 

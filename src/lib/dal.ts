@@ -14,6 +14,15 @@ export const requireSession = cache(async () => {
   return session
 })
 
+/**
+ * Returns true for roles that can see ALL clients (not just assigned ones).
+ * ADMIN  → full access + mutations
+ * CS     → full read access (Customer Success), no mutations
+ */
+function canViewAll(role: string): boolean {
+  return role === 'ADMIN' || role === 'CS'
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export type ClientHealthSummary = {
@@ -34,9 +43,9 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
   // Fetch from start of month so monthly health scores (periodStart=1st) are included
   const fetchFrom = monthStart < weekStart ? monthStart : weekStart
 
-  // For MANAGER: only their clients. For ADMIN: all clients.
+  // ADMIN/CS see all clients; MANAGER/ANALYST see only assigned clients
   const clientsWhere: Prisma.ClientWhereInput =
-    role === 'ADMIN'
+    canViewAll(role)
       ? { status: 'ACTIVE' }
       : { status: 'ACTIVE', assignments: { some: { userId } } }
 
@@ -118,7 +127,7 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
   // Recent alerts (non-oscillation)
   const alerts = await prisma.alert.findMany({
     where:
-      role === 'ADMIN'
+      canViewAll(role)
         ? { read: false, type: { notIn: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] } }
         : { read: false, type: { notIn: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, client: { assignments: { some: { userId } } } },
     include: { client: { select: { name: true } } },
@@ -131,7 +140,7 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
   todayStart.setHours(0, 0, 0, 0)
   const oscillationAlerts = await prisma.alert.findMany({
     where:
-      role === 'ADMIN'
+      canViewAll(role)
         ? { type: { in: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, createdAt: { gte: todayStart } }
         : {
             type: { in: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] },
@@ -146,7 +155,7 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
   // Last sync timestamp (most recent lastSyncAt across all platform accounts)
   const lastSyncAccount = await prisma.platformAccount.findFirst({
     where:
-      role === 'ADMIN'
+      canViewAll(role)
         ? { active: true, lastSyncAt: { not: null } }
         : { active: true, lastSyncAt: { not: null }, client: { assignments: { some: { userId } } } },
     orderBy: { lastSyncAt: 'desc' },
@@ -191,7 +200,7 @@ export const getClientsOperationalTable = cache(async (
   const { start: monthStart } = getMonthRange(today)
 
   const where: Prisma.ClientWhereInput =
-    role === 'ADMIN'
+    canViewAll(role)
       ? { status: 'ACTIVE' }
       : { status: 'ACTIVE', assignments: { some: { userId } } }
 
@@ -313,7 +322,7 @@ export const getClientsList = cache(async (userId: string, role: string) => {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
 
   const where: Prisma.ClientWhereInput =
-    role === 'ADMIN'
+    canViewAll(role)
       ? {}
       : { assignments: { some: { userId } } }
 
@@ -812,7 +821,7 @@ export async function getClientMonthlyComparison(
 
 export const getClientsForSelect = cache(async (userId: string, role: string) => {
   const where: Prisma.ClientWhereInput =
-    role === 'ADMIN' ? {} : { assignments: { some: { userId } } }
+    canViewAll(role) ? {} : { assignments: { some: { userId } } }
 
   return prisma.client.findMany({
     where,
@@ -832,7 +841,7 @@ export const getOperations = cache(async (
   const PER_PAGE = 20
 
   const where: Prisma.OperationWhereInput = {
-    ...(role !== 'ADMIN' && { client: { assignments: { some: { userId } } } }),
+    ...(!canViewAll(role) && { client: { assignments: { some: { userId } } } }),
     ...(clientId && { clientId }),
     ...(search && {
       OR: [
@@ -935,7 +944,7 @@ export const getReportData = cache(async (
 
 export const getTasks = cache(async (userId: string, role: string) => {
   const where =
-    role === 'ADMIN'
+    canViewAll(role)
       ? {}
       : { assignedTo: userId }
 
@@ -1084,7 +1093,7 @@ export type AtRiskClient = {
 
 export const getAtRiskClients = cache(async (userId: string, role: string): Promise<AtRiskClient[]> => {
   const where: Prisma.ClientWhereInput =
-    role === 'ADMIN' ? { status: 'ACTIVE' } : { status: 'ACTIVE', assignments: { some: { userId } } }
+    canViewAll(role) ? { status: 'ACTIVE' } : { status: 'ACTIVE', assignments: { some: { userId } } }
 
   // Fetch clients with last 6 weeks of health scores
   const sixWeeksAgo = new Date()
@@ -1873,7 +1882,7 @@ export type PipelineClient = {
 
 export const getPipelineClients = cache(async (userId: string, role: string) => {
   const where =
-    role === 'ADMIN'
+    canViewAll(role)
       ? {}
       : { assignments: { some: { userId } } }
 

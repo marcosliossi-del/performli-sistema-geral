@@ -40,7 +40,7 @@ export default async function DashboardPage() {
     await Promise.all([
       getDashboardData(session.userId, session.role),
       getClientsOperationalTable(session.userId, session.role),
-      session.role === 'ADMIN' ? getManagerStats() : Promise.resolve([]),
+      (session.role === 'ADMIN' || session.role === 'CS') ? getManagerStats() : Promise.resolve([]),
       getWeeklyChecklist(session.userId),
     ])
 
@@ -51,7 +51,7 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-[#EBEBEB]">Dashboard</h1>
           <p className="text-[#87919E] text-sm mt-0.5">
-            {session.role === 'ADMIN'
+            {session.role === 'ADMIN' || session.role === 'CS'
               ? 'Visão geral de todos os clientes'
               : `Seus clientes — ${session.name.split(' ')[0]}`}
           </p>
@@ -77,7 +77,7 @@ export default async function DashboardPage() {
         otimo={totals.otimo}
         regular={totals.regular}
         ruim={totals.ruim}
-        viewMode={session.role === 'ADMIN' ? 'ADMIN' : 'GESTOR'}
+        viewMode={(session.role === 'ADMIN' || session.role === 'CS') ? 'ADMIN' : 'GESTOR'}
         managerName={session.name}
       />
 

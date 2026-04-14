@@ -6,11 +6,12 @@ import { cn } from '@/lib/utils'
 import { updateUserRole, toggleUserActive, deleteUser } from '@/app/actions/team'
 import { Role } from '@prisma/client'
 
-const roleLabels: Record<string, string> = { ADMIN: 'Admin', MANAGER: 'Gestor', ANALYST: 'Analista' }
+const roleLabels: Record<string, string> = { ADMIN: 'Admin', MANAGER: 'Gestor', ANALYST: 'Analista', CS: 'Succ. Clientes' }
 const roleBadge: Record<string, string> = {
   ADMIN:   'bg-[#95BBE2]/15 text-[#95BBE2]',
   MANAGER: 'bg-[#A78BFA]/15 text-[#A78BFA]',
   ANALYST: 'bg-[#38435C]/50 text-[#87919E]',
+  CS:      'bg-[#34D399]/15 text-[#34D399]',
 }
 
 interface Props {
@@ -105,7 +106,7 @@ export function TeamMemberRow({ user, isSelf, isAdmin }: Props) {
                   <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                   <div className="absolute right-0 mt-1 w-48 bg-[#0A1E2C] border border-[#38435C] rounded-xl shadow-xl z-20 py-1 overflow-hidden">
                     <p className="px-3 py-1.5 text-[10px] font-semibold text-[#87919E] uppercase tracking-wider">Alterar perfil</p>
-                    {(['ADMIN', 'MANAGER', 'ANALYST'] as Role[])
+                    {(['ADMIN', 'MANAGER', 'CS', 'ANALYST'] as Role[])
                       .filter((r) => r !== user.role)
                       .map((r) => (
                         <button

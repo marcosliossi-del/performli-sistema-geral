@@ -3,7 +3,7 @@ import { compare } from 'bcryptjs'
 import { prisma } from './prisma'
 
 export type AuthResult =
-  | { success: true; user: { id: string; name: string; email: string; role: 'ADMIN' | 'MANAGER' | 'ANALYST' } }
+  | { success: true; user: { id: string; name: string; email: string; role: 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS' } }
   | { success: false; error: string }
 
 export async function verifyCredentials(email: string, password: string): Promise<AuthResult> {

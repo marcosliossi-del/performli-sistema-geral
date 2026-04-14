@@ -12,6 +12,7 @@ enum Role {
   ADMIN
   MANAGER
   ANALYST
+  CS      // Customer Success — sees all clients, read-only
 }
 
 model User {

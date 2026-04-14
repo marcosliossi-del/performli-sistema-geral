@@ -6,7 +6,7 @@ export type SessionPayload = {
   userId: string
   name: string
   email: string
-  role: 'ADMIN' | 'MANAGER' | 'ANALYST'
+  role: 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS'
   expiresAt: string
 }
 

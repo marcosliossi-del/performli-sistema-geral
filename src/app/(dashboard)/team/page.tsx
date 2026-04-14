@@ -26,11 +26,12 @@ export default async function TeamPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         {[
           { label: 'Total de Membros', value: members.length, sub: `${active} ativos` },
-          { label: 'Admins',  value: admins,   sub: 'acesso total' },
-          { label: 'Gestores', value: managers, sub: 'gestão de clientes' },
+          { label: 'Admins',    value: admins,   sub: 'acesso total' },
+          { label: 'Gestores',  value: managers, sub: 'gestão de clientes' },
+          { label: 'Succ. Clientes', value: members.filter((m) => m.role === 'CS').length, sub: 'visão geral' },
           { label: 'Analistas', value: members.filter((m) => m.role === 'ANALYST').length, sub: 'somente leitura' },
         ].map((kpi) => (
           <div key={kpi.label} className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl p-4">

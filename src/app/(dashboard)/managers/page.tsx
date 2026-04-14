@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation'
 
 export default async function ManagersPage() {
   const session = await requireSession()
-  if (session.role !== 'ADMIN') redirect('/dashboard')
+  if (session.role !== 'ADMIN' && session.role !== 'CS') redirect('/dashboard')
 
   const [managers, mrrData] = await Promise.all([
     getManagersOverview(),

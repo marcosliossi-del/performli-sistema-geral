@@ -4,8 +4,9 @@ import { prisma } from '@/lib/prisma'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 
 async function getUnreadAlertCount(userId: string, role: string): Promise<number> {
+  const isViewAll = role === 'ADMIN' || role === 'CS'
   const where =
-    role === 'ADMIN'
+    isViewAll
       ? { read: false }
       : { read: false, client: { assignments: { some: { userId } } } }
 

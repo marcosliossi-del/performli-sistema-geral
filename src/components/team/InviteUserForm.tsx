@@ -72,6 +72,7 @@ export function InviteUserForm() {
                 >
                   <option value="ADMIN">Admin</option>
                   <option value="MANAGER">Gestor</option>
+                  <option value="CS">Sucesso do Cliente</option>
                   <option value="ANALYST">Analista</option>
                 </select>
               </div>

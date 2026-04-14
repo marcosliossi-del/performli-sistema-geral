@@ -15,9 +15,10 @@ interface TopNavProps {
 }
 
 const roleLabels: Record<SessionPayload['role'], string> = {
-  ADMIN: 'Admin',
+  ADMIN:   'Admin',
   MANAGER: 'Gestor',
   ANALYST: 'Analista',
+  CS:      'Succ. Clientes',
 }
 
 export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAlerts = 0 }: TopNavProps) {

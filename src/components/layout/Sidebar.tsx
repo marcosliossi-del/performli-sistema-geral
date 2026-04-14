@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
-type Role = 'ADMIN' | 'MANAGER' | 'ANALYST'
+type Role = 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS'
 
 type NavItemDef = {
   name: string
@@ -55,7 +55,7 @@ const navigation: NavSection[] = [
     items: [
       { name: 'Meus Clientes',          href: '/clients',    icon: Users },
       { name: 'Pipeline CRM',            href: '/pipeline',  icon: Kanban },
-      { name: 'Novo Onboarding',         href: '/clients/new', icon: UserPlus, roles: ['ADMIN'] },
+      { name: 'Novo Onboarding',         href: '/clients/new', icon: UserPlus, roles: ['ADMIN' as Role] },
       { name: 'Registro de Operações',   href: '/operations', icon: BookOpen },
       { name: 'Anti Churn & Retenção',   href: '/anti-churn', icon: ShieldAlert },
       { name: 'Relatórios',              href: '/reports',    icon: BarChart3 },
@@ -69,11 +69,11 @@ const navigation: NavSection[] = [
   },
   {
     label: 'AGÊNCIA',
-    roles: ['ADMIN'],
+    roles: ['ADMIN', 'CS'],
     items: [
-      { name: 'Visão Geral', href: '/agency',   icon: Building2 },
+      { name: 'Visão Geral', href: '/agency',   icon: Building2, roles: ['ADMIN' as Role] },
       { name: 'Gestores',    href: '/managers', icon: PieChart },
-      { name: 'Equipe',      href: '/team',     icon: Users },
+      { name: 'Equipe',      href: '/team',     icon: Users,     roles: ['ADMIN' as Role] },
     ],
   },
 ]
