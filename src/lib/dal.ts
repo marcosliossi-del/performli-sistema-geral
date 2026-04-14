@@ -993,8 +993,10 @@ export type ManagerWithStats = {
   name: string
   role: string
   clientCount: number
-  goalsHit: number   // clientes com overallStatus OTIMO ("meta batida")
-  goalsOff: number   // clientes com overallStatus RUIM ou sem dados
+  goalsHit: number      // overallStatus OTIMO — meta batida
+  goalsWarning: number  // overallStatus REGULAR — atenção
+  goalsCritical: number // overallStatus RUIM — crítico
+  noData: number        // overallStatus null — sem dados de saúde
   clients: ManagerClientRow[]
 }
 
@@ -1067,10 +1069,10 @@ export const getManagersOverview = cache(async (): Promise<ManagerWithStats[]> =
       }
     })
 
-    const goalsHit = clientRows.filter((c) => c.overallStatus === 'OTIMO').length
-    const goalsOff = clientRows.filter(
-      (c) => c.overallStatus === 'RUIM' || c.overallStatus === null
-    ).length
+    const goalsHit      = clientRows.filter((c) => c.overallStatus === 'OTIMO').length
+    const goalsWarning  = clientRows.filter((c) => c.overallStatus === 'REGULAR').length
+    const goalsCritical = clientRows.filter((c) => c.overallStatus === 'RUIM').length
+    const noData        = clientRows.filter((c) => c.overallStatus === null).length
 
     return {
       id: user.id,
@@ -1078,7 +1080,9 @@ export const getManagersOverview = cache(async (): Promise<ManagerWithStats[]> =
       role: user.role,
       clientCount: clientRows.length,
       goalsHit,
-      goalsOff,
+      goalsWarning,
+      goalsCritical,
+      noData,
       clients: clientRows,
     }
   })

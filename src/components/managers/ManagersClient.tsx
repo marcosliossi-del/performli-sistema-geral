@@ -119,13 +119,27 @@ export function ManagersClient({ managers }: Props) {
                 {/* Métricas */}
                 <div className="space-y-1.5 mb-3">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-[#87919E]">Clientes com meta batida</span>
+                    <span className="text-[#87919E]">Metas batidas</span>
                     <span className="text-[#22C55E] font-semibold">{manager.goalsHit}</span>
                   </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-[#87919E]">Clientes sem meta</span>
-                    <span className="text-[#EF4444] font-semibold">{manager.goalsOff}</span>
-                  </div>
+                  {manager.goalsWarning > 0 && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#87919E]">Em atenção</span>
+                      <span className="text-[#EAB308] font-semibold">{manager.goalsWarning}</span>
+                    </div>
+                  )}
+                  {manager.goalsCritical > 0 && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#87919E]">Crítico</span>
+                      <span className="text-[#EF4444] font-semibold">{manager.goalsCritical}</span>
+                    </div>
+                  )}
+                  {manager.noData > 0 && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#87919E]">Sem dados de saúde</span>
+                      <span className="text-[#87919E] font-semibold">{manager.noData}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Barra de progresso */}
