@@ -1408,12 +1408,10 @@ export const getManagersMRR = cache(async (): Promise<ManagerMRR[]> => {
               goals: {
                 where: {
                   metric: { in: ['SPEND', 'INVESTMENT'] },
-                  // Qualquer meta ativa (startDate no passado, endDate no futuro ou presente)
-                  startDate: { lte: today },
-                  endDate: { gte: today },
                 },
                 select: { targetValue: true, period: true },
                 orderBy: { endDate: 'desc' },
+                take: 2, // pega até 1 mensal + 1 semanal
               },
             },
           },
