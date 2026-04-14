@@ -31,11 +31,18 @@ export async function inviteUser(formData: FormData) {
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 12)
 
+  // Explicitly pass only schema fields — never spread parsed.data which includes `password`
   await prisma.user.create({
-    data: { ...parsed.data, passwordHash },
+    data: {
+      name:         parsed.data.name,
+      email:        parsed.data.email,
+      role:         parsed.data.role,
+      passwordHash,
+    },
   })
 
   revalidatePath('/team')
+  revalidatePath('/managers/assignments')
 }
 
 export async function updateUserRole(userId: string, newRole: Role) {
@@ -57,4 +64,19 @@ export async function toggleUserActive(userId: string) {
 
   await prisma.user.update({ where: { id: userId }, data: { active: !user.active } })
   revalidatePath('/team')
+  revalidatePath('/managers/assignments')
+}
+
+export async function deleteUser(userId: string) {
+  const { role, userId: selfId } = await requireSession()
+  if (role !== 'ADMIN') throw new Error('Sem permissão')
+  if (userId === selfId) throw new Error('Não é possível excluir sua própria conta')
+
+  // Assignments cascade-delete via schema onDelete: Cascade
+  await prisma.user.delete({ where: { id: userId } })
+
+  revalidatePath('/team')
+  revalidatePath('/managers')
+  revalidatePath('/managers/assignments')
+  revalidatePath('/dashboard')
 }
