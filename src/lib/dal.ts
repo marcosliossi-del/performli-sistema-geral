@@ -217,7 +217,7 @@ export const getClientsOperationalTable = cache(async (
         },
       },
       healthScores: {
-        where: { periodStart: { gte: weekStart } },
+        where: { periodStart: { gte: monthStart } },
         select: { status: true },
       },
       goals: {
@@ -309,7 +309,8 @@ export type ClientListItem = {
 }
 
 export const getClientsList = cache(async (userId: string, role: string) => {
-  const { start: weekStart } = getWeekRange()
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
 
   const where: Prisma.ClientWhereInput =
     role === 'ADMIN'
@@ -326,7 +327,8 @@ export const getClientsList = cache(async (userId: string, role: string) => {
       },
       platformAccounts: { where: { active: true }, select: { platform: true } },
       healthScores: {
-        where: { periodStart: { gte: weekStart } },
+        // monthStart ensures both monthly (periodStart=1st) and weekly scores are included
+        where: { periodStart: { gte: monthStart } },
         select: { status: true, achievementPct: true },
       },
     },
@@ -334,8 +336,6 @@ export const getClientsList = cache(async (userId: string, role: string) => {
   })
 
   // Fetch current month KPIs for all clients in one query
-  const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const allSnaps = await prisma.metricSnapshot.findMany({
     where: { clientId: { in: clients.map((c) => c.id) }, date: { gte: monthStart } },
     select: { clientId: true, spend: true, conversionValue: true, platformAccount: { select: { platform: true } } },
@@ -1195,6 +1195,8 @@ export type ManagerStat = {
 
 export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
   const { start: weekStart, end: weekEnd } = getWeekRange()
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const prevWeekStart = new Date(weekStart)
   prevWeekStart.setDate(prevWeekStart.getDate() - 7)
   const prevWeekEnd = new Date(weekStart)
@@ -1217,9 +1219,9 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
         where: { date: { gte: weekStart, lte: weekEnd } },
         select: { spend: true, conversions: true, conversionValue: true, roas: true, cpa: true },
       },
-      // For previous week comparison
+      // Monthly scores use periodStart=1st; use monthStart to include both
       healthScores: {
-        where: { periodStart: { gte: weekStart } },
+        where: { periodStart: { gte: monthStart } },
         select: { status: true },
       },
     },
@@ -1700,7 +1702,6 @@ export type AgencyOverview = {
 export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-  const { start: weekStart } = getWeekRange()
 
   // Churn stats (independent of active clients)
   const churnedTotal = await prisma.client.count({ where: { status: 'CHURNED' } })
@@ -1723,7 +1724,7 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
         take: 1,
       },
       healthScores: {
-        where: { periodStart: { gte: weekStart } },
+        where: { periodStart: { gte: monthStart } },
         select: { status: true },
       },
     },
