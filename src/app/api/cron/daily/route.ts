@@ -31,8 +31,15 @@ import { sendDailyDigest } from '@/services/notifications/daily-digest'
  * Returns a JSON summary.
  */
 export async function POST(request: NextRequest) {
-  const cronSecret = request.headers.get('x-cron-secret')
-  if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
+  const expectedSecret = process.env.CRON_SECRET
+  // Vercel triggers cron jobs with "Authorization: Bearer {CRON_SECRET}"
+  // Manual/test calls may use "x-cron-secret: {CRON_SECRET}"
+  const authHeader = request.headers.get('authorization')
+  const bearerSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  const customSecret = request.headers.get('x-cron-secret')
+  const providedSecret = bearerSecret ?? customSecret
+
+  if (!expectedSecret || providedSecret !== expectedSecret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

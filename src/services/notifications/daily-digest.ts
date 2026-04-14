@@ -18,8 +18,9 @@ function emoji(status: string | null) {
 
 export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolean }> {
   const instanceId   = process.env.ZAPI_INSTANCE_ID
+  const token        = process.env.ZAPI_TOKEN
   const hasRecipient = process.env.WHATSAPP_GROUP_ID || process.env.WHATSAPP_NOTIFY_NUMBERS
-  if (!instanceId || !hasRecipient) return { sent: 0, skipped: true }
+  if (!instanceId || !token || !hasRecipient) return { sent: 0, skipped: true }
 
   const now        = new Date()
   const { start: weekStart }  = getWeekRange()
