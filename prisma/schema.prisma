@@ -26,14 +26,15 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  managedClients    ClientAssignment[]
-  tasks             Task[]
-  operations        Operation[]
-  aiConversations   AIConversation[]
-  alerts            Alert[]              @relation("TriggeredAlerts")
-  chatMessages      ClientChatMessage[]
-  weeklyChecklists  WeeklyChecklist[]
-  interactions      ClientInteraction[]
+  managedClients       ClientAssignment[]
+  tasks                Task[]
+  operations           Operation[]
+  aiConversations      AIConversation[]
+  alerts               Alert[]              @relation("TriggeredAlerts")
+  chatMessages         ClientChatMessage[]
+  weeklyChecklists     WeeklyChecklist[]
+  interactions         ClientInteraction[]
+  knowledgeDocuments   KnowledgeDocument[]
 }
 
 // ─── CLIENTS ─────────────────────────────────────────────────────────────────
@@ -610,4 +611,30 @@ model NuvemshopOrder {
   @@index([storeId, paymentStatus])
   @@index([ga4TransactionId])
   @@index([orderCreatedAt])
+}
+
+// ─── KNOWLEDGE BASE ───────────────────────────────────────────────────────────
+
+model KnowledgeDocument {
+  id           String   @id @default(cuid())
+  filename     String
+  title        String
+  uploadedById String
+  chunkCount   Int      @default(0)
+  tags         String[] @default(["ALL"]) // ALL | ECOMMERCE | LOCAL | CS
+  createdAt    DateTime @default(now())
+
+  uploader User             @relation(fields: [uploadedById], references: [id])
+  chunks   KnowledgeChunk[]
+}
+
+model KnowledgeChunk {
+  id         String @id @default(cuid())
+  documentId String
+  content    String
+  position   Int
+
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
 }

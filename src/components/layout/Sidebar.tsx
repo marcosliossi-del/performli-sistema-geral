@@ -19,6 +19,7 @@ import {
   Activity,
   Building2,
   Kanban,
+  BookMarked,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -64,7 +65,8 @@ const navigation: NavSection[] = [
   {
     label: 'INTELIGÊNCIA',
     items: [
-      { name: 'Agentes IA', href: '/ai-agents', icon: Bot },
+      { name: 'Agentes IA',           href: '/ai-agents',  icon: Bot },
+      { name: 'Base de Conhecimento', href: '/knowledge',  icon: BookMarked, roles: ['ADMIN' as Role] },
     ],
   },
   {
