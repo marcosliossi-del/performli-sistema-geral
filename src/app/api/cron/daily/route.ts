@@ -12,37 +12,24 @@ import { generateAllWeeklyChecklists } from '@/services/weekly-checklist-generat
 import { sendDailyDigest } from '@/services/notifications/daily-digest'
 
 /**
- * POST /api/cron/daily
+ * GET /api/cron/daily  ← Vercel Cron triggers GET requests
+ * POST /api/cron/daily ← manual/test trigger
  *
  * Master daily cron job. Runs at 12:00 UTC (09:00 BRT).
- * Auth: x-cron-secret header only (no session required).
- *
- * Steps (each runs independently — one failing won't stop the others):
- *   1. Sync all Meta Ads accounts
- *   2. Sync all GA4 accounts
- *   2b. Sync all Google Ads accounts
- *   2c. Sync all Nuvemshop accounts
- *   3. Recalculate health scores for all active clients
- *   4. Run oscillation detection for all active clients
- *   5. Score churn risk for all active clients
- *   6. Check budget warnings (≥90% consumed)
- *   7. [Mondays only] Generate weekly reports and checklists
- *
- * Returns a JSON summary.
+ * Auth: Vercel auto-sends "Authorization: Bearer {CRON_SECRET}".
+ *       Manual calls may use "x-cron-secret: {CRON_SECRET}".
  */
-export async function POST(request: NextRequest) {
+
+function isAuthorized(request: NextRequest): boolean {
   const expectedSecret = process.env.CRON_SECRET
-  // Vercel triggers cron jobs with "Authorization: Bearer {CRON_SECRET}"
-  // Manual/test calls may use "x-cron-secret: {CRON_SECRET}"
+  if (!expectedSecret) return false
   const authHeader = request.headers.get('authorization')
   const bearerSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
   const customSecret = request.headers.get('x-cron-secret')
-  const providedSecret = bearerSecret ?? customSecret
+  return (bearerSecret ?? customSecret) === expectedSecret
+}
 
-  if (!expectedSecret || providedSecret !== expectedSecret) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
+async function runDailySync() {
   const isMonday = new Date().getDay() === 1
 
   const summary: Record<string, unknown> = {
@@ -201,5 +188,23 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  return summary
+}
+
+// GET — Vercel Cron auto-trigger
+export async function GET(request: NextRequest) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const summary = await runDailySync()
+  return NextResponse.json({ ok: true, ...summary })
+}
+
+// POST — manual / test trigger (same logic)
+export async function POST(request: NextRequest) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const summary = await runDailySync()
   return NextResponse.json({ ok: true, ...summary })
 }
