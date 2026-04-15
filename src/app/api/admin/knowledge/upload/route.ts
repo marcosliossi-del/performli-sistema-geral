@@ -1,9 +1,14 @@
 export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { PDFParse } from 'pdf-parse'
+import Anthropic from '@anthropic-ai/sdk'
+import type { BetaBase64PDFSource, BetaMessageParam } from '@anthropic-ai/sdk/resources/beta/messages/messages'
 import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+// ── Text chunking ─────────────────────────────────────────────────────────────
 
 function chunkText(text: string): string[] {
   const paragraphs = text
@@ -35,6 +40,42 @@ function chunkText(text: string): string[] {
   return chunks
 }
 
+// ── PDF text extraction via Claude Haiku ──────────────────────────────────────
+
+async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
+  const base64 = Buffer.from(buffer).toString('base64')
+
+  const pdfSource: BetaBase64PDFSource = {
+    type: 'base64',
+    media_type: 'application/pdf',
+    data: base64,
+  }
+
+  const messages: BetaMessageParam[] = [
+    {
+      role: 'user',
+      content: [
+        { type: 'document', source: pdfSource },
+        {
+          type: 'text',
+          text: 'Extraia todo o conteúdo textual deste documento. Separe os parágrafos com linhas em branco. Retorne apenas o texto extraído, sem introduções, comentários ou formatação extra.',
+        },
+      ],
+    },
+  ]
+
+  const response = await anthropic.beta.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 4096,
+    messages,
+    betas: ['pdfs-2024-09-25'],
+  })
+
+  return response.content[0]?.type === 'text' ? response.content[0].text : ''
+}
+
+// ── Route handler ─────────────────────────────────────────────────────────────
+
 export async function POST(request: NextRequest) {
   const session = await getSession()
   if (!session || session.role !== 'ADMIN') {
@@ -43,7 +84,7 @@ export async function POST(request: NextRequest) {
 
   const formData = await request.formData()
   const files = formData.getAll('files') as File[]
-  const tagsRaw = formData.get('tags') as string ?? 'ALL'
+  const tagsRaw = (formData.get('tags') as string) ?? 'ALL'
   const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean)
 
   if (!files.length) {
@@ -66,15 +107,10 @@ export async function POST(request: NextRequest) {
 
     try {
       const arrayBuffer = await file.arrayBuffer()
-      const data = new Uint8Array(arrayBuffer)
-
-      // pdf-parse v2 API: new PDFParse({ data }) then .getText()
-      const parser = new PDFParse({ data })
-      const parsed = await parser.getText()
-      const text: string = parsed.text ?? ''
+      const text = await extractTextFromPDF(arrayBuffer)
 
       if (!text.trim()) {
-        results.push({ filename: file.name, success: false, error: 'PDF sem texto extraível (pode ser um scan)' })
+        results.push({ filename: file.name, success: false, error: 'Nenhum texto extraído do PDF' })
         continue
       }
 
@@ -106,7 +142,8 @@ export async function POST(request: NextRequest) {
       results.push({ filename: file.name, success: true, chunkCount: chunks.length, documentId: doc.id })
     } catch (err) {
       console.error(`[knowledge-upload] Error processing ${file.name}:`, err)
-      results.push({ filename: file.name, success: false, error: 'Erro ao processar o arquivo' })
+      const message = err instanceof Error ? err.message : 'Erro ao processar o arquivo'
+      results.push({ filename: file.name, success: false, error: message })
     }
   }
 
