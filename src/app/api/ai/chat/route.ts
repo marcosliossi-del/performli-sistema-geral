@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { getClientAIContext, getSeasonalityContext } from '@/lib/ai-client-context'
+import { searchKnowledge, formatKnowledgeContext } from '@/lib/knowledge-search'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -139,6 +140,14 @@ export async function POST(request: NextRequest) {
     const seasonality = getSeasonalityContext()
     if (seasonality) {
       systemPrompt += '\n\n' + seasonality
+    }
+
+    // Search knowledge base for relevant material
+    const lastUserMessage = anthropicMessages[anthropicMessages.length - 1].content
+    const knowledgeChunks = await searchKnowledge(lastUserMessage, agentType, 4)
+    const knowledgeContext = formatKnowledgeContext(knowledgeChunks)
+    if (knowledgeContext) {
+      systemPrompt += '\n\n' + knowledgeContext
     }
 
     const response = await client.messages.create({
