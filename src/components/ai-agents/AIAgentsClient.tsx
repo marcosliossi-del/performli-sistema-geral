@@ -76,7 +76,21 @@ interface Message {
   content: string
 }
 
-function MessageBubble({ msg }: { msg: Message }) {
+function MessageBubble({ msg, isStreaming }: { msg: Message; isStreaming?: boolean }) {
+  if (msg.role === 'assistant' && msg.content === '' && isStreaming) {
+    return (
+      <div className="flex justify-start">
+        <div className="bg-[#38435C] rounded-xl px-4 py-3">
+          <div className="flex gap-1">
+            <span className="w-2 h-2 rounded-full bg-[#87919E] animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-2 h-2 rounded-full bg-[#87919E] animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-2 h-2 rounded-full bg-[#87919E] animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const formatted = msg.content
     .split('\n')
     .map((line, i, arr) => {
@@ -104,6 +118,9 @@ function MessageBubble({ msg }: { msg: Message }) {
         )}
       >
         {formatted}
+        {isStreaming && msg.content.length > 0 && (
+          <span className="inline-block w-0.5 h-3.5 bg-[#87919E] ml-0.5 animate-pulse align-middle" />
+        )}
       </div>
     </div>
   )
@@ -259,7 +276,7 @@ export function AIAgentsClient({ role }: { role: string }) {
     if (!content.trim() || loading) return
     const userMsg: Message = { role: 'user', content }
     const newMessages = [...messages, userMsg]
-    setMessages(newMessages)
+    setMessages([...newMessages, { role: 'assistant', content: '' }])
     setInput('')
     setLoading(true)
 
@@ -273,10 +290,36 @@ export function AIAgentsClient({ role }: { role: string }) {
           clientId: selectedClient?.id ?? null,
         }),
       })
-      const data = await res.json()
-      setMessages(prev => [...prev, { role: 'assistant', content: data.content || data.error || 'Erro ao processar.' }])
+
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({ error: `Erro HTTP ${res.status}` }))
+        setMessages(prev => {
+          const copy = [...prev]
+          copy[copy.length - 1] = { role: 'assistant', content: err.error || 'Erro ao processar.' }
+          return copy
+        })
+        return
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, { stream: true })
+        setMessages(prev => {
+          const copy = [...prev]
+          copy[copy.length - 1] = { ...copy[copy.length - 1], content: copy[copy.length - 1].content + chunk }
+          return copy
+        })
+      }
     } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Erro ao conectar com a IA. Tente novamente.' }])
+      setMessages(prev => {
+        const copy = [...prev]
+        copy[copy.length - 1] = { role: 'assistant', content: 'Erro ao conectar com a IA. Tente novamente.' }
+        return copy
+      })
     } finally {
       setLoading(false)
     }
@@ -380,18 +423,13 @@ export function AIAgentsClient({ role }: { role: string }) {
                 )}
               </div>
             ) : (
-              messages.map((msg, i) => <MessageBubble key={i} msg={msg} />)
-            )}
-            {loading && (
-              <div className="flex justify-start">
-                <div className="bg-[#38435C] rounded-xl px-4 py-3">
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 rounded-full bg-[#87919E] animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-2 h-2 rounded-full bg-[#87919E] animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-2 h-2 rounded-full bg-[#87919E] animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                </div>
-              </div>
+              messages.map((msg, i) => (
+                <MessageBubble
+                  key={i}
+                  msg={msg}
+                  isStreaming={loading && i === messages.length - 1 && msg.role === 'assistant'}
+                />
+              ))
             )}
             <div ref={bottomRef} />
           </div>

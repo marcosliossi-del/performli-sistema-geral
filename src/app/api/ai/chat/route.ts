@@ -154,16 +154,34 @@ export async function POST(request: NextRequest) {
       systemPrompt += '\n\n' + knowledgeContext
     }
 
-    const response = await client.messages.create({
+    const stream = client.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system: systemPrompt,
       messages: anthropicMessages,
     })
 
-    const content = response.content[0]?.type === 'text' ? response.content[0].text : ''
+    const readable = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder()
+        try {
+          for await (const event of stream) {
+            if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+              controller.enqueue(encoder.encode(event.delta.text))
+            }
+          }
+        } finally {
+          controller.close()
+        }
+      },
+      cancel() {
+        stream.abort()
+      },
+    })
 
-    return NextResponse.json({ content })
+    return new Response(readable, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    })
   } catch (error) {
     console.error('AI chat error:', error)
     return NextResponse.json(
