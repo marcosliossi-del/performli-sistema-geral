@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { timeAgo } from '@/lib/utils'
 import { RecalcHealthButton } from '@/components/dashboard/RecalcHealthButton'
+import { SendDigestButton } from '@/components/dashboard/SendDigestButton'
 
 const alertIcons = {
   STATUS_DROPPED_TO_RUIM: { icon: AlertTriangle, color: 'text-[#EF4444]' },
@@ -68,6 +69,7 @@ export default async function DashboardPage() {
             <span>Semana atual</span>
           </div>
           {session.role === 'ADMIN' && <RecalcHealthButton />}
+          {session.role === 'ADMIN' && <SendDigestButton />}
         </div>
       </div>
 
