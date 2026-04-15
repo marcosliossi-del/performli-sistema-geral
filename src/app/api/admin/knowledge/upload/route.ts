@@ -1,11 +1,11 @@
 export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { PDFParse } from 'pdf-parse'
 import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 
 function chunkText(text: string): string[] {
-  // Normalize line endings and split by blank lines (paragraphs)
   const paragraphs = text
     .replace(/\r\n/g, '\n')
     .split(/\n{2,}/)
@@ -18,7 +18,6 @@ function chunkText(text: string): string[] {
     if (para.length <= 900) {
       chunks.push(para)
     } else {
-      // Split long paragraphs at sentence boundaries
       const sentences = para.split(/(?<=[.!?])\s+/)
       let current = ''
       for (const sent of sentences) {
@@ -51,10 +50,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Nenhum arquivo enviado' }, { status: 400 })
   }
 
-  // Dynamic import to avoid Next.js bundling issues with pdf-parse test files
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pdfParse = (await import('pdf-parse/lib/pdf-parse.js' as any)).default
-
   const results: {
     filename: string
     success: boolean
@@ -70,16 +65,19 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const buffer = Buffer.from(await file.arrayBuffer())
-      const data = await pdfParse(buffer)
-      const text: string = data.text ?? ''
+      const arrayBuffer = await file.arrayBuffer()
+      const data = new Uint8Array(arrayBuffer)
+
+      // pdf-parse v2 API: new PDFParse({ data }) then .getText()
+      const parser = new PDFParse({ data })
+      const parsed = await parser.getText()
+      const text: string = parsed.text ?? ''
 
       if (!text.trim()) {
         results.push({ filename: file.name, success: false, error: 'PDF sem texto extraível (pode ser um scan)' })
         continue
       }
 
-      // Generate readable title from filename
       const title = file.name
         .replace(/\.pdf$/i, '')
         .replace(/[-_]/g, ' ')
