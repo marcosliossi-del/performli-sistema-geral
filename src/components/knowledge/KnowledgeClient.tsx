@@ -80,26 +80,44 @@ export function KnowledgeClient() {
     if (e.dataTransfer.files) addFiles(e.dataTransfer.files)
   }, [])
 
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; name: string } | null>(null)
+
   async function upload() {
     if (!files.length || uploading) return
     setUploading(true)
     setResults([])
 
-    const formData = new FormData()
-    files.forEach(f => formData.append('files', f))
-    formData.append('tags', tag)
+    const accumulated: UploadResult[] = []
 
-    try {
-      const res = await fetch('/api/admin/knowledge/upload', { method: 'POST', body: formData })
-      const data = await res.json()
-      setResults(data.results ?? [])
-      setFiles([])
-      fetchDocs()
-    } catch {
-      setResults([{ filename: 'Erro geral', success: false, error: 'Falha ao conectar com o servidor' }])
-    } finally {
-      setUploading(false)
+    // Upload one file at a time to stay within Vercel's body size limit
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      setUploadProgress({ current: i + 1, total: files.length, name: file.name })
+
+      const formData = new FormData()
+      formData.append('files', file)
+      formData.append('tags', tag)
+
+      try {
+        const res = await fetch('/api/admin/knowledge/upload', { method: 'POST', body: formData })
+        if (!res.ok) {
+          accumulated.push({ filename: file.name, success: false, error: `Erro HTTP ${res.status}` })
+        } else {
+          const data = await res.json()
+          const fileResult = data.results?.[0]
+          if (fileResult) accumulated.push(fileResult)
+        }
+      } catch {
+        accumulated.push({ filename: file.name, success: false, error: 'Falha ao conectar com o servidor' })
+      }
+
+      setResults([...accumulated])
     }
+
+    setUploadProgress(null)
+    setFiles([])
+    setUploading(false)
+    fetchDocs()
   }
 
   async function deleteDoc(id: string) {
@@ -220,8 +238,8 @@ export function KnowledgeClient() {
               disabled={!files.length || uploading}
               className="w-full"
             >
-              {uploading ? (
-                <><Loader2 size={14} className="animate-spin mr-2" /> Processando...</>
+              {uploading && uploadProgress ? (
+                <><Loader2 size={14} className="animate-spin mr-2" /> {uploadProgress.current}/{uploadProgress.total} — {uploadProgress.name.slice(0, 24)}{uploadProgress.name.length > 24 ? '…' : ''}</>
               ) : (
                 <><Upload size={14} className="mr-2" /> Enviar {files.length > 0 ? `${files.length} arquivo${files.length > 1 ? 's' : ''}` : 'materiais'}</>
               )}
