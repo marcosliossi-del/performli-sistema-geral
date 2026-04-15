@@ -62,11 +62,27 @@ export function KnowledgeClient() {
 
   useEffect(() => { fetchDocs() }, [fetchDocs])
 
+  const MAX_FILE_SIZE = 4 * 1024 * 1024 // 4 MB — Vercel Hobby limit
+
   function addFiles(newFiles: FileList | File[]) {
     const pdfs = Array.from(newFiles).filter(f => f.name.toLowerCase().endsWith('.pdf'))
+    const tooBig = pdfs.filter(f => f.size > MAX_FILE_SIZE)
+    if (tooBig.length) {
+      const names = tooBig.map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`).join(', ')
+      setResults(prev => [
+        ...prev,
+        ...tooBig.map(f => ({
+          filename: f.name,
+          success: false,
+          error: `Arquivo muito grande (${(f.size / 1024 / 1024).toFixed(1)}MB). Máximo: 4MB. Comprima o PDF antes de enviar.`,
+        })),
+      ])
+      if (tooBig.length === pdfs.length) return
+    }
+    const valid = pdfs.filter(f => f.size <= MAX_FILE_SIZE)
     setFiles(prev => {
       const existing = new Set(prev.map(f => f.name))
-      return [...prev, ...pdfs.filter(f => !existing.has(f.name))]
+      return [...prev, ...valid.filter(f => !existing.has(f.name))]
     })
   }
 
