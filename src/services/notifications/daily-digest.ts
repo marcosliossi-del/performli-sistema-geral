@@ -27,7 +27,15 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
   const instanceId   = process.env.ZAPI_INSTANCE_ID
   const token        = process.env.ZAPI_TOKEN
   const hasRecipient = process.env.WHATSAPP_GROUP_ID || process.env.WHATSAPP_NOTIFY_NUMBERS
-  if (!instanceId || !token || !hasRecipient) return { sent: 0, skipped: true }
+  if (!instanceId || !token || !hasRecipient) {
+    const missing = [
+      !instanceId   && 'ZAPI_INSTANCE_ID',
+      !token        && 'ZAPI_TOKEN',
+      !hasRecipient && 'WHATSAPP_GROUP_ID (or WHATSAPP_NOTIFY_NUMBERS)',
+    ].filter(Boolean).join(', ')
+    console.warn(`[daily-digest] Skipped — missing env vars: ${missing}`)
+    return { sent: 0, skipped: true }
+  }
 
   const now       = new Date()
   const { start: weekStart }  = getWeekRange()
