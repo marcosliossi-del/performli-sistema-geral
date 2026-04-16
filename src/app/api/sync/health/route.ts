@@ -3,6 +3,9 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { recalculateClientHealth } from '@/services/health-scorer'
 import { dispatchAlertsForClient } from '@/services/alert-dispatcher'
+import { syncAllGA4Accounts } from '@/services/ga4/sync'
+import { syncAllMetaAccounts } from '@/services/meta-ads/sync'
+import { syncAllGoogleAdsAccounts } from '@/services/google-ads/sync'
 import { getSession } from '@/lib/session'
 
 /**
@@ -38,7 +41,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}))
-  const { clientId } = body as { clientId?: string }
+  const { clientId, sync } = body as { clientId?: string; sync?: boolean }
 
   // Determine which clients to process
   let clientIds: string[]
@@ -64,6 +67,18 @@ export async function POST(request: NextRequest) {
       select: { id: true },
     })
     clientIds = clients.map((c) => c.id)
+  }
+
+  // ── Optional: sync fresh platform data before recalculating ──────────────
+  // When sync=true (e.g. triggered from the dashboard button), fetch fresh
+  // data from GA4 / Meta / Google Ads so health scores reflect current reality.
+  // This is what makes "Recalcular Saúde" actually see updated numbers.
+  if (sync) {
+    await Promise.allSettled([
+      syncAllGA4Accounts(),
+      syncAllMetaAccounts(),
+      syncAllGoogleAdsAccounts(),
+    ])
   }
 
   // Process clients in parallel batches of 5 to avoid DB overload
