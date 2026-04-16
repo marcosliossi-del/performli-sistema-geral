@@ -4,6 +4,13 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { RefreshCw } from 'lucide-react'
 
+const STEPS = [
+  { label: 'Sincronizando GA4...', path: '/api/sync/ga4',         body: '{}' },
+  { label: 'Sincronizando Meta...', path: '/api/sync/meta',        body: '{}' },
+  { label: 'Sincronizando Google Ads...', path: '/api/sync/google-ads', body: '{}' },
+  { label: 'Recalculando saúde...', path: '/api/sync/health',      body: '{}' },
+]
+
 export function RecalcHealthButton() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -11,30 +18,26 @@ export function RecalcHealthButton() {
 
   async function handleClick() {
     setLoading(true)
-    setResult('Recalculando...')
     try {
-      const res = await fetch('/api/sync/health', {
-        method: 'POST',
-        body: '{}',
-        headers: { 'Content-Type': 'application/json' },
-      })
-      if (!res.ok) {
-        const text = await res.text().catch(() => `HTTP ${res.status}`)
-        setResult(`Erro ${res.status}`)
-        console.error('[RecalcHealth]', res.status, text)
-        return
+      for (const step of STEPS) {
+        setResult(step.label)
+        // Each request has its own timeout — failure of one step doesn't stop the rest
+        const res = await fetch(step.path, {
+          method: 'POST',
+          body: step.body,
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(90_000),
+        }).catch(() => null)
+
+        if (!res?.ok) {
+          console.warn(`[RecalcHealth] ${step.path} responded ${res?.status ?? 'network error'} — continuing`)
+        }
       }
-      const data = await res.json()
-      if (data.ok) {
-        setResult(`✓ ${data.clientsProcessed} atualizados`)
-        // router.refresh() tells Next.js to re-run Server Components for the
-        // current page, bypassing the route cache — so fresh DB data is shown immediately.
-        setTimeout(() => { setResult(null); router.refresh() }, 1500)
-      } else {
-        setResult(data.error ?? 'Erro ao recalcular')
-      }
+
+      setResult('✓ Dados atualizados')
+      setTimeout(() => { setResult(null); router.refresh() }, 1500)
     } catch (e) {
-      setResult('Erro de rede')
+      setResult('Erro ao sincronizar')
       console.error('[RecalcHealth]', e)
     } finally {
       setLoading(false)
@@ -46,7 +49,7 @@ export function RecalcHealthButton() {
       onClick={handleClick}
       disabled={loading}
       className="flex items-center gap-1.5 text-xs text-[#87919E] hover:text-[#EBEBEB] transition-colors disabled:opacity-50"
-      title="Recalcular saúde de todos os clientes"
+      title="Sincronizar dados e recalcular saúde de todos os clientes"
     >
       <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
       <span>{result ?? 'Recalcular saúde'}</span>
