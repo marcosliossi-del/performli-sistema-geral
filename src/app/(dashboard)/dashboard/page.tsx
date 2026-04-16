@@ -1,4 +1,4 @@
-export const revalidate = 120
+export const dynamic = 'force-dynamic'
 
 import { requireSession } from '@/lib/dal'
 import { getDashboardData, getClientsOperationalTable, getManagerStats, getWeeklyChecklist } from '@/lib/dal'

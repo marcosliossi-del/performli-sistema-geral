@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { RefreshCw } from 'lucide-react'
 
 export function RecalcHealthButton() {
+  const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<string | null>(null)
 
@@ -25,7 +27,10 @@ export function RecalcHealthButton() {
       const data = await res.json()
       if (data.ok) {
         setResult(`✓ ${data.clientsProcessed} atualizados`)
-        setTimeout(() => { setResult(null); window.location.reload() }, 2000)
+        // router.refresh() tells Next.js to re-run Server Components for the
+        // current page, bypassing the route cache — so fresh DB data is shown
+        // immediately instead of the stale ISR-cached version.
+        setTimeout(() => { setResult(null); router.refresh() }, 1500)
       } else {
         setResult(data.error ?? 'Erro ao sincronizar')
       }
