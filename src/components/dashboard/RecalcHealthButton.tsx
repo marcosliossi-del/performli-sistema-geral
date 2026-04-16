@@ -1,47 +1,47 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { RefreshCw } from 'lucide-react'
 
 const STEPS = [
-  { label: 'Sincronizando GA4...', path: '/api/sync/ga4',         body: '{}' },
-  { label: 'Sincronizando Meta...', path: '/api/sync/meta',        body: '{}' },
-  { label: 'Sincronizando Google Ads...', path: '/api/sync/google-ads', body: '{}' },
-  { label: 'Recalculando saúde...', path: '/api/sync/health',      body: '{}' },
+  { label: 'Sincronizando GA4...',         path: '/api/sync/ga4' },
+  { label: 'Sincronizando Meta...',         path: '/api/sync/meta' },
+  { label: 'Sincronizando Google Ads...',   path: '/api/sync/google-ads' },
+  { label: 'Recalculando saúde...',         path: '/api/sync/health' },
 ]
 
 export function RecalcHealthButton() {
-  const router = useRouter()
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<string | null>(null)
+  const [result, setResult]   = useState<string | null>(null)
 
   async function handleClick() {
     setLoading(true)
     try {
       for (const step of STEPS) {
         setResult(step.label)
-        // Each request has its own timeout — failure of one step doesn't stop the rest
         const res = await fetch(step.path, {
-          method: 'POST',
-          body: step.body,
+          method:  'POST',
+          body:    '{}',
           headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(90_000),
+          signal:  AbortSignal.timeout(90_000),
         }).catch(() => null)
 
         if (!res?.ok) {
-          console.warn(`[RecalcHealth] ${step.path} responded ${res?.status ?? 'network error'} — continuing`)
+          console.warn(`[RecalcHealth] ${step.path} → ${res?.status ?? 'network error'} (continuing)`)
         }
       }
 
-      setResult('✓ Dados atualizados')
-      setTimeout(() => { setResult(null); router.refresh() }, 1500)
+      setResult('✓ Concluído — recarregando...')
+      // Hard reload: page is force-dynamic so there is no stale ISR cache.
+      // window.location.reload() guarantees a fresh server render of the full
+      // page + layout, updating every section (manager cards, health grid, etc.)
+      setTimeout(() => window.location.reload(), 800)
     } catch (e) {
       setResult('Erro ao sincronizar')
       console.error('[RecalcHealth]', e)
-    } finally {
       setLoading(false)
     }
+    // Don't setLoading(false) here — page reloads, component unmounts anyway
   }
 
   return (
