@@ -11,11 +11,11 @@ export function RecalcHealthButton() {
 
   async function handleClick() {
     setLoading(true)
-    setResult('Sincronizando...')
+    setResult('Recalculando...')
     try {
       const res = await fetch('/api/sync/health', {
         method: 'POST',
-        body: JSON.stringify({ sync: true }),
+        body: '{}',
         headers: { 'Content-Type': 'application/json' },
       })
       if (!res.ok) {
@@ -28,11 +28,10 @@ export function RecalcHealthButton() {
       if (data.ok) {
         setResult(`✓ ${data.clientsProcessed} atualizados`)
         // router.refresh() tells Next.js to re-run Server Components for the
-        // current page, bypassing the route cache — so fresh DB data is shown
-        // immediately instead of the stale ISR-cached version.
+        // current page, bypassing the route cache — so fresh DB data is shown immediately.
         setTimeout(() => { setResult(null); router.refresh() }, 1500)
       } else {
-        setResult(data.error ?? 'Erro ao sincronizar')
+        setResult(data.error ?? 'Erro ao recalcular')
       }
     } catch (e) {
       setResult('Erro de rede')
@@ -47,7 +46,7 @@ export function RecalcHealthButton() {
       onClick={handleClick}
       disabled={loading}
       className="flex items-center gap-1.5 text-xs text-[#87919E] hover:text-[#EBEBEB] transition-colors disabled:opacity-50"
-      title="Sincronizar dados e recalcular saúde de todos os clientes"
+      title="Recalcular saúde de todos os clientes"
     >
       <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
       <span>{result ?? 'Recalcular saúde'}</span>
