@@ -10,6 +10,7 @@ import { checkBudgetWarnings } from '@/services/budget-monitor'
 import { generateAllWeeklyReports } from '@/services/weekly-report-generator'
 import { generateAllWeeklyChecklists } from '@/services/weekly-checklist-generator'
 import { sendDailyDigest } from '@/services/notifications/daily-digest'
+import { syncAsaasData } from '@/services/asaas/sync'
 
 /**
  * GET /api/cron/daily  ← Vercel Cron triggers GET requests
@@ -34,6 +35,7 @@ async function runDailySync() {
 
   const summary: Record<string, unknown> = {
     synced: { meta: { ok: false }, ga4: { ok: false }, googleAds: { ok: false }, nuvemshop: { ok: false } },
+    asaas: { ok: false },
     healthScores: { ok: false },
     alerts: { ok: false },
     churnRisk: { ok: false },
@@ -127,6 +129,14 @@ async function runDailySync() {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     }
+  }
+
+  // ── Step 5b: Sync Asaas financial data ────────────────────────────────────
+  try {
+    const asaasResult = await syncAsaasData()
+    summary.asaas = { ok: true, ...asaasResult }
+  } catch (err) {
+    summary.asaas = { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 
   // ── Step 6: Budget warnings ────────────────────────────────────────────────

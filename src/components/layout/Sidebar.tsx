@@ -20,6 +20,8 @@ import {
   Building2,
   Kanban,
   BookMarked,
+  TrendingUp,
+  Target,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -67,6 +69,15 @@ const navigation: NavSection[] = [
     items: [
       { name: 'Agentes IA',           href: '/ai-agents',  icon: Bot },
       { name: 'Base de Conhecimento', href: '/knowledge',  icon: BookMarked, roles: ['ADMIN' as Role] },
+    ],
+  },
+  {
+    label: 'FINANCEIRO',
+    roles: ['ADMIN', 'CS'],
+    expandable: true,
+    items: [
+      { name: 'DRE',              href: '/financeiro',  icon: TrendingUp },
+      { name: 'CRM Comercial',    href: '/comercial',   icon: Target },
     ],
   },
   {
