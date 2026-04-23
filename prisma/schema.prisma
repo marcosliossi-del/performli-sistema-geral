@@ -823,3 +823,11 @@ model AgencyActivity {
 
   @@index([leadId])
 }
+
+// ─── INTEGRATION SETTINGS ────────────────────────────────────────────────────
+
+model IntegrationSetting {
+  key       String   @id   // e.g. "EVOLUTION_URL", "EVOLUTION_KEY", "EVOLUTION_INSTANCE"
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+}
