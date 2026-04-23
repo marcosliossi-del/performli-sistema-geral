@@ -8,9 +8,10 @@ import { ReceitaMediaChart } from '@/components/financeiro/ReceitaMediaChart'
 import { DistribuicaoDonut } from '@/components/financeiro/DistribuicaoDonut'
 import { MovimentacoesTable } from '@/components/financeiro/MovimentacoesTable'
 import { PeriodSelector } from '@/components/financeiro/PeriodSelector'
+import { SyncAsaasButton } from '@/components/financeiro/SyncAsaasButton'
 import {
   TrendingUp, TrendingDown, DollarSign, Users, AlertCircle,
-  Clock, Calendar, BarChart3, RefreshCw,
+  Clock, Calendar, BarChart3,
 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -229,13 +230,7 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
           <h1 className="text-xl font-bold text-[#EBEBEB]">DRE — Financeiro</h1>
           <p className="text-sm text-[#87919E] mt-0.5">Demonstrativo de resultado da agência</p>
         </div>
-        <a
-          href="/api/asaas/sync"
-          className="flex items-center gap-1.5 text-xs text-[#87919E] hover:text-[#EBEBEB] transition-colors"
-        >
-          <RefreshCw size={12} />
-          Sincronizar Asaas
-        </a>
+        <SyncAsaasButton />
       </div>
 
       {/* Period selector */}
