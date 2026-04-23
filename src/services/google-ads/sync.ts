@@ -3,6 +3,7 @@ import { GoogleAdsClient } from './client'
 import { aggregateByDate } from './transformers'
 import { recalculateClientHealth } from '@/services/health-scorer'
 import { dispatchAlertsForClient } from '@/services/alert-dispatcher'
+import { createSyncFailedAlert } from '@/lib/sync-alert'
 
 interface SyncOptions {
   since?: string
@@ -110,14 +111,11 @@ export async function syncGoogleAdsAccount(
       where: { id: syncLog.id },
       data:  { status: 'FAILED', errorMessage, completedAt: new Date() },
     })
-    await prisma.alert.create({
-      data: {
-        clientId: account.clientId,
-        type:     'SYNC_FAILED',
-        title:    `Falha no sync Google Ads — ${account.client.name}`,
-        body:     `Não foi possível buscar dados de ${account.externalId}: ${errorMessage}`,
-      },
-    })
+    await createSyncFailedAlert(
+      account.clientId,
+      `Falha no sync Google Ads — ${account.client.name}`,
+      `Não foi possível buscar dados de ${account.externalId}: ${errorMessage}`,
+    )
     return { platformAccountId, customerId: account.externalId, status: 'FAILED',
       recordsUpserted: 0, errorMessage, healthScoresUpdated: 0, alertsCreated: 0 }
   }

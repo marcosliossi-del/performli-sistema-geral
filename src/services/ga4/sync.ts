@@ -15,6 +15,7 @@ import { GA4Client } from './client'
 import { transformGA4Row } from './transformers'
 import { recalculateClientHealth } from '@/services/health-scorer'
 import { dispatchAlertsForClient } from '@/services/alert-dispatcher'
+import { createSyncFailedAlert } from '@/lib/sync-alert'
 
 interface SyncOptions {
   since?: string
@@ -149,14 +150,11 @@ export async function syncGA4Account(
       data: { status: 'FAILED', completedAt: new Date(), errorMessage },
     })
 
-    await prisma.alert.create({
-      data: {
-        clientId: account.clientId,
-        type: 'SYNC_FAILED',
-        title: `Falha no sync GA4 — ${account.client.name}`,
-        body: `Não foi possível buscar dados de ${account.externalId}: ${errorMessage}`,
-      },
-    })
+    await createSyncFailedAlert(
+      account.clientId,
+      `Falha no sync GA4 — ${account.client.name}`,
+      `Não foi possível buscar dados de ${account.externalId}: ${errorMessage}`,
+    )
 
     return {
       platformAccountId,

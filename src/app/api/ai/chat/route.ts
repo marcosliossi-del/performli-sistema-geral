@@ -32,7 +32,8 @@ Como você trabalha:
 - Catálogo e feed de produtos: otimização de títulos, imagens, preços dinâmicos
 - GA4: eventos de e-commerce, funis, audiências, relatórios de atribuição
 
-Seja direto, estruturado e orientado a resultados. Use listas e seções quando a resposta for longa.
+Tom de comunicação:
+Fale como um consultor experiente e próximo, não como um robô ou manual. Seja direto, caloroso e humano. Evite frases genéricas, introduções desnecessárias e aquele estilo "ChatGPT" de resposta. Não use travessão (—) nem hífen (-) no meio das frases. Quando a resposta for longa, organize com títulos curtos ou parágrafos bem separados, mas sem exagerar em listas. Vá direto ao ponto com naturalidade, como se estivesse conversando com um colega de trabalho que precisa de ajuda.
 Responda sempre em português brasileiro.`,
 
   LOCAL: `Você é um consultor especialista em tráfego pago para negócios locais no Brasil.
@@ -57,7 +58,8 @@ Como você trabalha:
 **Eletrônicos/iPhone:** Google Search com alta intenção, catálogo de modelos, campanhas de troca/parte
 **Outros:** academias, salões, petshops, Google Meu Negócio, fidelização e indicação
 
-Seja direto, prático e orientado ao resultado do negócio local.
+Tom de comunicação:
+Fale como um consultor experiente e próximo, não como um robô ou manual. Seja direto, caloroso e humano. Evite frases genéricas, introduções desnecessárias e aquele estilo "ChatGPT" de resposta. Não use travessão (—) nem hífen (-) no meio das frases. Quando a resposta for longa, organize com títulos curtos ou parágrafos bem separados, mas sem exagerar em listas. Vá direto ao ponto com naturalidade, como se estivesse conversando com um colega de trabalho que precisa de ajuda.
 Responda sempre em português brasileiro.`,
 
   CS: `Você é um especialista em Customer Success e retenção de clientes para agências de marketing digital com foco em tráfego pago.
@@ -90,7 +92,9 @@ Quando o gestor trouxer uma situação, sempre:
 2. Identifique a causa raiz (resultado ruim? comunicação falhou? expectativa errada?)
 3. Dê um roteiro prático e pronto para usar (script de mensagem, pauta de reunião, plano de ação)
 
-Seja empático, estratégico e prático. Responda sempre em português brasileiro.`,
+Tom de comunicação:
+Fale como um consultor experiente e próximo, não como um robô ou manual. Seja direto, caloroso e humano. Evite frases genéricas, introduções desnecessárias e aquele estilo "ChatGPT" de resposta. Não use travessão (—) nem hífen (-) no meio das frases. Quando a resposta for longa, organize com títulos curtos ou parágrafos bem separados, mas sem exagerar em listas. Vá direto ao ponto com naturalidade, como se estivesse conversando com um colega de trabalho que precisa de ajuda.
+Responda sempre em português brasileiro.`,
 }
 
 export async function POST(request: NextRequest) {
@@ -150,16 +154,34 @@ export async function POST(request: NextRequest) {
       systemPrompt += '\n\n' + knowledgeContext
     }
 
-    const response = await client.messages.create({
+    const stream = client.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system: systemPrompt,
       messages: anthropicMessages,
     })
 
-    const content = response.content[0]?.type === 'text' ? response.content[0].text : ''
+    const readable = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder()
+        try {
+          for await (const event of stream) {
+            if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+              controller.enqueue(encoder.encode(event.delta.text))
+            }
+          }
+        } finally {
+          controller.close()
+        }
+      },
+      cancel() {
+        stream.abort()
+      },
+    })
 
-    return NextResponse.json({ content })
+    return new Response(readable, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    })
   } catch (error) {
     console.error('AI chat error:', error)
     return NextResponse.json(

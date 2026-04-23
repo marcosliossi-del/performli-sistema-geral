@@ -15,6 +15,7 @@ import { MetaAdsClient } from './client'
 import { transformMetaInsight, transformMetaCampaignInsight } from './transformers'
 import { recalculateClientHealth } from '@/services/health-scorer'
 import { dispatchAlertsForClient } from '@/services/alert-dispatcher'
+import { createSyncFailedAlert } from '@/lib/sync-alert'
 
 interface SyncOptions {
   since?: string // YYYY-MM-DD (default: 7 dias atrás)
@@ -209,14 +210,11 @@ export async function syncMetaAccount(
       data: { status: 'FAILED', completedAt: new Date(), errorMessage },
     })
 
-    await prisma.alert.create({
-      data: {
-        clientId: account.clientId,
-        type: 'SYNC_FAILED',
-        title: `Falha no sync Meta Ads — ${account.client.name}`,
-        body: `Não foi possível buscar dados de ${account.externalId}: ${errorMessage}`,
-      },
-    })
+    await createSyncFailedAlert(
+      account.clientId,
+      `Falha no sync Meta Ads — ${account.client.name}`,
+      `Não foi possível buscar dados de ${account.externalId}: ${errorMessage}`,
+    )
 
     return {
       platformAccountId,
@@ -237,8 +235,10 @@ export async function syncAllMetaAccounts(options: SyncOptions = {}): Promise<Sy
   })
 
   const results: SyncResult[] = []
-  for (const acc of accounts) {
-    results.push(await syncMetaAccount(acc.id, options))
+  for (let i = 0; i < accounts.length; i++) {
+    results.push(await syncMetaAccount(accounts[i].id, options))
+    // 1s delay between accounts to stay within Meta's rate limits
+    if (i < accounts.length - 1) await new Promise((r) => setTimeout(r, 1000))
   }
   return results
 }

@@ -1,5 +1,6 @@
 import 'server-only'
 import { cache } from 'react'
+import { unstable_cache } from 'next/cache'
 import { prisma } from './prisma'
 import { getSession } from './session'
 import { redirect } from 'next/navigation'
@@ -40,30 +41,57 @@ export type ClientHealthSummary = {
 export const getDashboardData = cache(async (userId: string, role: string) => {
   const { start: weekStart } = getWeekRange()
   const { start: monthStart } = getMonthRange()
-  // Fetch from start of month so monthly health scores (periodStart=1st) are included
   const fetchFrom = monthStart < weekStart ? monthStart : weekStart
 
-  // ADMIN/CS see all clients; MANAGER/ANALYST see only assigned clients
   const clientsWhere: Prisma.ClientWhereInput =
     canViewAll(role)
       ? { status: 'ACTIVE' }
       : { status: 'ACTIVE', assignments: { some: { userId } } }
 
-  const clients = await prisma.client.findMany({
-    where: clientsWhere,
-    include: {
-      assignments: {
-        where: { isPrimary: true },
-        include: { user: { select: { name: true } } },
-        take: 1,
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+
+  // Run all 4 queries in parallel instead of sequentially
+  const [clients, alerts, oscillationAlerts, lastSyncAccount] = await Promise.all([
+    prisma.client.findMany({
+      where: clientsWhere,
+      include: {
+        assignments: {
+          where: { isPrimary: true },
+          include: { user: { select: { name: true } } },
+          take: 1,
+        },
+        healthScores: {
+          where: { periodStart: { gte: fetchFrom } },
+          orderBy: { calculatedAt: 'desc' },
+        },
       },
-      healthScores: {
-        where: { periodStart: { gte: fetchFrom } },
-        orderBy: { calculatedAt: 'desc' },
-      },
-    },
-    orderBy: { name: 'asc' },
-  })
+      orderBy: { name: 'asc' },
+    }),
+    prisma.alert.findMany({
+      where: canViewAll(role)
+        ? { read: false, type: { notIn: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] } }
+        : { read: false, type: { notIn: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, client: { assignments: { some: { userId } } } },
+      include: { client: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    }),
+    prisma.alert.findMany({
+      where: canViewAll(role)
+        ? { type: { in: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, createdAt: { gte: todayStart } }
+        : { type: { in: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, createdAt: { gte: todayStart }, client: { assignments: { some: { userId } } } },
+      include: { client: { select: { name: true, slug: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    }),
+    prisma.platformAccount.findFirst({
+      where: canViewAll(role)
+        ? { active: true, lastSyncAt: { not: null } }
+        : { active: true, lastSyncAt: { not: null }, client: { assignments: { some: { userId } } } },
+      orderBy: { lastSyncAt: 'desc' },
+      select: { lastSyncAt: true },
+    }),
+  ])
 
   const summaries: ClientHealthSummary[] = clients.map((client) => {
     const allScores = client.healthScores
@@ -123,44 +151,6 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
   const otimo = summaries.filter((c) => c.overallStatus === 'OTIMO').length
   const regular = summaries.filter((c) => c.overallStatus === 'REGULAR').length
   const ruim = summaries.filter((c) => c.overallStatus === 'RUIM').length
-
-  // Recent alerts (non-oscillation)
-  const alerts = await prisma.alert.findMany({
-    where:
-      canViewAll(role)
-        ? { read: false, type: { notIn: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] } }
-        : { read: false, type: { notIn: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, client: { assignments: { some: { userId } } } },
-    include: { client: { select: { name: true } } },
-    orderBy: { createdAt: 'desc' },
-    take: 5,
-  })
-
-  // Today's oscillation alerts (KPI_DROP_24H / KPI_SPIKE_24H)
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
-  const oscillationAlerts = await prisma.alert.findMany({
-    where:
-      canViewAll(role)
-        ? { type: { in: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, createdAt: { gte: todayStart } }
-        : {
-            type: { in: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] },
-            createdAt: { gte: todayStart },
-            client: { assignments: { some: { userId } } },
-          },
-    include: { client: { select: { name: true, slug: true } } },
-    orderBy: { createdAt: 'desc' },
-    take: 10,
-  })
-
-  // Last sync timestamp (most recent lastSyncAt across all platform accounts)
-  const lastSyncAccount = await prisma.platformAccount.findFirst({
-    where:
-      canViewAll(role)
-        ? { active: true, lastSyncAt: { not: null } }
-        : { active: true, lastSyncAt: { not: null }, client: { assignments: { some: { userId } } } },
-    orderBy: { lastSyncAt: 'desc' },
-    select: { lastSyncAt: true },
-  })
 
   return {
     clients: summaries,
@@ -312,7 +302,7 @@ export type ClientListItem = {
   monthRoas: number | null
 }
 
-export const getClientsList = cache(async (userId: string, role: string) => {
+async function _fetchClientsList(userId: string, role: string) {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
 
@@ -389,7 +379,9 @@ export const getClientsList = cache(async (userId: string, role: string) => {
       })(),
     }
   })
-})
+}
+
+export const getClientsList = unstable_cache(_fetchClientsList, ['getClientsList'], { revalidate: 30 })
 
 // ─── Client detail ────────────────────────────────────────────────────────────
 
@@ -770,47 +762,55 @@ export type MonthlyDataPoint = {
   roas: number | null
 }
 
-export async function getClientMonthlyComparison(
-  clientId: string,
-  months = 6
-): Promise<MonthlyDataPoint[]> {
+async function _fetchMonthlyComparison(clientId: string, months: number): Promise<MonthlyDataPoint[]> {
   const now = new Date()
   const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
-  const result: MonthlyDataPoint[] = []
 
+  // Single query covering all N months instead of N sequential queries
+  const rangeStart = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1)
+
+  const snapshots = await prisma.metricSnapshot.findMany({
+    where: { clientId, date: { gte: rangeStart } },
+    select: {
+      date: true,
+      spend: true,
+      conversionValue: true,
+      platformAccount: { select: { platform: true } },
+    },
+  })
+
+  // Build month buckets in memory
+  const buckets = new Map<string, { revenue: number; spend: number; label: string }>()
   for (let i = months - 1; i >= 0; i--) {
-    const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1)
-    const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0)
-    monthEnd.setHours(23, 59, 59, 999)
-
-    const snapshots = await prisma.metricSnapshot.findMany({
-      where: { clientId, date: { gte: monthStart, lte: monthEnd } },
-      select: {
-        spend: true,
-        conversionValue: true,
-        platformAccount: { select: { platform: true } },
-      },
-    })
-
-    let revenue = 0, spend = 0
-    for (const s of snapshots) {
-      if (s.platformAccount.platform === 'GA4') {
-        revenue += Number(s.conversionValue ?? 0)
-      } else {
-        spend += Number(s.spend ?? 0)
-      }
-    }
-
-    result.push({
-      month: `${MONTH_NAMES[monthDate.getMonth()]} ${String(monthDate.getFullYear()).slice(2)}`,
-      revenue,
-      spend,
-      roas: spend > 0 && revenue > 0 ? Math.round((revenue / spend) * 100) / 100 : null,
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    buckets.set(`${d.getFullYear()}-${d.getMonth()}`, {
+      revenue: 0,
+      spend: 0,
+      label: `${MONTH_NAMES[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`,
     })
   }
-  return result
+
+  for (const s of snapshots) {
+    const d = new Date(s.date)
+    const bucket = buckets.get(`${d.getFullYear()}-${d.getMonth()}`)
+    if (!bucket) continue
+    if (s.platformAccount.platform === 'GA4') {
+      bucket.revenue += Number(s.conversionValue ?? 0)
+    } else {
+      bucket.spend += Number(s.spend ?? 0)
+    }
+  }
+
+  return Array.from(buckets.values()).map((m) => ({
+    month: m.label,
+    revenue: m.revenue,
+    spend: m.spend,
+    roas: m.spend > 0 && m.revenue > 0 ? Math.round((m.revenue / m.spend) * 100) / 100 : null,
+  }))
 }
+
+export const getClientMonthlyComparison = (clientId: string, months = 6) =>
+  unstable_cache(_fetchMonthlyComparison, ['getClientMonthlyComparison', clientId], { revalidate: 300 })(clientId, months)
 
 // ─── Clients for select dropdowns ─────────────────────────────────────────────
 
