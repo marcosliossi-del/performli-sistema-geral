@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/session'
-import { createInstance, getQrCode, getStatus, setWebhook, getConfig } from '@/services/evolution/client'
+import { getConfig, getQrCode, getStatus } from '@/services/zapi/client'
 import { z } from 'zod'
 
 const saveSchema = z.object({
-  url:      z.string().url(),
-  apiKey:   z.string().min(1),
-  instance: z.string().min(1),
+  instanceId:  z.string().min(1),
+  token:       z.string().min(1),
+  clientToken: z.string().optional(),
 })
 
-/** GET — return current config + live status */
+/** GET — config + live status */
 export async function GET(_req: NextRequest) {
   const session = await getSession()
   if (!session || session.role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -19,15 +19,10 @@ export async function GET(_req: NextRequest) {
   if (!config) return NextResponse.json({ configured: false })
 
   const status = await getStatus(config)
-  return NextResponse.json({
-    configured: true,
-    url:        config.url,
-    instance:   config.instance,
-    ...status,
-  })
+  return NextResponse.json({ configured: true, instanceId: config.instanceId, ...status })
 }
 
-/** POST — save credentials + create instance + set webhook */
+/** POST — save credentials */
 export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session || session.role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -36,38 +31,29 @@ export async function POST(req: NextRequest) {
   const parsed = saveSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
-  const { url, apiKey, instance } = parsed.data
+  const { instanceId, token, clientToken } = parsed.data
 
-  await prisma.integrationSetting.upsert({ where: { key: 'EVOLUTION_URL'      }, create: { key: 'EVOLUTION_URL',      value: url      }, update: { value: url      } })
-  await prisma.integrationSetting.upsert({ where: { key: 'EVOLUTION_KEY'      }, create: { key: 'EVOLUTION_KEY',      value: apiKey   }, update: { value: apiKey   } })
-  await prisma.integrationSetting.upsert({ where: { key: 'EVOLUTION_INSTANCE' }, create: { key: 'EVOLUTION_INSTANCE', value: instance }, update: { value: instance } })
+  await prisma.integrationSetting.upsert({ where: { key: 'ZAPI_INSTANCE_ID'   }, create: { key: 'ZAPI_INSTANCE_ID',   value: instanceId          }, update: { value: instanceId          } })
+  await prisma.integrationSetting.upsert({ where: { key: 'ZAPI_TOKEN'         }, create: { key: 'ZAPI_TOKEN',         value: token               }, update: { value: token               } })
+  await prisma.integrationSetting.upsert({ where: { key: 'ZAPI_CLIENT_TOKEN'  }, create: { key: 'ZAPI_CLIENT_TOKEN',  value: clientToken ?? ''   }, update: { value: clientToken ?? ''   } })
 
-  const config = { url, apiKey, instance }
-  await createInstance(config)
-
-  // Register webhook pointing back to this system
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL
-  if (appUrl) {
-    const webhookUrl = `${appUrl.startsWith('http') ? appUrl : `https://${appUrl}`}/api/webhooks/whatsapp`
-    await setWebhook(config, webhookUrl).catch(() => null)
-  }
-
+  const config = { instanceId, token, clientToken: clientToken ?? '' }
   const status = await getStatus(config)
-  return NextResponse.json({ ok: true, ...status })
+  return NextResponse.json({ ok: true, configured: true, ...status })
 }
 
-/** DELETE — disconnect / remove credentials */
+/** DELETE — remove credentials */
 export async function DELETE(_req: NextRequest) {
   const session = await getSession()
   if (!session || session.role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   await prisma.integrationSetting.deleteMany({
-    where: { key: { in: ['EVOLUTION_URL', 'EVOLUTION_KEY', 'EVOLUTION_INSTANCE'] } },
+    where: { key: { in: ['ZAPI_INSTANCE_ID', 'ZAPI_TOKEN', 'ZAPI_CLIENT_TOKEN'] } },
   })
   return NextResponse.json({ ok: true })
 }
 
-/** PATCH — fetch fresh QR code */
+/** PATCH — refresh QR code */
 export async function PATCH(_req: NextRequest) {
   const session = await getSession()
   if (!session || session.role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

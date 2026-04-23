@@ -781,6 +781,11 @@ model AgencyLead {
   phone       String?
   company     String?
   source      String?          // "indicação", "site", "instagram"
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
   status      AgencyLeadStatus @default(NOVO)
   value       Decimal?         @db.Decimal(12, 2)  // valor potencial do contrato
   probability Int?             // 0-100
