@@ -179,6 +179,7 @@ export default async function ClientDetailPage({
               document: client.document ?? null,
               contractValue: client.contractValue != null ? Number(client.contractValue) : null,
               contractStart: client.contractStart ?? null,
+              source: client.source ?? null,
             }}
           />
           <SyncButton clientId={client.id} />

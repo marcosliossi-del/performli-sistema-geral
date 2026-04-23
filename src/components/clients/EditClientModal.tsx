@@ -15,6 +15,7 @@ interface ClientData {
   document: string | null
   contractValue: number | null
   contractStart: Date | null
+  source: string | null
 }
 
 interface Props {
@@ -37,6 +38,7 @@ export function EditClientModal({ client, onClose }: Props) {
     email: client.email ?? '',
     phone: client.phone ?? '',
     document: client.document ?? '',
+    source: client.source ?? '',
     contractValue: client.contractValue?.toString() ?? '',
     contractStart: client.contractStart
       ? new Date(client.contractStart).toISOString().split('T')[0]
@@ -60,6 +62,7 @@ export function EditClientModal({ client, onClose }: Props) {
         name: form.name,
         industry: form.industry || null,
         website: form.website || null,
+        source: form.source || null,
         notes: form.notes || null,
         email: form.email || null,
         phone: form.phone || null,
@@ -129,6 +132,16 @@ export function EditClientModal({ client, onClose }: Props) {
                 onChange={(e) => set('website', e.target.value)}
                 type="url"
                 placeholder="https://"
+                className="w-full h-9 px-3 rounded-lg bg-[#1B2B3A] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-[#87919E]">Origem</label>
+              <input
+                value={form.source}
+                onChange={(e) => set('source', e.target.value)}
+                placeholder="Indicação, Instagram..."
                 className="w-full h-9 px-3 rounded-lg bg-[#1B2B3A] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
               />
             </div>

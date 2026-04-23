@@ -16,6 +16,7 @@ interface Props {
     document: string | null
     contractValue: number | null
     contractStart: Date | null
+    source: string | null
   }
 }
 
