@@ -238,16 +238,30 @@ export async function syncAsaasData(): Promise<{
   payments: number
   subscriptions: number
   transfers: number
+  errors: string[]
 }> {
-  // Customers first so payments/subs can link to them
-  const customers    = await syncCustomers()
-  const [payments, subscriptions, transfers] = await Promise.all([
+  const errors: string[] = []
+
+  // Customers first so payments/subs can reference them
+  let customers = 0
+  try { customers = await syncCustomers() }
+  catch (e) { errors.push(`customers: ${e instanceof Error ? e.message : String(e)}`) }
+
+  const [paymentsResult, subscriptionsResult, transfersResult] = await Promise.allSettled([
     syncPayments(),
     syncSubscriptions(),
     syncTransfers(),
   ])
 
-  return { customers, payments, subscriptions, transfers }
+  const payments      = paymentsResult.status      === 'fulfilled' ? paymentsResult.value      : (errors.push(`payments: ${(paymentsResult.reason as Error)?.message ?? paymentsResult.reason}`), 0)
+  const subscriptions = subscriptionsResult.status === 'fulfilled' ? subscriptionsResult.value : (errors.push(`subscriptions: ${(subscriptionsResult.reason as Error)?.message ?? subscriptionsResult.reason}`), 0)
+  const transfers     = transfersResult.status     === 'fulfilled' ? transfersResult.value     : (errors.push(`transfers: ${(transfersResult.reason as Error)?.message ?? transfersResult.reason}`), 0)
+
+  if (errors.length > 0 && customers === 0 && payments === 0) {
+    throw new Error(errors.join(' | '))
+  }
+
+  return { customers, payments, subscriptions, transfers, errors }
 }
 
 /** Called by Asaas webhook: update a single payment status in real-time */

@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await syncAsaasData()
-    return NextResponse.json({ ok: true, ...result })
+    const ok = result.customers > 0 || result.payments > 0 || result.subscriptions > 0
+    return NextResponse.json({ ok: true, ...result, partialErrors: result.errors.length ? result.errors : undefined })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
