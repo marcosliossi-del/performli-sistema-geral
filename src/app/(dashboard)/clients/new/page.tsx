@@ -83,11 +83,19 @@ export default function NewClientPage() {
             </select>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">
-              Website
-            </label>
-            <Input name="website" type="url" placeholder="https://seusite.com.br" />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">
+                Website
+              </label>
+              <Input name="website" type="url" placeholder="https://seusite.com.br" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">
+                Origem
+              </label>
+              <Input name="source" placeholder="Indicação, Instagram..." />
+            </div>
           </div>
 
           {/* CRM divider */}

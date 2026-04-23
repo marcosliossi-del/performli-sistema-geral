@@ -78,6 +78,7 @@ model Client {
   pipelineStage  PipelineStage @default(ATIVO)
   contractValue  Decimal?
   contractStart  DateTime?
+  source         String?
   tags           String[]
   notes          String?
   createdAt      DateTime      @default(now())

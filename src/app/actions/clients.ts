@@ -25,6 +25,7 @@ export async function createClient(
   const email = (formData.get('email') as string)?.trim()
   const phone = (formData.get('phone') as string)?.trim()
   const document = (formData.get('document') as string)?.trim()
+  const source           = (formData.get('source') as string)?.trim()
   const contractValueRaw = (formData.get('contractValue') as string)?.trim()
   const contractStartRaw = (formData.get('contractStart') as string)?.trim()
   const pipelineStageRaw = (formData.get('pipelineStage') as string)?.trim()
@@ -48,7 +49,8 @@ export async function createClient(
       slug,
       industry: industry || null,
       website: website || null,
-      notes: notes || null,
+      source:  source || null,
+      notes:   notes || null,
       email: email || null,
       phone: phone || null,
       document: document || null,
