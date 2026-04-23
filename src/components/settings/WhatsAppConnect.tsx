@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { MessageCircle, CheckCircle, XCircle, RefreshCw, Trash2, Loader2, ExternalLink } from 'lucide-react'
+import { MessageCircle, CheckCircle, XCircle, RefreshCw, Trash2, Loader2, ExternalLink, FlaskConical, Copy } from 'lucide-react'
 
 interface Status {
   configured: boolean
@@ -12,13 +12,39 @@ interface Status {
 }
 
 export function WhatsAppConnect() {
-  const [status,  setStatus]  = useState<Status | null>(null)
-  const [qr,      setQr]      = useState<string | null>(null)
-  const [qrError, setQrError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [saving,  setSaving]  = useState(false)
-  const [polling, setPolling] = useState(false)
+  const [status,    setStatus]    = useState<Status | null>(null)
+  const [qr,        setQr]        = useState<string | null>(null)
+  const [qrError,   setQrError]   = useState<string | null>(null)
+  const [loading,   setLoading]   = useState(true)
+  const [saving,    setSaving]    = useState(false)
+  const [polling,   setPolling]   = useState(false)
+  const [testing,   setTesting]   = useState(false)
+  const [testResult, setTestResult] = useState<string | null>(null)
+  const [copied,    setCopied]    = useState(false)
   const [form, setForm] = useState({ instanceId: '', token: '', clientToken: '' })
+
+  const webhookUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/api/webhooks/whatsapp`
+    : '/api/webhooks/whatsapp'
+
+  function copyWebhook() {
+    navigator.clipboard.writeText(webhookUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  async function handleTest() {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res  = await fetch('/api/webhooks/whatsapp/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const data = await res.json()
+      setTestResult(data.ok ? 'Lead de teste criado no CRM!' : (data.error ?? 'Erro'))
+    } catch {
+      setTestResult('Erro de conexão')
+    }
+    setTesting(false)
+  }
 
   const fetchStatus = useCallback(async () => {
     const res = await fetch('/api/settings/whatsapp')
@@ -211,14 +237,43 @@ export function WhatsAppConnect() {
         </div>
       )}
 
-      <div className="bg-[#38435C]/20 border border-[#38435C] rounded-xl p-3 space-y-1.5">
-        <p className="text-[11px] text-[#87919E] font-medium">Configure no painel Z-API:</p>
-        <p className="text-[11px] text-[#87919E]">
-          Webhook de recebimento → <code className="text-[#95BBE2]">/api/webhooks/whatsapp</code>
-        </p>
+      {/* Webhook config box */}
+      <div className="bg-[#38435C]/20 border border-[#38435C] rounded-xl p-3 space-y-2.5">
+        <p className="text-[11px] text-[#87919E] font-medium uppercase tracking-wide">Configure no painel Z-API</p>
+
+        <div className="space-y-1">
+          <p className="text-[11px] text-[#87919E]">Webhook de recebimento (On Message Received):</p>
+          <div className="flex items-center gap-2">
+            <code className="text-[11px] text-[#95BBE2] bg-[#0A1E2C] px-2 py-1 rounded flex-1 truncate">{webhookUrl}</code>
+            <button onClick={copyWebhook} className="text-[#87919E] hover:text-[#EBEBEB] transition-colors flex-shrink-0">
+              {copied ? <CheckCircle size={13} className="text-[#22C55E]" /> : <Copy size={13} />}
+            </button>
+          </div>
+        </div>
+
         <p className="text-[11px] text-[#87919E]">
           Mensagens de números desconhecidos criam leads automaticamente no CRM.
         </p>
+
+        {/* Test button */}
+        <div className="pt-1 border-t border-[#38435C]">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleTest}
+              disabled={testing}
+              className="flex items-center gap-1.5 text-[11px] text-[#87919E] hover:text-[#EBEBEB] transition-colors disabled:opacity-50"
+            >
+              {testing ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
+              Simular mensagem de teste
+            </button>
+            {testResult && (
+              <span className={`text-[11px] ${testResult.includes('Erro') ? 'text-[#EF4444]' : 'text-[#22C55E]'}`}>
+                {testResult}
+              </span>
+            )}
+          </div>
+          <p className="text-[10px] text-[#87919E]/60 mt-1">Cria um lead fictício no CRM para confirmar que o pipeline está funcionando.</p>
+        </div>
       </div>
     </div>
   )
