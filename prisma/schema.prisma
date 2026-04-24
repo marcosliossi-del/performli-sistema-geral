@@ -838,3 +838,29 @@ model IntegrationSetting {
   value     String   @db.Text
   updatedAt DateTime @updatedAt
 }
+
+// ─── EXPENSES (DRE manual) ────────────────────────────────────────────────────
+
+enum ExpenseCategory {
+  SALARIOS
+  MARKETING
+  FERRAMENTAS
+  IMPOSTOS
+  CONTABILIDADE
+  ESCRITORIO
+  OUTROS
+}
+
+model Expense {
+  id          String          @id @default(cuid())
+  description String
+  category    ExpenseCategory
+  value       Decimal         @db.Decimal(12, 2)
+  date        DateTime        @db.Date
+  recurring   Boolean         @default(false)
+  notes       String?         @db.Text
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([date])
+}

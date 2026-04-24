@@ -9,9 +9,11 @@ import { DistribuicaoDonut } from '@/components/financeiro/DistribuicaoDonut'
 import { MovimentacoesTable } from '@/components/financeiro/MovimentacoesTable'
 import { PeriodSelector } from '@/components/financeiro/PeriodSelector'
 import { SyncAsaasButton } from '@/components/financeiro/SyncAsaasButton'
+import { ExpenseLaunchButton } from '@/components/financeiro/ExpenseLaunchButton'
+import { categoryColor, categoryLabel } from '@/components/financeiro/ExpenseModal'
 import {
   TrendingUp, TrendingDown, DollarSign, Users, AlertCircle,
-  Clock, Calendar, BarChart3,
+  Clock, Calendar, BarChart3, Percent,
 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -29,6 +31,7 @@ async function getFinanceiroData(from: Date, to: Date) {
   const [
     payments, prevPayments,
     transfers, prevTransfers,
+    expenses, prevExpensesAgg,
     subscriptions, allClients,
     inadimplentes, inadimplenciaAgg,
     entradasPrevAgg, saidasPrevAgg,
@@ -50,6 +53,14 @@ async function getFinanceiroData(from: Date, to: Date) {
     }),
     prisma.asaasTransfer.aggregate({
       where: { status: 'DONE', transferDate: { gte: prevFrom, lte: prevTo } },
+      _sum: { value: true },
+    }),
+    prisma.expense.findMany({
+      where: { date: { gte: from, lte: to } },
+      orderBy: { value: 'desc' },
+    }),
+    prisma.expense.aggregate({
+      where: { date: { gte: prevFrom, lte: prevTo } },
       _sum: { value: true },
     }),
     prisma.asaasSubscription.findMany({
@@ -91,12 +102,15 @@ async function getFinanceiroData(from: Date, to: Date) {
     }),
   ])
 
-  const entradas     = payments.reduce((s, p) => s + Number(p.value), 0)
-  const prevEntradas = Number(prevPayments._sum.value ?? 0)
-  const saidas       = transfers.reduce((s, t) => s + Number(t.value), 0)
-  const prevSaidas   = Number(prevTransfers._sum.value ?? 0)
-  const lucro        = entradas - saidas
-  const prevLucro    = prevEntradas - prevSaidas
+  const entradas        = payments.reduce((s, p) => s + Number(p.value), 0)
+  const prevEntradas    = Number(prevPayments._sum.value ?? 0)
+  const saidasAsaas     = transfers.reduce((s, t) => s + Number(t.value), 0)
+  const saidasExpenses  = expenses.reduce((s, e) => s + Number(e.value), 0)
+  const saidas          = saidasAsaas + saidasExpenses
+  const prevSaidas      = Number(prevTransfers._sum.value ?? 0) + Number(prevExpensesAgg._sum.value ?? 0)
+  const lucro           = entradas - saidas
+  const prevLucro       = prevEntradas - prevSaidas
+  const margem          = entradas > 0 ? (lucro / entradas) * 100 : 0
 
   const receitaRecorrente = subscriptions.reduce((s, sub) => {
     const v = Number(sub.value)
@@ -131,20 +145,40 @@ async function getFinanceiroData(from: Date, to: Date) {
     .sort((a, b) => b[1] - a[1]).slice(0, 6)
     .map(([name, value]) => ({ name, value }))
 
-  // Distribuição saídas por categoria
+  // Distribuição saídas por categoria (Asaas transfers + manual expenses)
   const saidaMap = new Map<string, { value: number; color: string }>()
   for (const t of transfers) {
-    const k = t.category?.name ?? 'Sem categoria'
+    const k = t.category?.name ?? 'Transferências'
     const c = t.category?.color ?? '#6B7280'
     const prev = saidaMap.get(k) ?? { value: 0, color: c }
     saidaMap.set(k, { value: prev.value + Number(t.value), color: c })
+  }
+  for (const e of expenses) {
+    const k    = categoryLabel(e.category)
+    const c    = categoryColor(e.category)
+    const prev = saidaMap.get(k) ?? { value: 0, color: c }
+    saidaMap.set(k, { value: prev.value + Number(e.value), color: c })
   }
   const distribuicaoSaidas = Array.from(saidaMap.entries())
     .sort((a, b) => b[1].value - a[1].value).slice(0, 6)
     .map(([name, d]) => ({ name, value: d.value, color: d.color }))
 
+  // Merge Asaas transfers + manual expenses for top saídas table (top 10 by value)
+  const allSaidas = [
+    ...topSaidas.map(t => ({
+      name: t.category?.name ?? 'Transferências',
+      description: t.description ?? undefined,
+      value: Number(t.value),
+    })),
+    ...expenses.map(e => ({
+      name: categoryLabel(e.category),
+      description: e.description,
+      value: Number(e.value),
+    })),
+  ].sort((a, b) => b.value - a.value).slice(0, 10)
+
   return {
-    entradas, saidas, lucro,
+    entradas, saidas, lucro, margem,
     prevEntradas, prevSaidas, prevLucro,
     deltaEntradas: pct(entradas, prevEntradas),
     deltaSaidas:   pct(saidas, prevSaidas),
@@ -165,11 +199,7 @@ async function getFinanceiroData(from: Date, to: Date) {
       description: p.description ?? undefined,
       value: Number(p.value),
     })),
-    topSaidas: topSaidas.map(t => ({
-      name: t.category?.name ?? 'Sem categoria',
-      description: t.description ?? undefined,
-      value: Number(t.value),
-    })),
+    topSaidas: allSaidas,
   }
 }
 
@@ -187,7 +217,7 @@ async function getCashflowData() {
     const start = new Date(d.getFullYear(), d.getMonth(), 1)
     const end   = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
 
-    const [entradasAgg, saidasAgg] = await Promise.all([
+    const [entradasAgg, saidasAgg, expensesAgg] = await Promise.all([
       prisma.asaasPayment.aggregate({
         where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: start, lte: end } },
         _sum: { value: true },
@@ -196,10 +226,14 @@ async function getCashflowData() {
         where: { status: 'DONE', transferDate: { gte: start, lte: end } },
         _sum: { value: true },
       }),
+      prisma.expense.aggregate({
+        where: { date: { gte: start, lte: end } },
+        _sum: { value: true },
+      }),
     ])
 
     const e = Number(entradasAgg._sum.value ?? 0)
-    const s = Number(saidasAgg._sum.value ?? 0)
+    const s = Number(saidasAgg._sum.value ?? 0) + Number(expensesAgg._sum.value ?? 0)
 
     cashflow.push({ month: ptMonths[d.getMonth()], entradas: e, saidas: s })
     receitaMedia.push({ month: ptMonths[d.getMonth()], value: activeCount > 0 ? e / activeCount : 0 })
@@ -230,7 +264,10 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
           <h1 className="text-xl font-bold text-[#EBEBEB]">DRE — Financeiro</h1>
           <p className="text-sm text-[#87919E] mt-0.5">Demonstrativo de resultado da agência</p>
         </div>
-        <SyncAsaasButton />
+        <div className="flex items-center gap-2">
+          <ExpenseLaunchButton />
+          <SyncAsaasButton />
+        </div>
       </div>
 
       {/* Period selector */}
@@ -255,16 +292,18 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
           icon={<TrendingDown size={14} />}
         />
         <FinanceiroKpiCard
-          label="Saldo"
-          value={data.entradas - data.saidas}
-          colorScheme={data.entradas >= data.saidas ? 'green' : 'red'}
+          label="Lucro"
+          value={data.lucro}
+          delta={data.deltaLucro}
+          colorScheme={data.lucro >= 0 ? 'green' : 'red'}
           icon={<DollarSign size={14} />}
         />
         <FinanceiroKpiCard
-          label="LTV"
-          value={data.ltv}
-          colorScheme="neutral"
-          icon={<BarChart3 size={14} />}
+          label="Margem de lucro"
+          value={data.margem}
+          format="percent"
+          colorScheme={data.margem >= 0 ? 'green' : 'red'}
+          icon={<Percent size={14} />}
         />
       </div>
 
