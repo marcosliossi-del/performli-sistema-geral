@@ -58,11 +58,11 @@ async function getFinanceiroData(from: Date, to: Date) {
     }),
     // Saídas manuais lançadas pelo usuário (salários, impostos, etc.)
     prisma.expense.findMany({
-      where: { source: 'MANUAL', date: { gte: from, lte: to } },
+      where: { date: { gte: from, lte: to } },
       orderBy: { value: 'desc' },
     }),
     prisma.expense.aggregate({
-      where: { source: 'MANUAL', date: { gte: prevFrom, lte: prevTo } },
+      where: { date: { gte: prevFrom, lte: prevTo } },
       _sum: { value: true },
     }),
     prisma.asaasSubscription.findMany({ where: { status: 'ACTIVE' } }),
@@ -222,7 +222,7 @@ async function getCashflowData() {
         _sum: { value: true },
       }),
       prisma.expense.aggregate({
-        where: { source: 'MANUAL', date: { gte: start, lte: end } },
+        where: { date: { gte: start, lte: end } },
         _sum: { value: true },
       }),
     ])

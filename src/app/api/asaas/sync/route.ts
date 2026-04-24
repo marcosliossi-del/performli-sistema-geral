@@ -8,13 +8,12 @@ import { syncAsaasData } from '@/services/asaas/sync'
  */
 export async function POST(request: NextRequest) {
   const session = await getSession()
-  if (!session || session.role !== 'ADMIN') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.role)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
     const result = await syncAsaasData()
-    const ok = result.customers > 0 || result.payments > 0 || result.subscriptions > 0
     return NextResponse.json({ ok: true, ...result, partialErrors: result.errors.length ? result.errors : undefined })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

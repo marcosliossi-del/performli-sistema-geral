@@ -1,82 +1,52 @@
 import { prisma } from '@/lib/prisma'
 import { getAsaasClient } from './client'
-import type { AsaasPaymentDTO, AsaasCustomerDTO } from './types'
-import type { ExpenseCategory } from '@prisma/client'
+import type { AsaasPaymentDTO } from './types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Normalize CPF/CNPJ to digits only for comparison */
 function normalizeDoc(doc: string | null | undefined): string {
   return (doc ?? '').replace(/\D/g, '')
-}
-
-/**
- * Try to match an Asaas customer to an existing Client by:
- * 1. CNPJ/CPF (document field, digits only)
- * 2. Normalized name (lowercase, trim)
- */
-async function findClientMatch(customer: AsaasCustomerDTO): Promise<string | null> {
-  const doc = normalizeDoc(customer.cpfCnpj)
-
-  if (doc.length >= 11) {
-    const byDoc = await prisma.client.findFirst({
-      where: {
-        document: { not: null },
-      },
-      select: { id: true, document: true },
-    })
-    // Manual filter because document may be formatted in DB
-    const allClients = await prisma.client.findMany({
-      select: { id: true, document: true, name: true },
-    })
-    const byDocMatch = allClients.find(c => normalizeDoc(c.document) === doc)
-    if (byDocMatch) return byDocMatch.id
-  }
-
-  // Fall back to name match
-  const byName = await prisma.client.findFirst({
-    where: {
-      name: { equals: customer.name.trim(), mode: 'insensitive' },
-    },
-    select: { id: true },
-  })
-  return byName?.id ?? null
 }
 
 // ─── Sync Customers ───────────────────────────────────────────────────────────
 
 async function syncCustomers() {
-  const client = await getAsaasClient()
-  const customers = await client.getCustomers()
+  const asaas = await getAsaasClient()
+  const customers = await asaas.getCustomers()
+  const active = customers.filter(c => !c.deleted)
 
-  for (const c of customers) {
-    if (c.deleted) continue
+  // Load all agency clients ONCE and match in memory — avoids 2-3 DB queries per customer
+  const allClients = await prisma.client.findMany({
+    select: { id: true, document: true, name: true },
+  })
 
-    const clientId = await findClientMatch(c)
-
-    await prisma.asaasCustomer.upsert({
-      where: { asaasId: c.id },
-      update: {
-        name: c.name,
-        email: c.email ?? null,
-        cpfCnpj: normalizeDoc(c.cpfCnpj) || null,
-        phone: c.mobilePhone ?? c.phone ?? null,
-        clientId: clientId,
-        syncedAt: new Date(),
-        updatedAt: new Date(),
-      },
-      create: {
-        asaasId: c.id,
-        name: c.name,
-        email: c.email ?? null,
-        cpfCnpj: normalizeDoc(c.cpfCnpj) || null,
-        phone: c.mobilePhone ?? c.phone ?? null,
-        clientId: clientId,
-      },
-    })
+  function matchClient(asaasId: string | null, name: string): string | null {
+    const doc = normalizeDoc(asaasId)
+    if (doc.length >= 11) {
+      const byDoc = allClients.find(c => normalizeDoc(c.document) === doc)
+      if (byDoc) return byDoc.id
+    }
+    const lower = name.toLowerCase().trim()
+    return allClients.find(c => c.name.toLowerCase().trim() === lower)?.id ?? null
   }
 
-  return customers.length
+  await Promise.all(active.map(c => {
+    const clientId = matchClient(c.cpfCnpj, c.name)
+    const data = {
+      name:     c.name,
+      email:    c.email ?? null,
+      cpfCnpj:  normalizeDoc(c.cpfCnpj) || null,
+      phone:    c.mobilePhone ?? c.phone ?? null,
+      clientId,
+    }
+    return prisma.asaasCustomer.upsert({
+      where:  { asaasId: c.id },
+      update: { ...data, syncedAt: new Date(), updatedAt: new Date() },
+      create: { asaasId: c.id, ...data },
+    })
+  }))
+
+  return active.length
 }
 
 // ─── Sync Payments ────────────────────────────────────────────────────────────
@@ -197,49 +167,6 @@ async function syncTransfers() {
   }))
 
   return transfers.length
-}
-
-// ─── Sync Financial Transactions (extrato de débitos) ─────────────────────────
-
-function detectCategory(description: string | null): ExpenseCategory {
-  const d = (description ?? '').toLowerCase()
-  if (/salario|funcionario|colaborador|pessoal|folha|trabalhista|rescisao|pro.?labore/.test(d)) return 'SALARIOS'
-  if (/imposto|inss|fgts|iss|cofins|pis|csll|irpj|irpf|tributo|dasn|simples|darf/.test(d))    return 'IMPOSTOS'
-  if (/asaas|taxa|tarifa|mensalidade|plano|saas|licenca|subscricao|software/.test(d))           return 'FERRAMENTAS'
-  if (/google|meta|facebook|instagram|tiktok|anuncio|ads|midia|campanha|marketing/.test(d))     return 'MARKETING'
-  if (/contador|contabilidade|juridico|advogado|compliance|auditoria/.test(d))                  return 'CONTABILIDADE'
-  if (/aluguel|escritorio|condominio|energia|luz|agua|internet|telefone|coworking/.test(d))     return 'ESCRITORIO'
-  return 'OUTROS'
-}
-
-async function syncFinancialTransactions() {
-  const client = await getAsaasClient()
-  const sixMonthsAgo = new Date()
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
-  const startDate = sixMonthsAgo.toISOString().split('T')[0]
-
-  const transactions = await client.getFinancialTransactions({ startDate, type: 'DEBIT' })
-  const completed = transactions.filter(t =>
-    t.status === 'COMPLETED' || t.status === 'DONE',
-  )
-
-  await Promise.all(completed.map(t => {
-    const data = {
-      description: t.description?.trim() || 'Débito Asaas',
-      category:    detectCategory(t.description),
-      value:       Math.abs(t.value),
-      date:        new Date(t.date),
-      recurring:   false,
-      source:      'ASAAS',
-    }
-    return prisma.expense.upsert({
-      where:  { externalId: t.id },
-      update: { ...data, updatedAt: new Date() },
-      create: { ...data, externalId: t.id },
-    })
-  }))
-
-  return completed.length
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
