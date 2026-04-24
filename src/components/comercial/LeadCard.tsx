@@ -1,10 +1,19 @@
 'use client'
 
 import { useState } from 'react'
-import { Building2, Phone, Mail, DollarSign, Calendar, MoreVertical, Flame } from 'lucide-react'
+import { Building2, Phone, Mail, DollarSign, Calendar, MoreVertical, Flame, Tag } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { Lead } from './types'
 import { HOT_STATUSES } from './types'
+
+function getSourceColor(source: string | null): string {
+  if (!source) return '#87919E'
+  if (source === 'WhatsApp') return '#25D366'
+  const lower = source.toLowerCase()
+  if (lower.includes('facebook') || lower.includes('meta') || lower.includes('instagram')) return '#1877F2'
+  if (lower.includes('google')) return '#EA4335'
+  return '#87919E'
+}
 
 interface Props {
   lead: Lead
@@ -15,6 +24,12 @@ interface Props {
 export function LeadCard({ lead, onEdit, onDelete }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const isHot = HOT_STATUSES.includes(lead.status)
+
+  const sourceColor = getSourceColor(lead.source)
+
+  const daysInStage = Math.floor(
+    (Date.now() - new Date(lead.updatedAt).getTime()) / (1000 * 60 * 60 * 24),
+  )
 
   return (
     <div className="bg-[#0A1E2C] border border-[#38435C] rounded-lg p-3 cursor-grab active:cursor-grabbing select-none group relative">
@@ -53,6 +68,30 @@ export function LeadCard({ lead, onEdit, onDelete }: Props) {
         </div>
       )}
 
+      {/* Source badge + UTM campaign */}
+      {(lead.source || lead.utmCampaign) && (
+        <div className="mb-2 space-y-1">
+          {lead.source && (
+            <span
+              className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-full"
+              style={{
+                color: sourceColor,
+                border: `1px solid ${sourceColor}40`,
+                background: `${sourceColor}18`,
+              }}
+            >
+              {lead.source}
+            </span>
+          )}
+          {lead.utmCampaign && (
+            <div className="flex items-center gap-1">
+              <Tag size={9} className="text-[#87919E] flex-shrink-0" />
+              <span className="text-[10px] text-[#87919E] truncate">{lead.utmCampaign}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Company */}
       {lead.company && (
         <div className="flex items-center gap-1.5 mb-1.5">
@@ -88,14 +127,17 @@ export function LeadCard({ lead, onEdit, onDelete }: Props) {
           <span className="text-xs text-[#87919E]">Sem valor</span>
         )}
 
-        {lead.expectedCloseAt && (
-          <div className="flex items-center gap-1">
-            <Calendar size={10} className="text-[#87919E]" />
-            <span className="text-xs text-[#87919E]">
-              {new Date(lead.expectedCloseAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-            </span>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {lead.expectedCloseAt && (
+            <div className="flex items-center gap-1">
+              <Calendar size={10} className="text-[#87919E]" />
+              <span className="text-xs text-[#87919E]">
+                {new Date(lead.expectedCloseAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+              </span>
+            </div>
+          )}
+          <span className="text-xs text-[#87919E]">há {daysInStage} dia{daysInStage !== 1 ? 's' : ''}</span>
+        </div>
       </div>
     </div>
   )

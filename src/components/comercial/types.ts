@@ -41,6 +41,10 @@ export interface Lead {
   createdAt:       string
   updatedAt:       string
   activities:      Activity[]
+  utmSource:       string | null
+  utmMedium:       string | null
+  utmCampaign:     string | null
+  utmContent:      string | null
 }
 
 export const STAGE_CONFIG: Record<

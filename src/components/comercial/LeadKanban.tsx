@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { Plus, X, ChevronRight, Activity } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
@@ -19,10 +19,31 @@ export function LeadKanban({ initialLeads }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingLead, setEditingLead] = useState<Lead | null>(null)
   const [detailLead, setDetailLead] = useState<Lead | null>(null)
+  const [sourceFilter, setSourceFilter] = useState<string | null>(null)
+  const [campaignFilter, setCampaignFilter] = useState<string | null>(null)
+
+  const uniqueSources = useMemo(
+    () => Array.from(new Set(leads.map(l => l.source).filter((s): s is string => s != null))),
+    [leads],
+  )
+
+  const uniqueCampaigns = useMemo(
+    () => Array.from(new Set(leads.map(l => l.utmCampaign).filter((c): c is string => c != null))),
+    [leads],
+  )
+
+  const visibleLeads = useMemo(
+    () => leads.filter(l => {
+      if (sourceFilter   && l.source      !== sourceFilter)   return false
+      if (campaignFilter && l.utmCampaign !== campaignFilter) return false
+      return true
+    }),
+    [leads, sourceFilter, campaignFilter],
+  )
 
   const byStage = useCallback(
-    (status: LeadStatus) => leads.filter(l => l.status === status),
-    [leads],
+    (status: LeadStatus) => visibleLeads.filter(l => l.status === status),
+    [visibleLeads],
   )
 
   async function onDragEnd(result: DropResult) {
@@ -93,8 +114,61 @@ export function LeadKanban({ initialLeads }: Props) {
     setDialogOpen(true)
   }
 
+  const filtersActive = sourceFilter !== null || campaignFilter !== null
+  const pillBase = 'text-xs rounded-full px-3 py-1 cursor-pointer transition-colors'
+  const pillInactive = `${pillBase} bg-[#38435C]/40 text-[#87919E] hover:bg-[#38435C]/70`
+  const pillActive = `${pillBase} bg-[#95BBE2]/20 text-[#95BBE2] border border-[#95BBE2]/40`
+
   return (
     <>
+      {/* Filter bar */}
+      <div className="mb-4 space-y-2">
+        {/* Row 1 — Source */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className={sourceFilter === null ? pillActive : pillInactive}
+            onClick={() => setSourceFilter(null)}
+          >
+            Todas
+          </button>
+          {uniqueSources.map(src => (
+            <button
+              key={src}
+              className={sourceFilter === src ? pillActive : pillInactive}
+              onClick={() => setSourceFilter(prev => prev === src ? null : src)}
+            >
+              {src}
+            </button>
+          ))}
+          {filtersActive && (
+            <span className="text-xs text-[#87919E] ml-2">
+              {visibleLeads.length} lead{visibleLeads.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+
+        {/* Row 2 — Campaign (only if any lead has utmCampaign) */}
+        {uniqueCampaigns.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className={campaignFilter === null ? pillActive : pillInactive}
+              onClick={() => setCampaignFilter(null)}
+            >
+              Todas campanhas
+            </button>
+            {uniqueCampaigns.map(camp => (
+              <button
+                key={camp}
+                className={campaignFilter === camp ? pillActive : pillInactive}
+                onClick={() => setCampaignFilter(prev => prev === camp ? null : camp)}
+              >
+                {camp}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="flex gap-3 overflow-x-auto pb-4 min-h-[calc(100vh-200px)]">
           {KANBAN_STAGES.map(status => {

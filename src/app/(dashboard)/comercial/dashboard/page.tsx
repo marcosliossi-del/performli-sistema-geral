@@ -18,6 +18,9 @@ async function getCrmData() {
       closedAt:        true,
       expectedCloseAt: true,
       source:          true,
+      utmSource:       true,
+      utmMedium:       true,
+      utmCampaign:     true,
     },
   })
 
@@ -68,6 +71,26 @@ export default async function ComercialDashboardPage() {
   const weightedPipeline = active
     .filter(l => l.probability != null)
     .reduce((s, l) => s + (l.value ?? 0) * ((l.probability ?? 0) / 100), 0)
+
+  // Campaign attribution
+  const campaignMap = new Map<string, { leads: number; fechados: number; perdidos: number; value: number }>()
+  leads.forEach(l => {
+    const key = l.utmCampaign ?? (l.utmSource ? `[${l.utmSource}]` : null)
+    if (!key) return
+    const curr = campaignMap.get(key) ?? { leads: 0, fechados: 0, perdidos: 0, value: 0 }
+    curr.leads++
+    if (l.status === 'FECHADO') { curr.fechados++; curr.value += l.value ?? 0 }
+    if (l.status === 'PERDIDO') curr.perdidos++
+    campaignMap.set(key, curr)
+  })
+  const campaignStats = Array.from(campaignMap.entries())
+    .map(([name, d]) => ({
+      name,
+      ...d,
+      convRate: d.leads > 0 ? Math.round((d.fechados / d.leads) * 100) : 0,
+    }))
+    .sort((a, b) => b.leads - a.leads)
+    .slice(0, 10)
 
   // Source breakdown
   const sourceCounts: Record<string, number> = {}
@@ -216,6 +239,70 @@ export default async function ComercialDashboardPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Campaign attribution */}
+      <div className="bg-[#0D2137] border border-[#38435C] rounded-2xl p-5">
+        <div className="flex items-center gap-2 mb-5">
+          <BarChart2 size={15} className="text-[#87919E]" />
+          <h2 className="text-sm font-semibold text-[#EBEBEB]">Atribuição de campanhas</h2>
+        </div>
+        {campaignStats.length === 0 ? (
+          <p className="text-xs text-[#87919E] text-center py-6">Nenhum lead com UTM de campanha registrado</p>
+        ) : (
+          <>
+            {/* Bar chart */}
+            <div className="space-y-2 mb-5">
+              {campaignStats.map(camp => {
+                const maxLeads = campaignStats[0].leads
+                const pct = Math.round((camp.leads / maxLeads) * 100)
+                return (
+                  <div key={camp.name} className="flex items-center gap-3">
+                    <span className="text-xs text-[#87919E] w-36 truncate flex-shrink-0">{camp.name}</span>
+                    <div className="flex-1 h-5 bg-[#38435C]/30 rounded-lg overflow-hidden">
+                      <div
+                        className="h-full bg-[#95BBE2]/60 rounded-lg flex items-center justify-end pr-2"
+                        style={{ width: `${Math.max(pct, 4)}%` }}
+                      >
+                        <span className="text-[10px] font-bold text-white">{camp.leads}</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-[#87919E] border-b border-[#38435C]">
+                    <th className="text-left py-2 font-medium">Campanha</th>
+                    <th className="text-center py-2 font-medium">Leads</th>
+                    <th className="text-center py-2 font-medium">Fechados</th>
+                    <th className="text-center py-2 font-medium">Perdidos</th>
+                    <th className="text-right py-2 font-medium">Taxa conv.</th>
+                    <th className="text-right py-2 font-medium">Valor fechado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {campaignStats.map(camp => (
+                    <tr key={camp.name} className="border-b border-[#38435C]/50 hover:bg-[#38435C]/10 transition-colors">
+                      <td className="py-2.5 text-[#EBEBEB] truncate max-w-[160px]">{camp.name}</td>
+                      <td className="py-2.5 text-center text-[#EBEBEB]">{camp.leads}</td>
+                      <td className="py-2.5 text-center text-[#22C55E]">{camp.fechados}</td>
+                      <td className="py-2.5 text-center text-[#EF4444]">{camp.perdidos}</td>
+                      <td className="py-2.5 text-right text-[#87919E]">{camp.convRate}%</td>
+                      <td className="py-2.5 text-right text-[#EBEBEB]">
+                        {camp.value > 0 ? formatCurrency(camp.value) : '–'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Stage value breakdown table */}
