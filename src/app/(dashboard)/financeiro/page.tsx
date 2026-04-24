@@ -30,11 +30,12 @@ async function getFinanceiroData(from: Date, to: Date) {
 
   const [
     payments, prevPayments,
-    expenses, prevExpensesAgg,
+    transfers, prevTransfersAgg,
+    manualExpenses, prevManualAgg,
     subscriptions, allClients,
     inadimplentes, inadimplenciaAgg,
     entradasPrevAgg, saidasPrevAgg,
-    topEntradas,
+    topEntradas, topTransfers,
   ] = await Promise.all([
     prisma.asaasPayment.findMany({
       where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lte: to } },
@@ -45,22 +46,27 @@ async function getFinanceiroData(from: Date, to: Date) {
       where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: prevFrom, lte: prevTo } },
       _sum: { value: true },
     }),
-    // All expenses in period — includes ASAAS-synced (extrato) + MANUAL entries
+    // Saídas automáticas via sync Asaas (transferências PIX/TED já pagas)
+    prisma.asaasTransfer.findMany({
+      where: { status: 'DONE', transferDate: { gte: from, lte: to } },
+      include: { category: { select: { name: true, color: true } } },
+      orderBy: { value: 'desc' },
+    }),
+    prisma.asaasTransfer.aggregate({
+      where: { status: 'DONE', transferDate: { gte: prevFrom, lte: prevTo } },
+      _sum: { value: true },
+    }),
+    // Saídas manuais lançadas pelo usuário (salários, impostos, etc.)
     prisma.expense.findMany({
-      where: { date: { gte: from, lte: to } },
+      where: { source: 'MANUAL', date: { gte: from, lte: to } },
       orderBy: { value: 'desc' },
     }),
     prisma.expense.aggregate({
-      where: { date: { gte: prevFrom, lte: prevTo } },
+      where: { source: 'MANUAL', date: { gte: prevFrom, lte: prevTo } },
       _sum: { value: true },
     }),
-    prisma.asaasSubscription.findMany({
-      where: { status: 'ACTIVE' },
-    }),
-    prisma.client.findMany({
-      where: { status: 'ACTIVE' },
-      select: { id: true, contractStart: true },
-    }),
+    prisma.asaasSubscription.findMany({ where: { status: 'ACTIVE' } }),
+    prisma.client.findMany({ where: { status: 'ACTIVE' }, select: { id: true, contractStart: true } }),
     prisma.asaasPayment.findMany({
       where: { status: 'OVERDUE', dueDate: { lte: today } },
       distinct: ['customerId'],
@@ -74,27 +80,33 @@ async function getFinanceiroData(from: Date, to: Date) {
       where: { status: 'PENDING', dueDate: { gte: today } },
       _sum: { value: true },
     }),
-    // Saídas previstas = scheduled (PENDING) Asaas transfers not yet processed
     prisma.asaasTransfer.aggregate({
       where: { status: 'PENDING', scheduleDate: { gte: today } },
       _sum: { value: true },
     }),
-    // Top 10 payments for table
     prisma.asaasPayment.findMany({
       where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lte: to } },
       include: { customer: { select: { name: true } } },
       orderBy: { value: 'desc' },
       take: 10,
     }),
+    prisma.asaasTransfer.findMany({
+      where: { status: 'DONE', transferDate: { gte: from, lte: to } },
+      include: { category: { select: { name: true, color: true } } },
+      orderBy: { value: 'desc' },
+      take: 10,
+    }),
   ])
 
-  const entradas     = payments.reduce((s, p) => s + Number(p.value), 0)
-  const prevEntradas = Number(prevPayments._sum.value ?? 0)
-  const saidas       = expenses.reduce((s, e) => s + Number(e.value), 0)
-  const prevSaidas   = Number(prevExpensesAgg._sum.value ?? 0)
-  const lucro        = entradas - saidas
-  const prevLucro    = prevEntradas - prevSaidas
-  const margem       = entradas > 0 ? (lucro / entradas) * 100 : 0
+  const entradas       = payments.reduce((s, p) => s + Number(p.value), 0)
+  const prevEntradas   = Number(prevPayments._sum.value ?? 0)
+  const saidasAsaas    = transfers.reduce((s, t) => s + Number(t.value), 0)
+  const saidasManuais  = manualExpenses.reduce((s, e) => s + Number(e.value), 0)
+  const saidas         = saidasAsaas + saidasManuais
+  const prevSaidas     = Number(prevTransfersAgg._sum.value ?? 0) + Number(prevManualAgg._sum.value ?? 0)
+  const lucro          = entradas - saidas
+  const prevLucro      = prevEntradas - prevSaidas
+  const margem         = entradas > 0 ? (lucro / entradas) * 100 : 0
 
   const receitaRecorrente = subscriptions.reduce((s, sub) => {
     const v = Number(sub.value)
@@ -129,9 +141,15 @@ async function getFinanceiroData(from: Date, to: Date) {
     .sort((a, b) => b[1] - a[1]).slice(0, 6)
     .map(([name, value]) => ({ name, value }))
 
-  // Distribuição saídas por categoria — all from Expense (ASAAS + MANUAL)
+  // Distribuição saídas: Asaas transfers (por FinancialCategory) + manuais (por ExpenseCategory)
   const saidaMap = new Map<string, { value: number; color: string }>()
-  for (const e of expenses) {
+  for (const t of transfers) {
+    const k    = t.category?.name ?? 'Transferências'
+    const c    = t.category?.color ?? '#6B7280'
+    const prev = saidaMap.get(k) ?? { value: 0, color: c }
+    saidaMap.set(k, { value: prev.value + Number(t.value), color: c })
+  }
+  for (const e of manualExpenses) {
     const k    = categoryLabel(e.category)
     const c    = categoryColor(e.category)
     const prev = saidaMap.get(k) ?? { value: 0, color: c }
@@ -141,13 +159,18 @@ async function getFinanceiroData(from: Date, to: Date) {
     .sort((a, b) => b[1].value - a[1].value).slice(0, 6)
     .map(([name, d]) => ({ name, value: d.value, color: d.color }))
 
-  const allSaidas = expenses
-    .map(e => ({
+  const allSaidas = [
+    ...topTransfers.map(t => ({
+      name: t.category?.name ?? 'Transferências',
+      description: t.description ?? undefined,
+      value: Number(t.value),
+    })),
+    ...manualExpenses.map(e => ({
       name: categoryLabel(e.category),
       description: e.description,
       value: Number(e.value),
-    }))
-    .slice(0, 10)
+    })),
+  ].sort((a, b) => b.value - a.value).slice(0, 10)
 
   return {
     entradas, saidas, lucro, margem,
@@ -189,19 +212,23 @@ async function getCashflowData() {
     const start = new Date(d.getFullYear(), d.getMonth(), 1)
     const end   = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
 
-    const [entradasAgg, expensesAgg] = await Promise.all([
+    const [entradasAgg, transfersAgg, expensesAgg] = await Promise.all([
       prisma.asaasPayment.aggregate({
         where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: start, lte: end } },
         _sum: { value: true },
       }),
+      prisma.asaasTransfer.aggregate({
+        where: { status: 'DONE', transferDate: { gte: start, lte: end } },
+        _sum: { value: true },
+      }),
       prisma.expense.aggregate({
-        where: { date: { gte: start, lte: end } },
+        where: { source: 'MANUAL', date: { gte: start, lte: end } },
         _sum: { value: true },
       }),
     ])
 
     const e = Number(entradasAgg._sum.value ?? 0)
-    const s = Number(expensesAgg._sum.value ?? 0)
+    const s = Number(transfersAgg._sum.value ?? 0) + Number(expensesAgg._sum.value ?? 0)
 
     cashflow.push({ month: ptMonths[d.getMonth()], entradas: e, saidas: s })
     receitaMedia.push({ month: ptMonths[d.getMonth()], value: activeCount > 0 ? e / activeCount : 0 })

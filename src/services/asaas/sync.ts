@@ -249,7 +249,6 @@ export async function syncAsaasData(): Promise<{
   payments: number
   subscriptions: number
   transfers: number
-  financialTransactions: number
   errors: string[]
 }> {
   const errors: string[] = []
@@ -259,23 +258,21 @@ export async function syncAsaasData(): Promise<{
   try { customers = await syncCustomers() }
   catch (e) { errors.push(`customers: ${e instanceof Error ? e.message : String(e)}`) }
 
-  const [paymentsResult, subscriptionsResult, transfersResult, financialResult] = await Promise.allSettled([
+  const [paymentsResult, subscriptionsResult, transfersResult] = await Promise.allSettled([
     syncPayments(),
     syncSubscriptions(),
     syncTransfers(),
-    syncFinancialTransactions(),
   ])
 
-  const payments              = paymentsResult.status     === 'fulfilled' ? paymentsResult.value     : (errors.push(`payments: ${(paymentsResult.reason as Error)?.message ?? paymentsResult.reason}`), 0)
-  const subscriptions         = subscriptionsResult.status === 'fulfilled' ? subscriptionsResult.value : (errors.push(`subscriptions: ${(subscriptionsResult.reason as Error)?.message ?? subscriptionsResult.reason}`), 0)
-  const transfers             = transfersResult.status    === 'fulfilled' ? transfersResult.value    : (errors.push(`transfers: ${(transfersResult.reason as Error)?.message ?? transfersResult.reason}`), 0)
-  const financialTransactions = financialResult.status    === 'fulfilled' ? financialResult.value    : (errors.push(`extrato: ${(financialResult.reason as Error)?.message ?? financialResult.reason}`), 0)
+  const payments      = paymentsResult.status      === 'fulfilled' ? paymentsResult.value      : (errors.push(`payments: ${(paymentsResult.reason as Error)?.message ?? paymentsResult.reason}`), 0)
+  const subscriptions = subscriptionsResult.status === 'fulfilled' ? subscriptionsResult.value : (errors.push(`subscriptions: ${(subscriptionsResult.reason as Error)?.message ?? subscriptionsResult.reason}`), 0)
+  const transfers     = transfersResult.status     === 'fulfilled' ? transfersResult.value     : (errors.push(`transfers: ${(transfersResult.reason as Error)?.message ?? transfersResult.reason}`), 0)
 
   if (errors.length > 0 && customers === 0 && payments === 0) {
     throw new Error(errors.join(' | '))
   }
 
-  return { customers, payments, subscriptions, transfers, financialTransactions, errors }
+  return { customers, payments, subscriptions, transfers, errors }
 }
 
 /** Called by Asaas webhook: update a single payment status in real-time */

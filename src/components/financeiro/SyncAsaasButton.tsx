@@ -16,10 +16,10 @@ export function SyncAsaasButton() {
       if (data.ok) {
         setState('ok')
         const parts = [
-          data.customers             != null && `${data.customers} clientes`,
-          data.payments              != null && `${data.payments} cobranças`,
-          data.subscriptions         != null && `${data.subscriptions} assinaturas`,
-          data.financialTransactions != null && `${data.financialTransactions} débitos`,
+          data.customers     != null && `${data.customers} clientes`,
+          data.payments      != null && `${data.payments} cobranças`,
+          data.subscriptions != null && `${data.subscriptions} assinaturas`,
+          data.transfers     != null && `${data.transfers} transferências`,
         ].filter(Boolean).join(' · ')
         setDetails({ msg: 'Sincronizado!', sub: parts || undefined })
       } else {
