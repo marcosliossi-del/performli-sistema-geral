@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import type {
   AsaasBalanceDTO,
   AsaasCustomerDTO,
+  AsaasFinancialTransactionDTO,
   AsaasListResponse,
   AsaasPaymentDTO,
   AsaasSubscriptionDTO,
@@ -88,6 +89,18 @@ export class AsaasClient {
     if (opts.dateGte) params.startDate = opts.dateGte
     if (opts.dateLte) params.endDate   = opts.dateLte
     return this.fetchAll<AsaasTransferDTO>('/transfers', params)
+  }
+
+  async getFinancialTransactions(opts: {
+    startDate?: string
+    endDate?: string
+    type?: 'CREDIT' | 'DEBIT'
+  } = {}): Promise<AsaasFinancialTransactionDTO[]> {
+    const params: Record<string, string> = {}
+    if (opts.startDate) params.startDate = opts.startDate
+    if (opts.endDate)   params.endDate   = opts.endDate
+    if (opts.type)      params.type      = opts.type
+    return this.fetchAll<AsaasFinancialTransactionDTO>('/finance/financialTransactions', params)
   }
 }
 

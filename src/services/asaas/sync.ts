@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { getAsaasClient } from './client'
 import type { AsaasPaymentDTO, AsaasCustomerDTO } from './types'
+import type { ExpenseCategory } from '@prisma/client'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -198,6 +199,49 @@ async function syncTransfers() {
   return transfers.length
 }
 
+// ─── Sync Financial Transactions (extrato de débitos) ─────────────────────────
+
+function detectCategory(description: string | null): ExpenseCategory {
+  const d = (description ?? '').toLowerCase()
+  if (/salario|funcionario|colaborador|pessoal|folha|trabalhista|rescisao|pro.?labore/.test(d)) return 'SALARIOS'
+  if (/imposto|inss|fgts|iss|cofins|pis|csll|irpj|irpf|tributo|dasn|simples|darf/.test(d))    return 'IMPOSTOS'
+  if (/asaas|taxa|tarifa|mensalidade|plano|saas|licenca|subscricao|software/.test(d))           return 'FERRAMENTAS'
+  if (/google|meta|facebook|instagram|tiktok|anuncio|ads|midia|campanha|marketing/.test(d))     return 'MARKETING'
+  if (/contador|contabilidade|juridico|advogado|compliance|auditoria/.test(d))                  return 'CONTABILIDADE'
+  if (/aluguel|escritorio|condominio|energia|luz|agua|internet|telefone|coworking/.test(d))     return 'ESCRITORIO'
+  return 'OUTROS'
+}
+
+async function syncFinancialTransactions() {
+  const client = await getAsaasClient()
+  const sixMonthsAgo = new Date()
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+  const startDate = sixMonthsAgo.toISOString().split('T')[0]
+
+  const transactions = await client.getFinancialTransactions({ startDate, type: 'DEBIT' })
+  const completed = transactions.filter(t =>
+    t.status === 'COMPLETED' || t.status === 'DONE',
+  )
+
+  await Promise.all(completed.map(t => {
+    const data = {
+      description: t.description?.trim() || 'Débito Asaas',
+      category:    detectCategory(t.description),
+      value:       Math.abs(t.value),
+      date:        new Date(t.date),
+      recurring:   false,
+      source:      'ASAAS',
+    }
+    return prisma.expense.upsert({
+      where:  { externalId: t.id },
+      update: { ...data, updatedAt: new Date() },
+      create: { ...data, externalId: t.id },
+    })
+  }))
+
+  return completed.length
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export async function syncAsaasData(): Promise<{
@@ -205,6 +249,7 @@ export async function syncAsaasData(): Promise<{
   payments: number
   subscriptions: number
   transfers: number
+  financialTransactions: number
   errors: string[]
 }> {
   const errors: string[] = []
@@ -214,21 +259,23 @@ export async function syncAsaasData(): Promise<{
   try { customers = await syncCustomers() }
   catch (e) { errors.push(`customers: ${e instanceof Error ? e.message : String(e)}`) }
 
-  const [paymentsResult, subscriptionsResult, transfersResult] = await Promise.allSettled([
+  const [paymentsResult, subscriptionsResult, transfersResult, financialResult] = await Promise.allSettled([
     syncPayments(),
     syncSubscriptions(),
     syncTransfers(),
+    syncFinancialTransactions(),
   ])
 
-  const payments      = paymentsResult.status      === 'fulfilled' ? paymentsResult.value      : (errors.push(`payments: ${(paymentsResult.reason as Error)?.message ?? paymentsResult.reason}`), 0)
-  const subscriptions = subscriptionsResult.status === 'fulfilled' ? subscriptionsResult.value : (errors.push(`subscriptions: ${(subscriptionsResult.reason as Error)?.message ?? subscriptionsResult.reason}`), 0)
-  const transfers     = transfersResult.status     === 'fulfilled' ? transfersResult.value     : (errors.push(`transfers: ${(transfersResult.reason as Error)?.message ?? transfersResult.reason}`), 0)
+  const payments              = paymentsResult.status     === 'fulfilled' ? paymentsResult.value     : (errors.push(`payments: ${(paymentsResult.reason as Error)?.message ?? paymentsResult.reason}`), 0)
+  const subscriptions         = subscriptionsResult.status === 'fulfilled' ? subscriptionsResult.value : (errors.push(`subscriptions: ${(subscriptionsResult.reason as Error)?.message ?? subscriptionsResult.reason}`), 0)
+  const transfers             = transfersResult.status    === 'fulfilled' ? transfersResult.value    : (errors.push(`transfers: ${(transfersResult.reason as Error)?.message ?? transfersResult.reason}`), 0)
+  const financialTransactions = financialResult.status    === 'fulfilled' ? financialResult.value    : (errors.push(`extrato: ${(financialResult.reason as Error)?.message ?? financialResult.reason}`), 0)
 
   if (errors.length > 0 && customers === 0 && payments === 0) {
     throw new Error(errors.join(' | '))
   }
 
-  return { customers, payments, subscriptions, transfers, errors }
+  return { customers, payments, subscriptions, transfers, financialTransactions, errors }
 }
 
 /** Called by Asaas webhook: update a single payment status in real-time */

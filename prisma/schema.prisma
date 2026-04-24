@@ -859,8 +859,11 @@ model Expense {
   date        DateTime        @db.Date
   recurring   Boolean         @default(false)
   notes       String?         @db.Text
+  source      String          @default("MANUAL")  // MANUAL | ASAAS
+  externalId  String?         @unique              // Asaas financial transaction ID
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
   @@index([date])
+  @@index([source])
 }

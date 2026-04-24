@@ -59,3 +59,13 @@ export interface AsaasTransferDTO {
 export interface AsaasBalanceDTO {
   balance: number
 }
+
+export interface AsaasFinancialTransactionDTO {
+  id: string
+  value: number
+  type: 'CREDIT' | 'DEBIT'
+  status: string           // COMPLETED | AWAITING_CREDIT | ...
+  date: string             // YYYY-MM-DD
+  description: string | null
+  externalReference?: string | null
+}
