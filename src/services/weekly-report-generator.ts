@@ -64,15 +64,20 @@ export async function generateWeeklyReportForClient(
   const ga4PropertyId = client.platformAccounts[0]?.externalId ?? null
 
   // Snapshots da semana passada
+  const snapInclude = { platformAccount: { select: { platform: true } } } as const
+
   const [lastWeekSnaps, prevWeekSnaps, monthSnaps, goals] = await Promise.all([
     prisma.metricSnapshot.findMany({
       where: { clientId, date: { gte: lastWeekStart, lte: lastWeekEnd } },
+      include: snapInclude,
     }),
     prisma.metricSnapshot.findMany({
       where: { clientId, date: { gte: twoWeeksAgo, lte: new Date(lastWeekStart.getTime() - 1) } },
+      include: snapInclude,
     }),
     prisma.metricSnapshot.findMany({
       where: { clientId, date: { gte: monthStart, lte: today } },
+      include: snapInclude,
     }),
     prisma.goal.findMany({
       where: {
@@ -85,17 +90,22 @@ export async function generateWeeklyReportForClient(
   ])
 
   function computeMetrics(snaps: typeof lastWeekSnaps) {
-    const ga4 = snaps.filter((x) => Number(x.spend ?? 0) === 0)
-    const ads = snaps.filter((x) => Number(x.spend ?? 0) > 0)
-    const spend = ads.reduce((s, x) => s + Number(x.spend ?? 0), 0)
-    const sessions = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
-    // Prefer GA4 ecommerce_purchases to avoid double-counting with Meta actions_purchase
-    const ga4Purchases = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
-    const adPurchases = ads.reduce((s, x) => s + (x.conversions ?? 0), 0)
-    const purchases = ga4Purchases > 0 ? ga4Purchases : adPurchases
-    const ga4Rev = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
-    const adRev = ads.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
-    const revenue = ga4Rev > 0 ? ga4Rev : adRev
+    // Filtra por platform — igual ao getClientKPIs em dal.ts para consistência
+    const ga4  = snaps.filter((x) => x.platformAccount.platform === 'GA4')
+    const meta = snaps.filter((x) => x.platformAccount.platform === 'META_ADS')
+    const goog = snaps.filter((x) => x.platformAccount.platform === 'GOOGLE_ADS')
+    const ttok = snaps.filter((x) => x.platformAccount.platform === 'TIKTOK_ADS')
+
+    const metaSpend   = meta.reduce((s, x) => s + Number(x.spend ?? 0), 0)
+    const googleSpend = goog.reduce((s, x) => s + Number(x.spend ?? 0), 0)
+    const tiktokSpend = ttok.reduce((s, x) => s + Number(x.spend ?? 0), 0)
+    const spend = metaSpend + googleSpend + tiktokSpend
+
+    // Faturamento e compras sempre via GA4 (fonte de verdade de receita)
+    const revenue   = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+    const purchases = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const sessions  = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
+
     return {
       spend,
       sessions,
