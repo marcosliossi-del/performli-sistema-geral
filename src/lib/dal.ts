@@ -245,8 +245,7 @@ export const getClientsOperationalTable = cache(async (
     const adPurchases  = ads.reduce((s, x) => s + (x.conversions ?? 0), 0)
     const purchases    = ga4Purchases > 0 ? ga4Purchases : adPurchases
     const ga4Rev    = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
-    const adRev     = ads.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
-    const revenue   = ga4Rev > 0 ? ga4Rev : adRev
+    const revenue   = ga4Rev  // GA4-only — single source of truth for revenue
 
     const roas          = spend > 0 && revenue > 0 ? revenue / spend : null
     const cpa           = spend > 0 && purchases > 0 ? spend / purchases : null

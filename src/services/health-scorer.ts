@@ -65,16 +65,17 @@ function aggregateSnapshots(snapshots: Snapshot[], metric: MetricType): number |
   // using pixel revenue (Meta/Google) would produce different numbers than
   // the weekly report and KPI panel, which are GA4-exclusive.
   const revenue   = ga4Revenue
-  // Purchases: GA4 is preferred; fall back only for non-revenue metrics (CPA, CPL)
-  // where the goal is to count conversion events, not monetary value.
+  // GA4 purchases for revenue-derived metrics (TICKET_MEDIO, TAXA_CONVERSAO, CONVERSIONS).
+  // Ad-platform conversions used only as fallback for cost-per-event metrics (CPA, CPL, CAC)
+  // where the goal is tracking campaign events, not monetary transactions.
   const purchases = ga4Purchases > 0 ? ga4Purchases : adPurchases
 
   if (metric === 'TAXA_CONVERSAO') {
-    return ga4Sessions > 0 && purchases > 0 ? (purchases / ga4Sessions) * 100 : null
+    return ga4Sessions > 0 && ga4Purchases > 0 ? (ga4Purchases / ga4Sessions) * 100 : null
   }
 
   if (metric === 'TICKET_MEDIO') {
-    return purchases > 0 && revenue > 0 ? revenue / purchases : null
+    return ga4Purchases > 0 && revenue > 0 ? revenue / ga4Purchases : null
   }
 
   if (metric === 'CPS') {

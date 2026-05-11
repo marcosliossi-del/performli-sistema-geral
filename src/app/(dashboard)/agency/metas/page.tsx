@@ -2,6 +2,9 @@ import { redirect } from 'next/navigation'
 import { requireSession } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { MetasBulkTable } from '@/components/agency/MetasBulkTable'
+import { MetasDashboard } from '@/components/agency/MetasDashboard'
+import { fetchMonthProgress } from '@/app/actions/progress'
+import { MetasPageTabs } from '@/components/agency/MetasPageTabs'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,60 +13,53 @@ export default async function MetasPage() {
   if (session.role !== 'ADMIN') redirect('/dashboard')
 
   const now = new Date()
-  const year = now.getFullYear()
+  const year  = now.getFullYear()
   const month = now.getMonth() // 0-indexed
 
   const monthStart = new Date(year, month, 1)
-  const monthEnd = new Date(year, month + 1, 0)
+  const monthEnd   = new Date(year, month + 1, 0)
+  const prevStart  = new Date(year, month - 1, 1)
+  const prevEnd    = new Date(year, month, 0)
 
-  // Previous month for CPA/ticket médio suggestions
-  const prevMonthStart = new Date(year, month - 1, 1)
-  const prevMonthEnd   = new Date(year, month, 0)
-
-  const clients = await prisma.client.findMany({
-    where: { status: 'ACTIVE' },
-    orderBy: { name: 'asc' },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      assignments: {
-        where: { isPrimary: true },
-        select: { user: { select: { name: true } } },
-        take: 1,
-      },
-      goals: {
-        where: {
-          period: 'MONTHLY',
-          startDate: { lte: monthEnd },
-          endDate: { gte: monthStart },
-          metric: { in: ['FATURAMENTO', 'ROAS', 'SPEND'] },
+  // Fetch data for both views in parallel
+  const [clients, progress, prevHealthScores] = await Promise.all([
+    prisma.client.findMany({
+      where: { status: 'ACTIVE' },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        assignments: {
+          where: { isPrimary: true },
+          select: { user: { select: { name: true } } },
+          take: 1,
         },
-        select: { metric: true, targetValue: true },
+        goals: {
+          where: {
+            period: 'MONTHLY',
+            startDate: { lte: monthEnd },
+            endDate:   { gte: monthStart },
+            metric:    { in: ['FATURAMENTO', 'ROAS', 'SPEND'] },
+          },
+          select: { metric: true, targetValue: true },
+        },
       },
-    },
-  })
+    }),
+    fetchMonthProgress(year, month),
+    prisma.healthScore.findMany({
+      where: {
+        metric: 'TICKET_MEDIO',
+        period: 'MONTHLY',
+        periodStart: { gte: prevStart, lte: prevEnd },
+      },
+      select: { clientId: true, actualValue: true },
+    }),
+  ])
 
-  const clientIds = clients.map((c) => c.id)
-
-  // Fetch prev month ticket médio and conversions to suggest CPA
-  const prevHealthScores = await prisma.healthScore.findMany({
-    where: {
-      clientId: { in: clientIds },
-      metric: { in: ['TICKET_MEDIO', 'CONVERSIONS'] },
-      period: 'MONTHLY',
-      periodStart: { gte: prevMonthStart, lte: prevMonthEnd },
-    },
-    select: { clientId: true, metric: true, actualValue: true },
-  })
-
-  // ticket médio × 10% = suggested CPA target
-  const prevTicket = new Map<string, number>()
-  for (const hs of prevHealthScores) {
-    if (hs.metric === 'TICKET_MEDIO' && hs.actualValue != null) {
-      prevTicket.set(hs.clientId, Number(hs.actualValue))
-    }
-  }
+  const prevTicket = new Map(
+    prevHealthScores.map((hs) => [hs.clientId, Number(hs.actualValue)])
+  )
 
   const clientsData = clients.map((c) => {
     const fat   = c.goals.find((g) => g.metric === 'FATURAMENTO')
@@ -80,8 +76,7 @@ export default async function MetasPage() {
         ROAS:        roas  ? Number(roas.targetValue)  : null,
         SPEND:       spend ? Number(spend.targetValue) : null,
       },
-      // CPA target suggestion = 10% of prev month ticket médio
-      suggestedCpa: tm != null ? Math.round(tm * 0.10 * 100) / 100 : null,
+      suggestedCpa:    tm != null ? Math.round(tm * 0.10 * 100) / 100 : null,
       prevTicketMedio: tm,
     }
   })
@@ -91,10 +86,15 @@ export default async function MetasPage() {
       <div>
         <h1 className="text-2xl font-bold text-[#EBEBEB]">Metas Mensais</h1>
         <p className="text-[#87919E] text-sm mt-0.5">
-          Defina o budget e o faturamento esperado — ROAS e CPA são calculados automaticamente.
+          Acompanhe o progresso de cada cliente e defina metas com auto-cálculo de ROAS e CPA.
         </p>
       </div>
-      <MetasBulkTable clients={clientsData} initialYear={year} initialMonth={month} />
+      <MetasPageTabs
+        clientsData={clientsData}
+        progress={progress}
+        initialYear={year}
+        initialMonth={month}
+      />
     </div>
   )
 }
