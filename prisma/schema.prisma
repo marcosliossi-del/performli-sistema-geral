@@ -98,8 +98,9 @@ model Client {
   churnRiskScores   ChurnRiskScore[]
   weeklyReports     WeeklyReport[]
   interactions      ClientInteraction[]
-  asaasCustomer     AsaasCustomer?
-  statusStreak      ClientStatusStreak?
+  asaasCustomer       AsaasCustomer?
+  statusStreak        ClientStatusStreak?
+  criticalProtocols   CriticalProtocol[]
 }
 
 model ClientInteraction {
@@ -283,6 +284,32 @@ model HealthScore {
 
   @@unique([clientId, goalId, periodStart])
   @@index([clientId, periodStart])
+  @@index([status])
+}
+
+// ─── CRITICAL ACCOUNT PROTOCOL ───────────────────────────────────────────────
+
+enum CriticalProtocolStatus {
+  ATIVADO       // Protocolo ativado — aguarda diagnóstico do gestor
+  EM_EXECUCAO   // Gestor documentou plano, execução em andamento
+  MONITORANDO   // CS comunicou cliente, monitorando evolução
+  ENCERRADO     // Protocolo encerrado (positivo, neutro ou negativo)
+}
+
+model CriticalProtocol {
+  id          String                 @id @default(cuid())
+  clientId    String
+  trigger     AlertType
+  status      CriticalProtocolStatus @default(ATIVADO)
+  activatedAt DateTime               @default(now())
+  closedAt    DateTime?
+  briefingCS  String?                @db.Text
+  notes       String?                @db.Text
+  updatedAt   DateTime               @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, status])
   @@index([status])
 }
 
