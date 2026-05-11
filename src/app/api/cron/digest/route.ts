@@ -5,7 +5,7 @@ import { sendDailyDigest } from '@/services/notifications/daily-digest'
  * GET /api/cron/digest
  *
  * Dedicated cron for the WhatsApp daily digest.
- * Runs at 12:15 UTC (09:15 BRT) — after the main data sync cron (12:00).
+ * Runs at 11:30 UTC (08:30 BRT/São Paulo) — after the main data sync cron (11:00).
  * Kept separate so a slow/timed-out sync never prevents the digest from sending.
  */
 

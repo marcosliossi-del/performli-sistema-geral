@@ -17,7 +17,7 @@ import { detectCriticalAccounts } from '@/services/critical-account-detector'
  * GET /api/cron/daily  ← Vercel Cron triggers GET requests
  * POST /api/cron/daily ← manual/test trigger
  *
- * Master daily cron job. Runs at 12:00 UTC (09:00 BRT).
+ * Master daily cron job. Runs at 11:00 UTC (08:00 BRT/São Paulo).
  * Auth: Vercel auto-sends "Authorization: Bearer {CRON_SECRET}".
  *       Manual calls may use "x-cron-secret: {CRON_SECRET}".
  */
@@ -202,9 +202,9 @@ async function runDailySync() {
     }
   }
 
-  // WhatsApp digest is sent by /api/cron/digest (runs at 08:50 BRT),
-  // 20 minutes after this cron finishes — avoids duplicate sends and
-  // ensures fresh health scores are available when the digest is built.
+  // WhatsApp digest is sent by /api/cron/digest (runs at 08:30 BRT/São Paulo),
+  // 30 minutes after this cron finishes — ensures fresh health scores are
+  // available when the digest is built.
 
   return summary
 }
