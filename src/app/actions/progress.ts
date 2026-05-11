@@ -80,7 +80,7 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
         where: { date: { gte: monthStart, lte: isCurrentMonth ? today : monthEnd } },
         select: {
           spend: true, conversions: true, conversionValue: true,
-          clicks: true, ctr: true, cpc: true,
+          clicks: true, impressions: true, cpc: true,
           platformAccount: { select: { platform: true } },
         },
       },
@@ -114,10 +114,12 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
     const sessions   = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
     const spend      = ads.reduce((s, x) => s + Number(x.spend ?? 0), 0)
 
-    const adClicks   = ads.reduce((s, x) => s + (x.clicks ?? 0), 0)
-    const ctrVals    = ads.filter((x) => x.ctr != null).map((x) => Number(x.ctr))
-    const ctr        = ctrVals.length > 0 ? ctrVals.reduce((a, b) => a + b, 0) / ctrVals.length : null
-    const cpc        = spend > 0 && adClicks > 0 ? spend / adClicks : null
+    // clicks = link clicks from ad platforms (outbound link clicks, not all clicks)
+    const adClicks      = ads.reduce((s, x) => s + (x.clicks ?? 0), 0)
+    const adImpressions = ads.reduce((s, x) => s + (x.impressions ?? 0), 0)
+    // Link CTR = link clicks / impressions — more accurate than stored ctr field (which may be CTR All)
+    const ctr  = adImpressions > 0 && adClicks > 0 ? (adClicks / adImpressions) * 100 : null
+    const cpc  = spend > 0 && adClicks > 0 ? spend / adClicks : null
 
     const roas        = spend > 0 && revenue > 0 ? revenue / spend : null
     const ticketMedio = purchases > 0 && revenue > 0 ? revenue / purchases : null

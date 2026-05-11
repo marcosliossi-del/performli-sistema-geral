@@ -29,6 +29,13 @@ const BENCHMARKS = {
   cpc:           { bad: 3.0,  ok: 1.5,  good: 0.8,  unit: 'R$', lowerIsBetter: true },
 }
 
+const FALLBACK: ClientInsight = {
+  summary: 'Não foi possível gerar análise. Tente novamente em alguns instantes.',
+  priority: 'Certifique-se de que GA4 e Meta Ads estão sincronizados e com dados do mês.',
+  riskLevel: 'medio',
+  items: [],
+}
+
 export async function generateClientInsight(
   data: ClientProgress,
 ): Promise<ClientInsight> {
@@ -50,8 +57,8 @@ Budget:        meta ${fmt(data.goalSpend, '', 0)}  |  gasto ${fmt(data.spend, ''
 ROAS:          meta ${fmt(data.goalRoas, 'x')}  |  atual ${fmt(data.roas, 'x')}
 
 ── MÉTRICAS DE PERFORMANCE ──
-CTR:              ${fmt(data.ctr, '%')}  (benchmark: 1.5%)
-CPC:              ${fmt(data.cpc, '', 2)} R$  (benchmark: R$1.50)
+CTR de Link:      ${fmt(data.ctr, '%')}  (benchmark: 1.0% — taxa de cliques no link, não CTR geral)
+CPC (link):       ${fmt(data.cpc, '', 2)} R$  (benchmark: R$1.50)
 Taxa de Conversão:${fmt(data.taxaConversao, '%')}  (benchmark: 1.5%)
 Ticket Médio:     ${fmt(data.ticketMedio, '', 0)} R$  (benchmark: R$200)
 Compras (GA4):    ${data.purchases}
@@ -89,37 +96,37 @@ Regras:
 - Considere sazonalidade e o % do mês decorrido ao avaliar risco
 - Pense como um sócio da agência que quer reter o cliente`
 
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: prompt }],
-  })
-
-  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-
-  // Strip markdown code fences if present (```json ... ``` or ``` ... ```)
-  const text = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
-
   try {
-    const parsed = JSON.parse(text) as ClientInsight
-    // Ensure required fields exist
-    if (!parsed.summary || !parsed.items) throw new Error('missing fields')
-    return parsed
-  } catch (e) {
-    // Re-try: extract JSON object from anywhere in the text
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    })
+
+    const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+
+    // Strip markdown code fences if present (```json ... ``` or ``` ... ```)
+    const text = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+
+    // First attempt: direct parse
+    try {
+      const parsed = JSON.parse(text) as ClientInsight
+      if (parsed.summary && Array.isArray(parsed.items)) return parsed
+    } catch { /* fall through to extraction */ }
+
+    // Second attempt: extract first JSON object found in text
     const match = text.match(/\{[\s\S]*\}/)
     if (match) {
       try {
         const parsed = JSON.parse(match[0]) as ClientInsight
-        if (parsed.summary && parsed.items) return parsed
+        if (parsed.summary && Array.isArray(parsed.items)) return parsed
       } catch { /* fall through */ }
     }
-    console.error('[insights] JSON parse failed:', e, '\nraw:', raw.slice(0, 300))
-    return {
-      summary: 'Não foi possível gerar análise agora. Tente novamente.',
-      priority: 'Certifique-se de que GA4 e Meta Ads estão sincronizados para ter dados suficientes.',
-      riskLevel: 'medio',
-      items: [],
-    }
+
+    console.error('[insights] JSON parse failed for', data.name, '\nraw:', raw.slice(0, 400))
+    return FALLBACK
+  } catch (err) {
+    console.error('[insights] API error for', data.name, err)
+    return FALLBACK
   }
 }

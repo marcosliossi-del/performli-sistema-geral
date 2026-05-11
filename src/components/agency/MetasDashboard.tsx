@@ -219,12 +219,12 @@ function ClientCard({ c }: { c: ClientProgress }) {
           )}
         </div>
 
-        {/* CTR */}
+        {/* CTR Link */}
         <div>
-          <p className="text-[10px] text-[#87919E] mb-0.5">CTR</p>
+          <p className="text-[10px] text-[#87919E] mb-0.5">CTR Link</p>
           {c.ctr != null ? (
             <span className={`text-xs font-semibold ${
-              c.ctr >= 1.5 ? 'text-[#22C55E]' : c.ctr >= 0.8 ? 'text-[#EAB308]' : 'text-[#EF4444]'
+              c.ctr >= 1.0 ? 'text-[#22C55E]' : c.ctr >= 0.5 ? 'text-[#EAB308]' : 'text-[#EF4444]'
             }`}>
               {c.ctr.toFixed(2)}%
             </span>
