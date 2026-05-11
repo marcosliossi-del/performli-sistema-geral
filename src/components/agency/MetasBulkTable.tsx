@@ -3,7 +3,7 @@
 import { useState, useTransition, useCallback, useEffect } from 'react'
 import { upsertMonthlyGoals, fetchMonthlyGoals, type GoalUpsert } from '@/app/actions/goals'
 import { MetricType } from '@prisma/client'
-import { Check, Loader2, AlertCircle, Plus } from 'lucide-react'
+import { Check, Loader2, AlertCircle, Plus, Zap } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { GoalFormModal } from '@/components/clients/GoalFormModal'
 
@@ -17,12 +17,18 @@ type ClientGoals = {
     ROAS: number | null
     SPEND: number | null
   }
+  suggestedCpa: number | null
+  prevTicketMedio: number | null
 }
 
 type RowState = {
   faturamento: string
   roas: string
   spend: string
+  /** Which field the user last intentionally typed — drives the auto-calc direction */
+  lastManual: 'faturamento' | 'roas' | null
+  autoRoas: boolean
+  autoFat: boolean
   saved: boolean
   error: string | null
 }
@@ -39,19 +45,67 @@ function monthLabel(year: number, month: number) {
   return new Date(year, month, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
 }
 
+function calcAutoFields(
+  field: 'faturamento' | 'roas' | 'spend',
+  value: string,
+  row: RowState,
+): Partial<RowState> {
+  const val = parseFloat(value)
+
+  if (field === 'faturamento') {
+    const spend = parseFloat(row.spend)
+    if (!isNaN(val) && val > 0 && !isNaN(spend) && spend > 0) {
+      return { autoRoas: true, autoFat: false, lastManual: 'faturamento', roas: (val / spend).toFixed(2) }
+    }
+    return { autoRoas: false, autoFat: false, lastManual: 'faturamento' }
+  }
+
+  if (field === 'roas') {
+    const spend = parseFloat(row.spend)
+    if (!isNaN(val) && val > 0 && !isNaN(spend) && spend > 0) {
+      return { autoRoas: false, autoFat: true, lastManual: 'roas', faturamento: Math.round(val * spend).toString() }
+    }
+    return { autoRoas: false, autoFat: false, lastManual: 'roas' }
+  }
+
+  if (field === 'spend') {
+    const spend = parseFloat(value)
+    if (isNaN(spend) || spend <= 0) return {}
+    // Recalculate the "other" field based on what was manually set last
+    if (row.lastManual === 'faturamento') {
+      const fat = parseFloat(row.faturamento)
+      if (!isNaN(fat) && fat > 0) {
+        return { autoRoas: true, roas: (fat / spend).toFixed(2) }
+      }
+    } else if (row.lastManual === 'roas') {
+      const roas = parseFloat(row.roas)
+      if (!isNaN(roas) && roas > 0) {
+        return { autoFat: true, faturamento: Math.round(roas * spend).toString() }
+      }
+    }
+  }
+
+  return {}
+}
+
+function initRow(goals: ClientGoals['goals']): RowState {
+  const fat   = goals.FATURAMENTO != null ? String(goals.FATURAMENTO) : ''
+  const roas  = goals.ROAS        != null ? String(goals.ROAS)        : ''
+  const spend = goals.SPEND       != null ? String(goals.SPEND)       : ''
+  return {
+    faturamento: fat,
+    roas,
+    spend,
+    lastManual: fat ? 'faturamento' : roas ? 'roas' : null,
+    autoRoas: false,
+    autoFat: false,
+    saved: false,
+    error: null,
+  }
+}
+
 function initRows(clients: ClientGoals[]): Record<string, RowState> {
-  return Object.fromEntries(
-    clients.map((c) => [
-      c.id,
-      {
-        faturamento: c.goals.FATURAMENTO != null ? String(c.goals.FATURAMENTO) : '',
-        roas:        c.goals.ROAS        != null ? String(c.goals.ROAS)        : '',
-        spend:       c.goals.SPEND       != null ? String(c.goals.SPEND)       : '',
-        saved: false,
-        error: null,
-      },
-    ])
-  )
+  return Object.fromEntries(clients.map((c) => [c.id, initRow(c.goals)]))
 }
 
 export function MetasBulkTable({
@@ -67,12 +121,11 @@ export function MetasBulkTable({
   const [month, setMonth] = useState(initialMonth)
   const [isPending, startTransition] = useTransition()
   const [isLoading, setIsLoading]    = useState(false)
-
   const [rows, setRows] = useState<Record<string, RowState>>(() => initRows(clients))
 
   const clientIds = clients.map((c) => c.id)
 
-  // Re-fetch goals whenever month/year changes
+  // Re-fetch goals when month changes
   useEffect(() => {
     setIsLoading(true)
     fetchMonthlyGoals(clientIds, year, month).then((data) => {
@@ -80,16 +133,7 @@ export function MetasBulkTable({
         Object.fromEntries(
           clients.map((c) => {
             const g = data[c.id] ?? { FATURAMENTO: null, ROAS: null, SPEND: null }
-            return [
-              c.id,
-              {
-                faturamento: g.FATURAMENTO != null ? String(g.FATURAMENTO) : '',
-                roas:        g.ROAS        != null ? String(g.ROAS)        : '',
-                spend:       g.SPEND       != null ? String(g.SPEND)       : '',
-                saved: false,
-                error: null,
-              },
-            ]
+            return [c.id, initRow(g)]
           })
         )
       )
@@ -100,10 +144,14 @@ export function MetasBulkTable({
 
   const setField = useCallback(
     (clientId: string, field: 'faturamento' | 'roas' | 'spend', value: string) => {
-      setRows((prev) => ({
-        ...prev,
-        [clientId]: { ...prev[clientId], [field]: value, saved: false, error: null },
-      }))
+      setRows((prev) => {
+        const row = prev[clientId]
+        const auto = calcAutoFields(field, value, row)
+        return {
+          ...prev,
+          [clientId]: { ...row, [field]: value, saved: false, error: null, ...auto },
+        }
+      })
     },
     []
   )
@@ -136,11 +184,7 @@ export function MetasBulkTable({
       const res = await upsertMonthlyGoals(goals)
       setRows((prev) => ({
         ...prev,
-        [clientId]: {
-          ...prev[clientId],
-          saved: res.ok,
-          error: res.error ?? null,
-        },
+        [clientId]: { ...prev[clientId], saved: res.ok, error: res.error ?? null },
       }))
     })
   }
@@ -180,7 +224,7 @@ export function MetasBulkTable({
 
   return (
     <div className="space-y-4">
-      {/* Header controls */}
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
           <button
@@ -219,15 +263,18 @@ export function MetasBulkTable({
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-[#38435C] overflow-hidden">
+      <div className="rounded-xl border border-[#38435C] overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[#38435C] bg-[#0A1E2C]">
-              <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-4 py-3 w-[200px]">
+              <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-4 py-3 w-[180px]">
                 Cliente
               </th>
-              <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3 w-[110px]">
+              <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3 w-[100px]">
                 Gestor
+              </th>
+              <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3">
+                Budget (R$)
               </th>
               <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3">
                 Faturamento Meta (R$)
@@ -235,15 +282,34 @@ export function MetasBulkTable({
               <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3">
                 ROAS Meta
               </th>
-              <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3">
-                Budget Mensal (R$)
+              <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3 w-[130px]">
+                CPA Sugerido
               </th>
-              <th className="px-3 py-3 w-[110px]" />
+              <th className="px-3 py-3 w-[80px]" />
             </tr>
           </thead>
           <tbody className="divide-y divide-[#38435C]">
             {clients.map((client) => {
               const row = rows[client.id]
+              const spend = parseFloat(row?.spend ?? '')
+              const fat   = parseFloat(row?.faturamento ?? '')
+
+              // CPA live calc: budget / (faturamento / ticketMedio) if we have ticket médio
+              // Otherwise show the 10% suggestion from server
+              let liveCpa: number | null = null
+              if (!isNaN(spend) && spend > 0 && client.prevTicketMedio && client.prevTicketMedio > 0) {
+                // estimated conversions = faturamento / ticket médio
+                if (!isNaN(fat) && fat > 0) {
+                  const estConversions = fat / client.prevTicketMedio
+                  liveCpa = estConversions > 0 ? spend / estConversions : null
+                } else {
+                  // fallback: 10% of prev ticket médio
+                  liveCpa = client.suggestedCpa
+                }
+              } else if (!isNaN(spend) && spend > 0 && client.suggestedCpa) {
+                liveCpa = client.suggestedCpa
+              }
+
               return (
                 <tr key={client.id} className="hover:bg-[#38435C]/20 transition-colors group">
                   <td className="px-4 py-3">
@@ -256,37 +322,7 @@ export function MetasBulkTable({
                   </td>
                   <td className="px-3 py-3 text-xs text-[#87919E]">{client.managerName}</td>
 
-                  {/* Faturamento */}
-                  <td className="px-3 py-3">
-                    <input
-                      type="number"
-                      min="0"
-                      step="100"
-                      placeholder="ex: 80000"
-                      value={row?.faturamento ?? ''}
-                      onChange={(e) => setField(client.id, 'faturamento', e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && saveRow(client.id)}
-                      disabled={isLoading}
-                      className="w-full bg-[#0A1E2C] border border-[#38435C] focus:border-[#95BBE2]/50 rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/40 focus:outline-none transition-colors disabled:opacity-40"
-                    />
-                  </td>
-
-                  {/* ROAS */}
-                  <td className="px-3 py-3">
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      placeholder="ex: 4.0"
-                      value={row?.roas ?? ''}
-                      onChange={(e) => setField(client.id, 'roas', e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && saveRow(client.id)}
-                      disabled={isLoading}
-                      className="w-full bg-[#0A1E2C] border border-[#38435C] focus:border-[#95BBE2]/50 rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/40 focus:outline-none transition-colors disabled:opacity-40"
-                    />
-                  </td>
-
-                  {/* Budget / SPEND */}
+                  {/* Budget */}
                   <td className="px-3 py-3">
                     <input
                       type="number"
@@ -299,6 +335,76 @@ export function MetasBulkTable({
                       disabled={isLoading}
                       className="w-full bg-[#0A1E2C] border border-[#38435C] focus:border-[#95BBE2]/50 rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/40 focus:outline-none transition-colors disabled:opacity-40"
                     />
+                  </td>
+
+                  {/* Faturamento */}
+                  <td className="px-3 py-3">
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        step="100"
+                        placeholder="ex: 80000"
+                        value={row?.faturamento ?? ''}
+                        onChange={(e) => setField(client.id, 'faturamento', e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && saveRow(client.id)}
+                        disabled={isLoading}
+                        className={`w-full bg-[#0A1E2C] border rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/40 focus:outline-none transition-colors disabled:opacity-40 ${
+                          row?.autoFat
+                            ? 'border-[#95BBE2]/40 bg-[#95BBE2]/5'
+                            : 'border-[#38435C] focus:border-[#95BBE2]/50'
+                        }`}
+                      />
+                      {row?.autoFat && (
+                        <Zap size={10} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#95BBE2]/60" />
+                      )}
+                    </div>
+                  </td>
+
+                  {/* ROAS */}
+                  <td className="px-3 py-3">
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        placeholder="ex: 4.0"
+                        value={row?.roas ?? ''}
+                        onChange={(e) => setField(client.id, 'roas', e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && saveRow(client.id)}
+                        disabled={isLoading}
+                        className={`w-full bg-[#0A1E2C] border rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/40 focus:outline-none transition-colors disabled:opacity-40 ${
+                          row?.autoRoas
+                            ? 'border-[#95BBE2]/40 bg-[#95BBE2]/5'
+                            : 'border-[#38435C] focus:border-[#95BBE2]/50'
+                        }`}
+                      />
+                      {row?.autoRoas && (
+                        <Zap size={10} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#95BBE2]/60" />
+                      )}
+                    </div>
+                  </td>
+
+                  {/* CPA Sugerido */}
+                  <td className="px-3 py-3">
+                    {liveCpa != null ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-xs font-semibold text-[#EAB308]">
+                          {formatCurrency(liveCpa)}
+                        </span>
+                        {client.prevTicketMedio && (
+                          <span className="text-[10px] text-[#87919E]/60">
+                            TM prev: {formatCurrency(client.prevTicketMedio)}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-[#87919E]/40">
+                        {client.suggestedCpa
+                          ? `~${formatCurrency(client.suggestedCpa)}`
+                          : 'Sem histórico'}
+                      </span>
+                    )}
                   </td>
 
                   {/* Actions */}
@@ -319,7 +425,6 @@ export function MetasBulkTable({
                           Salvar
                         </button>
                       )}
-                      {/* Extra metrics (local business, etc.) */}
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                         <GoalFormModal clientId={client.id} label="" icon={<Plus size={12} />} />
                       </div>
@@ -332,9 +437,12 @@ export function MetasBulkTable({
         </table>
       </div>
 
-      <p className="text-[10px] text-[#87919E]/60">
-        Pressione Enter em qualquer campo para salvar a linha. Use + para adicionar outras metas (negócios locais, conversões, etc.).
-      </p>
+      <div className="flex items-center gap-4 text-[10px] text-[#87919E]/60">
+        <span className="flex items-center gap-1">
+          <Zap size={10} className="text-[#95BBE2]/60" /> Campo calculado automaticamente
+        </span>
+        <span>· Enter salva a linha · + adiciona outras metas por cliente</span>
+      </div>
     </div>
   )
 }
