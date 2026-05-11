@@ -4,21 +4,21 @@ import { jwtVerify } from 'jose'
 const SESSION_COOKIE = 'performli_session'
 
 const PUBLIC_ROUTES = ['/login']
-const PROTECTED_PREFIX = ['/dashboard', '/clients', '/tasks', '/operations', '/reports', '/anti-churn', '/ai-agents', '/alerts', '/team']
+const PROTECTED_PREFIX = ['/dashboard', '/clients', '/tasks', '/operations', '/reports', '/anti-churn', '/ai-agents', '/alerts', '/team', '/agency', '/managers', '/pipeline', '/comercial', '/financeiro', '/knowledge', '/settings']
 
 function getSecretKey() {
-  const secret = process.env.SESSION_SECRET ?? process.env.NEXTAUTH_SECRET ?? 'performli-dev-secret-change-in-production'
+  const secret = process.env.SESSION_SECRET
+  if (!secret) throw new Error('SESSION_SECRET env var is required')
   return new TextEncoder().encode(secret)
 }
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isPublic = PUBLIC_ROUTES.includes(pathname)
   const isProtected = PROTECTED_PREFIX.some((p) => pathname.startsWith(p))
 
   const token = request.cookies.get(SESSION_COOKIE)?.value
 
-  // Try to verify session
   let isAuthenticated = false
   if (token) {
     try {
@@ -29,14 +29,12 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // Redirect unauthenticated users away from protected routes
   if (isProtected && !isAuthenticated) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('callbackUrl', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
-  // Redirect authenticated users away from login page
   if (isPublic && isAuthenticated) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
@@ -45,7 +43,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.svg).*)',
-  ],
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|.*\\.svg).*)', '/'],
 }

@@ -14,7 +14,8 @@ const SESSION_COOKIE = 'performli_session'
 const EXPIRES_IN = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 function getSecretKey() {
-  const secret = process.env.SESSION_SECRET ?? process.env.NEXTAUTH_SECRET ?? 'performli-dev-secret-change-in-production'
+  const secret = process.env.SESSION_SECRET
+  if (!secret) throw new Error('SESSION_SECRET env var is required')
   return new TextEncoder().encode(secret)
 }
 
