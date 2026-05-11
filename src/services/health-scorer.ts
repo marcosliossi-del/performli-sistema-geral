@@ -61,8 +61,12 @@ function aggregateSnapshots(snapshots: Snapshot[], metric: MetricType): number |
   const adPurchases  = snapshots.filter(isAd).reduce((s, x) => s + toNum(x.conversions), 0)
   const totalSpend   = snapshots.filter(isAd).reduce((s, x) => s + toNum(x.spend), 0)
 
-  // Prefer GA4 data; fall back to ad platform data if GA4 not connected
-  const revenue   = ga4Revenue   > 0 ? ga4Revenue   : adRevenue
+  // Revenue = GA4 only (source of truth). No fallback to ad platform data —
+  // using pixel revenue (Meta/Google) would produce different numbers than
+  // the weekly report and KPI panel, which are GA4-exclusive.
+  const revenue   = ga4Revenue
+  // Purchases: GA4 is preferred; fall back only for non-revenue metrics (CPA, CPL)
+  // where the goal is to count conversion events, not monetary value.
   const purchases = ga4Purchases > 0 ? ga4Purchases : adPurchases
 
   if (metric === 'TAXA_CONVERSAO') {
@@ -209,7 +213,9 @@ export async function recalculateClientHealth(clientId: string): Promise<{
   const { start: monthStart, end: monthEnd } = getMonthRange()
   const today = new Date()
 
-  // ── Weekly goals ──────────────────────────────────────────────────────────
+  const snapInclude = { platformAccount: { select: { platform: true } } } as const
+
+  // ── Current week goals ────────────────────────────────────────────────────
   const weeklyGoals = await prisma.goal.findMany({
     where: {
       clientId,
@@ -219,14 +225,36 @@ export async function recalculateClientHealth(clientId: string): Promise<{
     },
   })
 
-  const snapInclude = { platformAccount: { select: { platform: true } } } as const
-
   const weeklySnapshots = await prisma.metricSnapshot.findMany({
     where: { clientId, date: { gte: weekStart, lte: weekEnd } },
     include: snapInclude,
   })
 
   const weeklyResult = await processGoals(clientId, weeklyGoals, weeklySnapshots, weekStart, weekEnd)
+
+  // ── Previous week goals (finaliza a semana que acabou de fechar) ──────────
+  // Re-calculates last week every time so late-arriving GA4 data is reflected.
+  const { start: prevWeekStart, end: prevWeekEnd } = getWeekRange(
+    new Date(today.getTime() - 7 * 86_400_000)
+  )
+
+  const prevWeeklyGoals = await prisma.goal.findMany({
+    where: {
+      clientId,
+      period: 'WEEKLY',
+      startDate: { lte: prevWeekEnd },
+      endDate:   { gte: prevWeekStart },
+    },
+  })
+
+  const prevWeeklySnapshots = await prisma.metricSnapshot.findMany({
+    where: { clientId, date: { gte: prevWeekStart, lte: prevWeekEnd } },
+    include: snapInclude,
+  })
+
+  const prevWeeklyResult = await processGoals(
+    clientId, prevWeeklyGoals, prevWeeklySnapshots, prevWeekStart, prevWeekEnd
+  )
 
   // ── Monthly goals ─────────────────────────────────────────────────────────
   const monthlyGoals = await prisma.goal.findMany({
@@ -246,8 +274,9 @@ export async function recalculateClientHealth(clientId: string): Promise<{
   const monthlyResult = await processGoals(clientId, monthlyGoals, monthlySnapshots, monthStart, monthEnd)
 
   return {
-    created: weeklyResult.created + monthlyResult.created,
-    updated: weeklyResult.updated + monthlyResult.updated,
+    created: weeklyResult.created + prevWeeklyResult.created + monthlyResult.created,
+    updated: weeklyResult.updated + prevWeeklyResult.updated + monthlyResult.updated,
+    // Streak uses current week scores only (not previous week)
     scores: [...weeklyResult.scores, ...monthlyResult.scores],
   }
 }

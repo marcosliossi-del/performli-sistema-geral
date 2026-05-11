@@ -1230,7 +1230,12 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
       },
       metricSnapshots: {
         where: { date: { gte: weekStart, lte: weekEnd } },
-        select: { spend: true, conversions: true, conversionValue: true, roas: true, cpa: true },
+        select: {
+          spend: true,
+          conversions: true,
+          conversionValue: true,
+          platformAccount: { select: { platform: true } },
+        },
       },
       // Monthly scores use periodStart=1st; use monthStart to include both
       healthScores: {
@@ -1240,16 +1245,20 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
     },
   })
 
-  // Also get previous week snapshots
+  // Also get previous week snapshots — GA4 only for revenue comparison
   const clientIds = clients.map((c) => c.id)
   const prevSnapshots = clientIds.length > 0
     ? await prisma.metricSnapshot.findMany({
         where: {
           clientId: { in: clientIds },
           date: { gte: prevWeekStart, lte: prevWeekEnd },
-          spend: { gt: 0 },
         },
-        select: { clientId: true, conversions: true },
+        select: {
+          clientId: true,
+          conversions: true,
+          conversionValue: true,
+          platformAccount: { select: { platform: true } },
+        },
       })
     : []
 
@@ -1275,9 +1284,10 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
       managerMap.set(user.id, { user, clientData: [] })
     }
 
+    // Previous week revenue: GA4 only (source of truth)
     const prevSales = prevSnapshots
-      .filter((s) => s.clientId === client.id)
-      .reduce((sum, s) => sum + (s.conversions ?? 0), 0)
+      .filter((s) => s.clientId === client.id && s.platformAccount.platform === 'GA4')
+      .reduce((sum, s) => sum + Number(s.conversionValue ?? 0), 0)
 
     managerMap.get(user.id)!.clientData.push({
       snaps: client.metricSnapshots,
@@ -1301,23 +1311,23 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
     let clientsCritical = 0
 
     for (const { snaps, healthScores, prevSales } of clientData) {
-      const adsSnaps = snaps.filter((x) => Number(x.spend ?? 0) > 0)
-      const clientSpend = adsSnaps.reduce((s, x) => s + Number(x.spend ?? 0), 0)
-      const clientSales = snaps.reduce((s, x) => s + (x.conversions ?? 0), 0)
+      // Revenue = GA4 only (source of truth)
+      const ga4Snaps = snaps.filter((x) => x.platformAccount.platform === 'GA4')
+      const adsSnaps = snaps.filter((x) => x.platformAccount.platform !== 'GA4' && Number(x.spend ?? 0) > 0)
+
+      const clientSpend   = adsSnaps.reduce((s, x) => s + Number(x.spend ?? 0), 0)
+      const clientRevenue = ga4Snaps.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+      const clientPurchases = ga4Snaps.reduce((s, x) => s + (x.conversions ?? 0), 0)
 
       totalSpend += clientSpend
-      totalSales += clientSales
+      totalSales += clientRevenue  // revenue from GA4, not mixed ad platform conversions
       totalPrevSales += prevSales
 
-      if (clientSpend > 0) {
-        const roasArr = adsSnaps.map((x) => Number(x.roas ?? 0)).filter((v) => v > 0)
-        if (roasArr.length > 0) {
-          roasValues.push(roasArr.reduce((a, b) => a + b, 0) / roasArr.length)
-        }
-        const cpaArr = adsSnaps.map((x) => Number(x.cpa ?? 0)).filter((v) => v > 0)
-        if (cpaArr.length > 0) {
-          cpaValues.push(cpaArr.reduce((a, b) => a + b, 0) / cpaArr.length)
-        }
+      if (clientSpend > 0 && clientRevenue > 0) {
+        roasValues.push(clientRevenue / clientSpend)
+      }
+      if (clientSpend > 0 && clientPurchases > 0) {
+        cpaValues.push(clientSpend / clientPurchases)
       }
 
       const overallStatus: HealthStatus | null =
