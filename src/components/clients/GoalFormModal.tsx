@@ -19,23 +19,31 @@ const WEEKLY_METRICS = [
   { value: 'CONVERSIONS',   label: 'Conversões / Compras',       hint: 'ex: 80'    },
   { value: 'CTR',           label: 'CTR (%)',                    hint: 'ex: 2.5'   },
   { value: 'CPC',           label: 'CPC (R$)',                   hint: 'ex: 1.50'  },
+  { value: 'MENSAGENS',     label: 'Mensagens Recebidas',        hint: 'ex: 150'   },
+  { value: 'VISITAS_PERFIL',label: 'Visitas ao Perfil',          hint: 'ex: 500'   },
+  { value: 'LIGACOES',      label: 'Ligações Recebidas',         hint: 'ex: 30'    },
+  { value: 'AGENDAMENTOS',  label: 'Agendamentos',               hint: 'ex: 20'    },
 ]
 
 const MONTHLY_METRICS = [
   { value: 'ROAS',          label: 'ROAS Esperado',             hint: 'ex: 4.0'    },
   { value: 'FATURAMENTO',   label: 'Faturamento Meta (R$)',     hint: 'ex: 80000'  },
-  { value: 'INVESTMENT',    label: 'Investimento do Mês (R$)',  hint: 'ex: 10000'  },
-  { value: 'SPEND',         label: 'Budget Total do Mês (R$)',  hint: 'ex: 10000'  },
+  { value: 'SPEND',         label: 'Budget Mensal (R$)',        hint: 'ex: 10000'  },
   { value: 'CAC',           label: 'CAC Meta (R$)',             hint: 'ex: 80.00'  },
   { value: 'CONVERSIONS',   label: 'Compras Meta',              hint: 'ex: 200'    },
   { value: 'TAXA_CONVERSAO',label: 'Taxa de Conversão (%)',     hint: 'ex: 2.5'    },
   { value: 'TICKET_MEDIO',  label: 'Ticket Médio (R$)',         hint: 'ex: 350'    },
   { value: 'CPS',           label: 'Custo por Sessão (R$)',     hint: 'ex: 0.50'   },
+  { value: 'MENSAGENS',     label: 'Mensagens Recebidas',       hint: 'ex: 500'    },
+  { value: 'VISITAS_PERFIL',label: 'Visitas ao Perfil',         hint: 'ex: 2000'   },
+  { value: 'LIGACOES',      label: 'Ligações Recebidas',        hint: 'ex: 100'    },
+  { value: 'AGENDAMENTOS',  label: 'Agendamentos',              hint: 'ex: 60'     },
 ]
 
 interface GoalFormModalProps {
   clientId: string
   label?: string
+  icon?: React.ReactNode
 }
 
 const initialState = { error: undefined, success: false }
@@ -44,11 +52,12 @@ function getMonthBounds() {
   const now = new Date()
   const start = new Date(now.getFullYear(), now.getMonth(), 1)
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-  const fmt = (d: Date) => d.toISOString().split('T')[0]
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   return { start: fmt(start), end: fmt(end) }
 }
 
-export function GoalFormModal({ clientId, label }: GoalFormModalProps) {
+export function GoalFormModal({ clientId, label, icon }: GoalFormModalProps) {
   const [open, setOpen] = useState(false)
   const [period, setPeriod] = useState<'WEEKLY' | 'MONTHLY'>('MONTHLY')
   const [state, formAction, pending] = useActionState(createGoal, initialState)
@@ -60,10 +69,20 @@ export function GoalFormModal({ clientId, label }: GoalFormModalProps) {
 
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)}>
-        <Plus size={14} />
-        {label ?? 'Nova Meta'}
-      </Button>
+      {icon !== undefined ? (
+        <button
+          onClick={() => setOpen(true)}
+          title="Adicionar outra meta"
+          className="w-6 h-6 flex items-center justify-center rounded border border-[#38435C] text-[#87919E] hover:text-[#95BBE2] hover:border-[#95BBE2]/30 transition-colors"
+        >
+          {icon}
+        </button>
+      ) : (
+        <Button size="sm" onClick={() => setOpen(true)}>
+          <Plus size={14} />
+          {label ?? 'Nova Meta'}
+        </Button>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

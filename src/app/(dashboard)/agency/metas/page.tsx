@@ -33,7 +33,7 @@ export default async function MetasPage() {
           period: 'MONTHLY',
           startDate: { lte: monthEnd },
           endDate: { gte: monthStart },
-          metric: { in: ['FATURAMENTO', 'ROAS', 'INVESTMENT'] },
+          metric: { in: ['FATURAMENTO', 'ROAS', 'SPEND'] },
         },
         select: { metric: true, targetValue: true },
       },
@@ -41,18 +41,18 @@ export default async function MetasPage() {
   })
 
   const clientsData = clients.map((c) => {
-    const fat = c.goals.find((g) => g.metric === 'FATURAMENTO')
-    const roas = c.goals.find((g) => g.metric === 'ROAS')
-    const inv = c.goals.find((g) => g.metric === 'INVESTMENT')
+    const fat   = c.goals.find((g) => g.metric === 'FATURAMENTO')
+    const roas  = c.goals.find((g) => g.metric === 'ROAS')
+    const spend = c.goals.find((g) => g.metric === 'SPEND')
     return {
       id: c.id,
       name: c.name,
       slug: c.slug,
       managerName: c.assignments[0]?.user?.name ?? '—',
       goals: {
-        FATURAMENTO: fat ? Number(fat.targetValue) : null,
-        ROAS: roas ? Number(roas.targetValue) : null,
-        INVESTMENT: inv ? Number(inv.targetValue) : null,
+        FATURAMENTO: fat   ? Number(fat.targetValue)   : null,
+        ROAS:        roas  ? Number(roas.targetValue)  : null,
+        SPEND:       spend ? Number(spend.targetValue) : null,
       },
     }
   })

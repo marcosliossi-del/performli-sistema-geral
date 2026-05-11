@@ -186,6 +186,11 @@ enum MetricType {
   CPS              // custo por sessão (spend / sessões)
   CPM              // custo por mil impressões
   CAC              // custo por aquisição de NOVO cliente (spend / novos usuários GA4)
+  // ── Métricas negócios locais ──────────────────────────────────────────────
+  MENSAGENS        // mensagens recebidas (WhatsApp, Instagram DM, Google Business)
+  VISITAS_PERFIL   // visitas ao perfil (Google Business, Instagram, Facebook)
+  LIGACOES         // ligações recebidas (Google Business)
+  AGENDAMENTOS     // agendamentos / reservas realizadas
 }
 
 model MetricSnapshot {

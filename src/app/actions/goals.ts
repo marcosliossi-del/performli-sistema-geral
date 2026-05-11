@@ -49,6 +49,42 @@ export async function upsertMonthlyGoals(goals: GoalUpsert[]): Promise<{ ok: boo
   return { ok: true }
 }
 
+export async function fetchMonthlyGoals(
+  clientIds: string[],
+  year: number,
+  month: number,
+): Promise<Record<string, { FATURAMENTO: number | null; ROAS: number | null; SPEND: number | null }>> {
+  await requireSession()
+
+  const monthStart = new Date(year, month, 1)
+  const monthEnd   = new Date(year, month + 1, 0)
+
+  const goals = await prisma.goal.findMany({
+    where: {
+      clientId: { in: clientIds },
+      period: 'MONTHLY',
+      startDate: { lte: monthEnd },
+      endDate:   { gte: monthStart },
+      metric:    { in: ['FATURAMENTO', 'ROAS', 'SPEND'] },
+    },
+    select: { clientId: true, metric: true, targetValue: true },
+  })
+
+  const result: Record<string, { FATURAMENTO: number | null; ROAS: number | null; SPEND: number | null }> = {}
+  for (const id of clientIds) {
+    result[id] = { FATURAMENTO: null, ROAS: null, SPEND: null }
+  }
+  for (const g of goals) {
+    const row = result[g.clientId]
+    if (!row) continue
+    const val = Number(g.targetValue)
+    if (g.metric === 'FATURAMENTO') row.FATURAMENTO = val
+    else if (g.metric === 'ROAS')   row.ROAS = val
+    else if (g.metric === 'SPEND')  row.SPEND = val
+  }
+  return result
+}
+
 export type GoalState = {
   error?: string
   success?: boolean
@@ -109,5 +145,6 @@ export async function createGoal(prevState: GoalState, formData: FormData): Prom
   }
 
   revalidatePath(`/clients/${client.slug}`)
+  revalidatePath('/agency/metas')
   return { success: true }
 }
