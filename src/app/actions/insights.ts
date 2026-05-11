@@ -95,16 +95,29 @@ Regras:
     messages: [{ role: 'user', content: prompt }],
   })
 
-  const text = response.content[0].type === 'text' ? response.content[0].text : ''
+  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+
+  // Strip markdown code fences if present (```json ... ``` or ``` ... ```)
+  const text = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
 
   try {
     const parsed = JSON.parse(text) as ClientInsight
+    // Ensure required fields exist
+    if (!parsed.summary || !parsed.items) throw new Error('missing fields')
     return parsed
-  } catch {
-    // Graceful fallback if JSON parsing fails
+  } catch (e) {
+    // Re-try: extract JSON object from anywhere in the text
+    const match = text.match(/\{[\s\S]*\}/)
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[0]) as ClientInsight
+        if (parsed.summary && parsed.items) return parsed
+      } catch { /* fall through */ }
+    }
+    console.error('[insights] JSON parse failed:', e, '\nraw:', raw.slice(0, 300))
     return {
-      summary: 'Análise indisponível no momento.',
-      priority: 'Verifique se os dados de GA4 e Meta Ads estão sincronizados.',
+      summary: 'Não foi possível gerar análise agora. Tente novamente.',
+      priority: 'Certifique-se de que GA4 e Meta Ads estão sincronizados para ter dados suficientes.',
       riskLevel: 'medio',
       items: [],
     }
