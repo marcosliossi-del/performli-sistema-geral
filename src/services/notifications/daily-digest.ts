@@ -43,7 +43,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
   const fetchFrom = monthStart < weekStart ? monthStart : weekStart
   const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1)
 
-  // Fetch all active clients with health score + primary manager
+  // Fetch all active clients with health score + primary manager + streak
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
     select: {
@@ -60,6 +60,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
         select: { user: { select: { id: true, name: true } } },
         take: 1,
       },
+      statusStreak: { select: { status: true, days: true } },
     },
     orderBy: { name: 'asc' },
   })
@@ -83,6 +84,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     status: string | null
     managerName: string
     managerId: string
+    streakDays: number | null
   }
 
   const rows: ClientRow[] = clients.map((c) => {
@@ -97,6 +99,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
       status,
       managerName: assignment?.name ?? 'Sem Gestor',
       managerId:   assignment?.id   ?? '__none__',
+      streakDays:  c.statusStreak?.days ?? null,
     }
   })
 
@@ -149,7 +152,12 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     lines.push(`*👤 ${name}* — ${mClients.length} cliente${mClients.length !== 1 ? 's' : ''}  (✅${mOtimo} ⚠️${mRegular} 🔴${mRuim})`)
 
     for (const c of mClients) {
-      lines.push(`${emoji(c.status)} ${c.name}`)
+      let line = `${emoji(c.status)} ${c.name}`
+      if (c.streakDays && c.streakDays > 1 && (c.status === 'RUIM' || c.status === 'REGULAR')) {
+        const label = c.status === 'RUIM' ? 'crítico' : 'regular'
+        line += ` — _${c.streakDays}º dia ${label}_`
+      }
+      lines.push(line)
     }
   }
 

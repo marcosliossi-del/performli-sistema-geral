@@ -99,6 +99,7 @@ model Client {
   weeklyReports     WeeklyReport[]
   interactions      ClientInteraction[]
   asaasCustomer     AsaasCustomer?
+  statusStreak      ClientStatusStreak?
 }
 
 model ClientInteraction {
@@ -250,6 +251,17 @@ enum HealthStatus {
   OTIMO
   REGULAR
   RUIM
+}
+
+model ClientStatusStreak {
+  id        String       @id @default(cuid())
+  clientId  String       @unique
+  status    HealthStatus
+  since     DateTime     @db.Date
+  days      Int          @default(1)
+  updatedAt DateTime     @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
 model HealthScore {

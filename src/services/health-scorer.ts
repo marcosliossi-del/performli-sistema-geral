@@ -252,6 +252,37 @@ export async function recalculateClientHealth(clientId: string): Promise<{
   }
 }
 
+const STATUS_RANK: Record<HealthStatus, number> = { RUIM: 0, REGULAR: 1, OTIMO: 2 }
+
+function dominantStatus(scores: ScoredMetric[]): HealthStatus | null {
+  if (scores.length === 0) return null
+  return scores.reduce((worst, s) =>
+    STATUS_RANK[s.status] < STATUS_RANK[worst] ? s.status : worst,
+    scores[0].status,
+  )
+}
+
+async function updateStreak(clientId: string, scores: ScoredMetric[]): Promise<void> {
+  const status = dominantStatus(scores)
+  if (!status) return
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const existing = await prisma.clientStatusStreak.findUnique({ where: { clientId } })
+
+  if (existing && existing.status === status) {
+    const days = Math.floor((today.getTime() - existing.since.getTime()) / 86_400_000) + 1
+    await prisma.clientStatusStreak.update({ where: { clientId }, data: { days } })
+  } else {
+    await prisma.clientStatusStreak.upsert({
+      where:  { clientId },
+      update: { status, since: today, days: 1 },
+      create: { clientId, status, since: today, days: 1 },
+    })
+  }
+}
+
 export async function recalculateAllClientsHealth(): Promise<{
   clientsProcessed: number
   totalCreated: number
@@ -269,6 +300,7 @@ export async function recalculateAllClientsHealth(): Promise<{
     const result = await recalculateClientHealth(client.id)
     totalCreated += result.created
     totalUpdated += result.updated
+    await updateStreak(client.id, result.scores)
   }
 
   return { clientsProcessed: clients.length, totalCreated, totalUpdated }
