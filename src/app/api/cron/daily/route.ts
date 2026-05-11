@@ -31,7 +31,7 @@ function isAuthorized(request: NextRequest): boolean {
 }
 
 async function runDailySync() {
-  const isMonday = new Date().getDay() === 1
+  const isSunday = new Date().getDay() === 0
 
   const summary: Record<string, unknown> = {
     synced: { meta: { ok: false }, ga4: { ok: false }, googleAds: { ok: false }, nuvemshop: { ok: false } },
@@ -40,8 +40,8 @@ async function runDailySync() {
     alerts: { ok: false },
     churnRisk: { ok: false },
     budgetWarnings: { ok: false },
-    weeklyReports: isMonday ? { ok: false } : { ok: true, skipped: true },
-    weeklyChecklists: isMonday ? { ok: false } : { ok: true, skipped: true },
+    weeklyReports: isSunday ? { ok: false } : { ok: true, skipped: true },
+    weeklyChecklists: isSunday ? { ok: false } : { ok: true, skipped: true },
   }
 
   // ── Step 1: Sync Meta Ads ──────────────────────────────────────────────────
@@ -154,8 +154,8 @@ async function runDailySync() {
     }
   }
 
-  // ── Step 7: Monday-only — weekly reports & checklists ─────────────────────
-  if (isMonday) {
+  // ── Step 7: Sunday-only — weekly reports & checklists (semana Dom-Sab) ─────
+  if (isSunday) {
     try {
       const reportResult = await generateAllWeeklyReports()
       summary.weeklyReports = {

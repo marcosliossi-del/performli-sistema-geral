@@ -4,7 +4,8 @@
  * Gera relatórios semanais automáticos via IA (Claude) para cada cliente ativo,
  * com análise de tráfego (GA4) e performance de e-commerce.
  *
- * Formato: texto corrido, pronto para enviar via WhatsApp/e-mail toda segunda-feira.
+ * Semana: domingo → sábado (alinhado com getWeekRange de utils.ts).
+ * Formato: texto corrido, pronto para enviar via WhatsApp/e-mail todo domingo.
  */
 
 import Anthropic from '@anthropic-ai/sdk'
@@ -14,22 +15,9 @@ import { getWeekRange, getMonthRange, formatCurrency } from '@/lib/utils'
 
 const anthropic = new Anthropic()
 
-function getLastWeekRange(): { start: Date; end: Date } {
-  const today = new Date()
-  const dayOfWeek = today.getDay() // 0=Dom, 6=Sab
-
-  // Último sábado completo (se hoje é sábado, pega o anterior)
-  const daysToLastSat = dayOfWeek === 6 ? 7 : dayOfWeek + 1
-  const lastSat = new Date(today)
-  lastSat.setDate(today.getDate() - daysToLastSat)
-  lastSat.setHours(23, 59, 59, 999)
-
-  // Domingo dessa mesma semana (6 dias antes do sábado)
-  const lastSun = new Date(lastSat)
-  lastSun.setDate(lastSat.getDate() - 6)
-  lastSun.setHours(0, 0, 0, 0)
-
-  return { start: lastSun, end: lastSat }
+/** Formata Date como 'YYYY-MM-DD' no fuso local (evita conversão UTC do toISOString). */
+function toLocalDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 export async function generateWeeklyReportForClient(
@@ -38,14 +26,17 @@ export async function generateWeeklyReportForClient(
   toStr?: string,
 ): Promise<string | null> {
   const today = new Date()
-  const { start: weekStart } = getWeekRange()
   const { start: monthStart } = getMonthRange(today)
-  const defaultRange = getLastWeekRange()
-  const lastWeekStart = fromStr ? new Date(fromStr + 'T00:00:00') : defaultRange.start
-  const lastWeekEnd   = toStr   ? new Date(toStr   + 'T23:59:59') : defaultRange.end
 
-  const twoWeeksAgo = new Date(lastWeekStart)
-  twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 7)
+  // Semana passada completa (Dom-Sab) — usa getWeekRange 7 dias atrás
+  const lastWeekAnchor = new Date(today.getTime() - 7 * 86_400_000)
+  const defaultRange   = getWeekRange(lastWeekAnchor)
+  const lastWeekStart  = fromStr ? new Date(fromStr + 'T00:00:00') : defaultRange.start
+  const lastWeekEnd    = toStr   ? new Date(toStr   + 'T23:59:59') : defaultRange.end
+
+  // Semana retrasada (Dom-Sab anterior) para comparativo
+  const prevWeekAnchor = new Date(today.getTime() - 14 * 86_400_000)
+  const { start: prevWeekStart, end: prevWeekEnd } = getWeekRange(prevWeekAnchor)
 
   const client = await prisma.client.findUnique({
     where: { id: clientId },
@@ -72,7 +63,7 @@ export async function generateWeeklyReportForClient(
       include: snapInclude,
     }),
     prisma.metricSnapshot.findMany({
-      where: { clientId, date: { gte: twoWeeksAgo, lte: new Date(lastWeekStart.getTime() - 1) } },
+      where: { clientId, date: { gte: prevWeekStart, lte: prevWeekEnd } },
       include: snapInclude,
     }),
     prisma.metricSnapshot.findMany({
@@ -141,8 +132,8 @@ export async function generateWeeklyReportForClient(
   if (ga4PropertyId) {
     try {
       const ga4 = new GA4Client()
-      const since = lastWeekStart.toISOString().split('T')[0]
-      const until = lastWeekEnd.toISOString().split('T')[0]
+      const since = toLocalDateStr(lastWeekStart)
+      const until = toLocalDateStr(lastWeekEnd)
       const items = await ga4.getItemReport(ga4PropertyId, since, until, 5)
 
       if (items.length > 0) {
@@ -261,8 +252,8 @@ ${lw.taxaConversao !== null && lw.taxaConversao < 1 ? `⚠️ INCLUA este bloco 
   const reportContent = content.text
 
   await prisma.weeklyReport.upsert({
-    where: { clientId_weekStart: { clientId, weekStart } },
-    create: { clientId, weekStart, content: reportContent },
+    where: { clientId_weekStart: { clientId, weekStart: lastWeekStart } },
+    create: { clientId, weekStart: lastWeekStart, content: reportContent },
     update: { content: reportContent, generatedAt: new Date() },
   })
 

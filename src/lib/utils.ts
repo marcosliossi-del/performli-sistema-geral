@@ -35,12 +35,12 @@ export function slugify(text: string): string {
 
 export function getWeekRange(date: Date = new Date()): { start: Date; end: Date } {
   const d = new Date(date)
-  const day = d.getDay()
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-  const start = new Date(d.setDate(diff))
+  const day = d.getDay() // 0=Dom, 6=Sab
+  const start = new Date(d)
+  start.setDate(d.getDate() - day) // domingo da semana
   start.setHours(0, 0, 0, 0)
   const end = new Date(start)
-  end.setDate(start.getDate() + 6)
+  end.setDate(start.getDate() + 6) // sábado da semana
   end.setHours(23, 59, 59, 999)
   return { start, end }
 }
