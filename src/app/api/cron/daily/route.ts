@@ -11,6 +11,7 @@ import { generateAllWeeklyReports } from '@/services/weekly-report-generator'
 import { generateAllWeeklyChecklists } from '@/services/weekly-checklist-generator'
 import { sendDailyDigest } from '@/services/notifications/daily-digest'
 import { syncAsaasData } from '@/services/asaas/sync'
+import { detectCriticalAccounts } from '@/services/critical-account-detector'
 
 /**
  * GET /api/cron/daily  ← Vercel Cron triggers GET requests
@@ -40,6 +41,7 @@ async function runDailySync() {
     alerts: { ok: false },
     churnRisk: { ok: false },
     budgetWarnings: { ok: false },
+    criticalAccounts: { ok: false },
     weeklyReports: isSunday ? { ok: false } : { ok: true, skipped: true },
     weeklyChecklists: isSunday ? { ok: false } : { ok: true, skipped: true },
   }
@@ -149,6 +151,21 @@ async function runDailySync() {
     }
   } catch (err) {
     summary.budgetWarnings = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // ── Step 6b: Critical account protocol detection ──────────────────────────
+  try {
+    const criticalResult = await detectCriticalAccounts()
+    summary.criticalAccounts = {
+      ok: true,
+      clientsChecked: criticalResult.clientsChecked,
+      alertsFired: criticalResult.alertsFired,
+    }
+  } catch (err) {
+    summary.criticalAccounts = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     }
