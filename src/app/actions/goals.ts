@@ -5,6 +5,50 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { MetricType } from '@prisma/client'
 
+export type GoalUpsert = {
+  clientId: string
+  metric: MetricType
+  value: number
+  startDate: string // 'YYYY-MM-DD'
+  endDate: string   // 'YYYY-MM-DD'
+}
+
+export async function upsertMonthlyGoals(goals: GoalUpsert[]): Promise<{ ok: boolean; error?: string }> {
+  const session = await requireSession()
+  if (session.role !== 'ADMIN') return { ok: false, error: 'Sem permissão.' }
+
+  for (const g of goals) {
+    if (isNaN(g.value) || g.value < 0) continue
+    const startDate = new Date(g.startDate)
+    const endDate   = new Date(g.endDate)
+
+    await prisma.goal.upsert({
+      where: {
+        clientId_metric_period_startDate: {
+          clientId:  g.clientId,
+          metric:    g.metric,
+          period:    'MONTHLY',
+          startDate,
+        },
+      },
+      update: { targetValue: g.value, endDate },
+      create: {
+        clientId:    g.clientId,
+        metric:      g.metric,
+        period:      'MONTHLY',
+        targetValue: g.value,
+        startDate,
+        endDate,
+      },
+    })
+  }
+
+  revalidatePath('/agency/metas')
+  revalidatePath('/clients')
+  revalidatePath('/dashboard')
+  return { ok: true }
+}
+
 export type GoalState = {
   error?: string
   success?: boolean

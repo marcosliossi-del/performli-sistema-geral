@@ -84,9 +84,10 @@ const navigation: NavSection[] = [
     label: 'AGÊNCIA',
     roles: ['ADMIN', 'CS'],
     items: [
-      { name: 'Visão Geral', href: '/agency',   icon: Building2, roles: ['ADMIN' as Role] },
-      { name: 'Gestores',    href: '/managers', icon: PieChart },
-      { name: 'Equipe',      href: '/team',     icon: Users,     roles: ['ADMIN' as Role] },
+      { name: 'Visão Geral',   href: '/agency',       icon: Building2, roles: ['ADMIN' as Role] },
+      { name: 'Metas Mensais', href: '/agency/metas', icon: Target,    roles: ['ADMIN' as Role] },
+      { name: 'Gestores',      href: '/managers',     icon: PieChart },
+      { name: 'Equipe',        href: '/team',         icon: Users,     roles: ['ADMIN' as Role] },
     ],
   },
 ]
