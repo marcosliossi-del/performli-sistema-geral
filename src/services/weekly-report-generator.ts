@@ -241,8 +241,8 @@ ${lw.taxaConversao !== null && lw.taxaConversao < 1 ? `⚠️ INCLUA este bloco 
 - Frases curtas, no máximo 12 palavras cada
 - Zero termos técnicos sem explicação
 - Nunca use: estratégico, robusto, potencializar, insights, jornada, pilares, desbloquear, transformação, crucial, significativo, abordagem, conteúdo de valor, sustentável, no cenário atual, no fim do dia, não é sobre X é sobre Y, a chave está em, vamos mergulhar, vamos explorar, vamos destrinchar, isso aqui é ouro, o pulo do gato, a verdade desconfortável
-- Nunca use adjetivos de marketing para descrever produtos ou categorias: apelo, fashion, puxando os pedidos, impulsionando, dominando, liderando com força, com destaque especial, está em alta, ganhou tração, performou bem, se sobressaiu, se destacou com relevância
-- Ao falar de produtos: diga simplesmente o nome e o número. Ex: "Vestido floral: 23 pedidos, R$4.800." Nada mais.
+- Nunca use frases vagas sobre produtos: "peças de maior destaque", "apelo visual", "estão destacando bem", "itens com mais saída", "produtos com boa aceitação", "peças que performaram", "categorias que se sobressaíram", "artigos com relevância", "produtos que chamaram atenção". Essas frases não dizem nada ao cliente.
+- Ao falar de produtos vá direto ao nome: "O que mais vendeu foi o macacão tule", "Partes de cima tiveram mais saída essa semana", "O vestido X vendeu 18 unidades". Nome do produto ou categoria real, sem adjetivo nenhum antes.
 - Nunca use travessão ( — ) no texto
 - Nunca culpe o tráfego pelos resultados
 - PROJEÇÃO DE FECHAMENTO DO MÊS: só mencione se "Cliente no prazo" for SIM. Se for NÃO, nunca projete nem cite o acumulado do mês de forma que exponha um resultado negativo
