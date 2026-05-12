@@ -174,8 +174,8 @@ export async function generateWeeklyReportForClient(
 
   const periodoStr = `${lastWeekStart.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} a ${lastWeekEnd.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`
 
-  const prompt = `Você é o assistente de tráfego pago e performance da Arkza, especializado em e-commerces.
-Gere um relatório semanal curto, direto e consultivo para ser enviado via WhatsApp ao cliente. Sem markdown, use apenas emojis como marcadores, frases curtas e linha em branco entre blocos.
+  const prompt = `Você é o gestor de tráfego pago da Arkza enviando um resumo semanal para o cliente via WhatsApp.
+Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrolação, sem cara de relatório corporativo, sem cara de IA.
 
 🗓️ DADOS DO CLIENTE:
 - Nome: ${client.name}
@@ -197,48 +197,41 @@ Gere um relatório semanal curto, direto e consultivo para ser enviado via Whats
 TOP PRODUTOS DA SEMANA (dados reais do GA4):
 ${topProductsStr}
 
-📊 ESTRUTURA OBRIGATÓRIA DO RELATÓRIO (siga exatamente):
+📊 ESTRUTURA DO RELATÓRIO (siga exatamente):
 
-📊 RELATÓRIO SEMANAL — ${client.name.toUpperCase()}
-📅 ${periodoStr}
+📊 Semana de ${periodoStr}
 
-[1 frase de abertura com tom calibrado:
-→ Resultado acima da meta: celebratório
-→ Resultado abaixo da meta ou queda: estratégico e tranquilizador
-→ Se houver sazonalidade ativa ou recente: mencione em 1 frase que oscilação é natural e já esperada]
+[1 frase de abertura honesta e curta:
+→ Se foi boa semana: comemore de forma simples, ex: "Foi uma boa semana!"
+→ Se ficou abaixo: seja direto e tranquilo, ex: "Semana mais fraca, mas já sabemos o que ajustar."
+→ Se houver sazonalidade: 1 frase máximo contextualizando, nada mais]
 
-📈 Resultados da semana
-[Máximo 5 linhas. Traga: faturamento com variação, compras com variação, sessões com variação e ROAS realizado vs meta. Seja direto — número, emoji e 1 adjetivo/contexto curto por linha. Sem explicações longas.]
+📈 O que aconteceu essa semana
+[Máximo 5 linhas. Traga faturamento, compras, sessões e ROAS. Escreva como alguém contando os números para um amigo: número + o que isso significa em 3 palavras. Sem adjetivos pomposos.]
 
-👗 O que mais vendeu
-[Máximo 4 linhas. Liste os produtos ou categorias que lideraram em receita com base nos dados do GA4 acima. Se uma coleção ou categoria dominar claramente, destaque em 1 frase. Nada além disso.]
+🛍️ O que mais vendeu
+[Máximo 4 linhas. Liste os produtos ou categorias que lideraram. Se uma categoria dominar, diga isso em 1 frase simples. Só o essencial.]
 
-🚀 Próximos passos
-[3 ações curtas, em primeira pessoa do plural. 1 linha cada.]
-Vamos [ação #1]
-Reforçaremos [ação #2]
-Ativaremos [ação #3]
+📌 O que vem por aí
+[3 frases curtas sobre o que a equipe vai fazer na próxima semana. Escreva na primeira pessoa do plural, como "Vamos testar...", "Vamos reforçar...", "Vamos ajustar...". Nada vago.]
 
-${lw.taxaConversao !== null && lw.taxaConversao < 1 ? `⚠️ INCLUA este bloco pois a taxa de conversão está abaixo de 1%:
+${lw.taxaConversao !== null && lw.taxaConversao < 1 ? `⚠️ INCLUA este bloco — taxa de conversão abaixo de 1%:
 
-🔍 Atenção na jornada
-[Máximo 4 linhas. Identifique a trava, 1 possível motivo e 1 sugestão prática pro cliente. Tom consultivo e parceiro, nunca alarmista.]` : `NÃO inclua o bloco "Atenção na jornada" pois a taxa de conversão está adequada (≥1%).`}
+🔎 Um ponto de atenção
+[Máximo 3 linhas. Explique em linguagem simples que poucas pessoas que entram no site estão comprando, dê 1 possível motivo prático e 1 sugestão clara. Tom de parceiro, não de alarme.]` : `NÃO inclua o bloco de atenção pois a taxa de conversão está adequada (>=1%).`}
 
-💜 A Arkza tá com você.
-[1 frase curta de fechamento — diferente a cada relatório.]
-
-⚙️ REGRAS:
-- Máximo de 3 blocos fixos + 1 condicional
-- Cada bloco: no máximo 5 linhas
-- Frases curtas, sem termos técnicos
-- Nunca culpe o tráfego
-- Primeira pessoa do plural nos próximos passos
-- Tom emocional calibrado pelo resultado
-- Sazonalidade sempre contextualizada em 1 frase, nunca em parágrafo
+⚙️ REGRAS OBRIGATÓRIAS:
+- Linguagem de conversa, não de relatório corporativo
+- Frases curtas, no máximo 12 palavras cada
+- Zero termos técnicos sem explicação
+- Nunca use: estratégico, robusto, potencializar, insights, jornada, pilares, desbloquear, transformação, crucial, significativo, abordagem, conteúdo de valor, sustentável, no cenário atual, no fim do dia, não é sobre X é sobre Y, a chave está em, vamos mergulhar, vamos explorar, vamos destrinchar, isso aqui é ouro, o pulo do gato, a verdade desconfortável
+- Nunca use travessão ( — ) no texto
+- Nunca culpe o tráfego pelos resultados
+- Tom calibrado pelo resultado: alegre se foi bom, calmo e objetivo se foi ruim
 - Sem markdown (sem *, #, -)
-- Use apenas emojis como marcadores visuais
+- Use emojis só nos títulos dos blocos, não no meio das frases
 - Linha em branco entre cada bloco
-- Gere apenas o texto do relatório, pronto para copiar e enviar no WhatsApp`
+- Gere apenas o texto final, pronto para enviar no WhatsApp`
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
