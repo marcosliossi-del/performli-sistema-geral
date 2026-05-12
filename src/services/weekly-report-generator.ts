@@ -174,6 +174,15 @@ export async function generateWeeklyReportForClient(
 
   const periodoStr = `${lastWeekStart.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} a ${lastWeekEnd.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`
 
+  // Avalia saúde geral do cliente para calibrar o que expor na projeção
+  const pacedGoalMes = faturamentoGoal
+    ? (Number(faturamentoGoal.targetValue) / daysInMonth) * daysElapsed
+    : null
+  // "No prazo" = receita acumulada >= 85% do esperado pelo pacing, ou ROAS acima da meta
+  const receitaOkVsPacing = pacedGoalMes != null && month.revenue >= pacedGoalMes * 0.85
+  const roasOk = roasAboveMeta === true
+  const clienteNoPrazo = receitaOkVsPacing || roasOk
+
   const prompt = `Você é o gestor de tráfego pago da Arkza enviando um resumo semanal para o cliente via WhatsApp.
 Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrolação, sem cara de relatório corporativo, sem cara de IA.
 
@@ -192,6 +201,7 @@ Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrola
 - Faturamento acumulado no mês: ${month.revenue > 0 ? formatCurrency(month.revenue) : 'sem dados'} (${daysElapsed} de ${daysInMonth} dias)
 - Projeção para fechar o mês: ${projecaoMes !== null ? formatCurrency(projecaoMes) : 'insuficiente'}
 - Resultado vs meta ROAS: ${roasAboveMeta === true ? 'ACIMA DA META' : roasAboveMeta === false ? 'ABAIXO DA META' : 'meta não definida'}
+- Cliente no prazo (receita vs pacing): ${clienteNoPrazo ? 'SIM' : 'NÃO'}
 - Contexto sazonal: não informado
 
 TOP PRODUTOS DA SEMANA (dados reais do GA4):
@@ -207,13 +217,19 @@ ${topProductsStr}
 → Se houver sazonalidade: 1 frase máximo contextualizando, nada mais]
 
 📈 O que aconteceu essa semana
-[Máximo 5 linhas. Traga faturamento, compras, sessões e ROAS. Escreva como alguém contando os números para um amigo: número + o que isso significa em 3 palavras. Sem adjetivos pomposos.]
+[Máximo 5 linhas. Traga faturamento, compras, sessões e ROAS. Escreva como alguém contando os números para um amigo: número + o que isso significa em 3 palavras. Sem adjetivos pomposos.
+${clienteNoPrazo
+  ? 'CLIENTE NO PRAZO: pode mencionar a projeção de fechamento do mês de forma positiva, ex: "No mês, já acumulamos X e a projeção é fechar em torno de Y."'
+  : 'CLIENTE ABAIXO DO PRAZO: NÃO mencione a projeção nem o acumulado do mês neste bloco. Foque só nos números da semana. Não projete números negativos, não gere ansiedade.'}]
 
 🛍️ O que mais vendeu
 [Máximo 4 linhas. Liste os produtos ou categorias que lideraram. Se uma categoria dominar, diga isso em 1 frase simples. Só o essencial.]
 
 📌 O que vem por aí
-[3 frases curtas sobre o que a equipe vai fazer na próxima semana. Escreva na primeira pessoa do plural, como "Vamos testar...", "Vamos reforçar...", "Vamos ajustar...". Nada vago.]
+[3 frases curtas sobre o que a equipe vai fazer na próxima semana. Escreva na primeira pessoa do plural.
+${clienteNoPrazo
+  ? 'CLIENTE NO PRAZO: ações de manutenção e escala, ex: "Vamos reforçar o que funcionou...", "Vamos testar..."'
+  : 'CLIENTE ABAIXO DO PRAZO: mostre movimento e plano, ex: "Já estamos ajustando os anúncios...", "Vamos reunir internamente essa semana para rever a estratégia...", "Vamos testar novos criativos...". Transmita que a equipe está agindo, não esperando.'}]
 
 ${lw.taxaConversao !== null && lw.taxaConversao < 1 ? `⚠️ INCLUA este bloco — taxa de conversão abaixo de 1%:
 
@@ -227,7 +243,9 @@ ${lw.taxaConversao !== null && lw.taxaConversao < 1 ? `⚠️ INCLUA este bloco 
 - Nunca use: estratégico, robusto, potencializar, insights, jornada, pilares, desbloquear, transformação, crucial, significativo, abordagem, conteúdo de valor, sustentável, no cenário atual, no fim do dia, não é sobre X é sobre Y, a chave está em, vamos mergulhar, vamos explorar, vamos destrinchar, isso aqui é ouro, o pulo do gato, a verdade desconfortável
 - Nunca use travessão ( — ) no texto
 - Nunca culpe o tráfego pelos resultados
-- Tom calibrado pelo resultado: alegre se foi bom, calmo e objetivo se foi ruim
+- PROJEÇÃO DE FECHAMENTO DO MÊS: só mencione se "Cliente no prazo" for SIM. Se for NÃO, nunca projete nem cite o acumulado do mês de forma que exponha um resultado negativo
+- CLIENTE ABAIXO DO PRAZO: o tom deve transmitir movimento e ação da equipe. Mostre que estamos trabalhando, ajustando, reunindo. Nunca deixe o cliente ansioso com números ruins sem resposta
+- Tom calibrado pelo resultado: animado se foi bom, firme e ativo se foi ruim
 - Sem markdown (sem *, #, -)
 - Use emojis só nos títulos dos blocos, não no meio das frases
 - Linha em branco entre cada bloco
