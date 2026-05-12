@@ -1,0 +1,1 @@
+ALTER TYPE "MetricType" ADD VALUE 'LEADS';

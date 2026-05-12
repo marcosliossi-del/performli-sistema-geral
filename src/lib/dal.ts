@@ -36,6 +36,8 @@ export type ClientHealthSummary = {
   achievementPct: number
   trend: 'up' | 'down' | 'stable'
   metrics: { name: string; status: HealthStatus; pct: number }[]
+  streakDays: number | null
+  streakStatus: HealthStatus | null
 }
 
 export const getDashboardData = cache(async (userId: string, role: string) => {
@@ -65,6 +67,7 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
           where: { periodStart: { gte: fetchFrom } },
           orderBy: { calculatedAt: 'desc' },
         },
+        statusStreak: true,
       },
       orderBy: { name: 'asc' },
     }),
@@ -145,6 +148,8 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
         status: s.status,
         pct: Math.round(Number(s.achievementPct)),
       })),
+      streakDays: client.statusStreak?.days ?? null,
+      streakStatus: client.statusStreak?.status ?? null,
     }
   })
 
@@ -473,6 +478,9 @@ export type ClientKPIs = {
   // CAC — investimento total / novos usuários GA4
   cac: number | null
   cacTrend: number | null
+  // Link CTR e CPC (calculados a partir de clicks/impressions dos ad platforms)
+  ctr: number | null
+  cpc: number | null
 }
 
 export const getClientKPIs = cache(async (
@@ -531,6 +539,12 @@ export const getClientKPIs = cache(async (
     const sessions  = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
     const newUsers  = ga4.reduce((s, x) => s + (x.newUsers ?? 0), 0)
     const adImpr    = meta.reduce((s, x) => s + (x.impressions ?? 0), 0)
+    // Link CTR = ad clicks / impressions (not stored ctr which is CTR All)
+    const ads         = snaps.filter((x) => x.platformAccount.platform !== 'GA4')
+    const adClicks    = ads.reduce((s, x) => s + (x.clicks ?? 0), 0)
+    const allImpr     = ads.reduce((s, x) => s + (x.impressions ?? 0), 0)
+    const ctrLink     = allImpr > 0 && adClicks > 0 ? (adClicks / allImpr) * 100 : null
+    const cpcLink     = totalSpend > 0 && adClicks > 0 ? totalSpend / adClicks : null
 
     const roas       = totalSpend  > 0 && revenue > 0 ? revenue / totalSpend  : null
     const roasMeta   = metaSpend   > 0 && revenue > 0 ? revenue / metaSpend   : null
@@ -541,6 +555,7 @@ export const getClientKPIs = cache(async (
       spend: totalSpend, metaSpend, googleSpend, tiktokSpend,
       sessions, purchases, revenue, adImpr, newUsers,
       roas, roasMeta, roasGoogle, roasTiktok,
+      ctrLink, cpcLink,
       ticketMedio:   purchases > 0 && revenue > 0 ? revenue / purchases : null,
       taxaConversao: sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null,
       cps:           sessions > 0 && totalSpend > 0 ? totalSpend / sessions : null,
@@ -600,6 +615,8 @@ export const getClientKPIs = cache(async (
     cpaTrend: pctChange(curr.cpa, prev.cpa),
     cac: curr.cac,
     cacTrend: pctChange(curr.cac, prev.cac),
+    ctr: curr.ctrLink,
+    cpc: curr.cpcLink,
   }
 })
 
@@ -625,6 +642,11 @@ export const metricLabels: Record<string, string> = {
   TAXA_CONVERSAO: 'Taxa de Conversão',
   CPS: 'Custo por Sessão',
   CPM: 'CPM',
+  MENSAGENS: 'Mensagens',
+  VISITAS_PERFIL: 'Visitas ao Perfil',
+  LIGACOES: 'Ligações',
+  AGENDAMENTOS: 'Agendamentos',
+  LEADS: 'Leads Gerados',
 }
 
 // ─── Metric history (charts) ──────────────────────────────────────────────────
@@ -977,9 +999,12 @@ export type ManagerClientRow = {
   name: string
   slug: string
   overallStatus: HealthStatus | null
+  achievementPct: number | null
   platforms: string[]
   goalsTotal: number
   goalsHit: number   // metas com status OTIMO
+  streakDays: number | null
+  streakStatus: HealthStatus | null
 }
 
 export type ManagerWithStats = {
@@ -1018,7 +1043,7 @@ export const getManagersOverview = cache(async (): Promise<ManagerWithStats[]> =
               healthScores: {
                 // monthStart covers both monthly (periodStart=1st) and weekly scores
                 where: { periodStart: { gte: monthStart } },
-                select: { status: true, metric: true, period: true },
+                select: { status: true, metric: true, period: true, achievementPct: true },
               },
               goals: {
                 where: {
@@ -1052,14 +1077,21 @@ export const getManagersOverview = cache(async (): Promise<ManagerWithStats[]> =
           ? 'REGULAR'
           : 'OTIMO'
 
+      const avgPct = scores.length > 0
+        ? Math.round(scores.reduce((s, h) => s + Number(h.achievementPct ?? 0), 0) / scores.length)
+        : null
+
       return {
         id: c.id,
         name: c.name,
         slug: c.slug,
         overallStatus,
+        achievementPct: avgPct,
         platforms: [...new Set(c.platformAccounts.map((p) => p.platform))],
         goalsTotal: c.goals.length,
         goalsHit: scores.filter((s) => s.status === 'OTIMO').length,
+        streakDays: null,
+        streakStatus: null,
       }
     })
 
@@ -1203,6 +1235,7 @@ export type ManagerStat = {
   clientsWarning: number
   clientsCritical: number
   vsLastWeek: number | null  // % change in totalSales vs previous 7 days
+  clients: ManagerClientRow[]
 }
 
 export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
@@ -1239,8 +1272,9 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
       // Monthly scores use periodStart=1st; use monthStart to include both
       healthScores: {
         where: { periodStart: { gte: monthStart } },
-        select: { status: true },
+        select: { status: true, achievementPct: true },
       },
+      statusStreak: { select: { status: true, days: true } },
     },
   })
 
@@ -1262,15 +1296,20 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
     : []
 
   type SnapItem = (typeof clients)[number]['metricSnapshots'][number]
-  type HealthItem = { status: HealthStatus }
+  type HealthItem = { status: HealthStatus; achievementPct: unknown }
 
   // Group by manager
   const managerMap = new Map<string, {
     user: { id: string; name: string; role: string; avatarUrl: string | null }
     clientData: Array<{
+      id: string
+      name: string
+      slug: string
       snaps: SnapItem[]
       healthScores: HealthItem[]
       prevSales: number
+      streakDays: number | null
+      streakStatus: HealthStatus | null
     }>
   }>()
 
@@ -1289,9 +1328,14 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
       .reduce((sum, s) => sum + Number(s.conversionValue ?? 0), 0)
 
     managerMap.get(user.id)!.clientData.push({
+      id: client.id,
+      name: client.name,
+      slug: client.slug,
       snaps: client.metricSnapshots,
       healthScores: client.healthScores,
       prevSales,
+      streakDays: client.statusStreak?.days ?? null,
+      streakStatus: client.statusStreak?.status ?? null,
     })
   }
 
@@ -1357,6 +1401,23 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
         ? 100
         : null
 
+    const clientRows: ManagerClientRow[] = clientData.map(({ id, name, slug, healthScores, streakDays, streakStatus }) => {
+      const overallStatus: HealthStatus | null =
+        healthScores.length === 0 ? null
+        : healthScores.some((s) => s.status === 'RUIM') ? 'RUIM'
+        : healthScores.some((s) => s.status === 'REGULAR') ? 'REGULAR'
+        : 'OTIMO'
+      const avgPct = healthScores.length > 0
+        ? Math.round(healthScores.reduce((s, h) => s + Number(h.achievementPct ?? 0), 0) / healthScores.length)
+        : null
+      return {
+        id, name, slug, overallStatus, achievementPct: avgPct,
+        platforms: [], goalsTotal: healthScores.length,
+        goalsHit: healthScores.filter((s) => s.status === 'OTIMO').length,
+        streakDays, streakStatus,
+      }
+    })
+
     result.push({
       userId: user.id,
       name: user.name,
@@ -1371,6 +1432,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
       clientsWarning,
       clientsCritical,
       vsLastWeek,
+      clients: clientRows,
     })
   }
 
@@ -2061,4 +2123,105 @@ export const getAssignmentsData = cache(async () => {
   }))
 
   return { clients, managers: managerRows }
+})
+
+// ─── Week-over-week health score comparison ───────────────────────────────────
+
+export type WeekScoreRow = {
+  metric: string
+  label: string
+  thisWeekPct: number | null
+  prevWeekPct: number | null
+  delta: number | null           // thisWeekPct - prevWeekPct
+  thisWeekStatus: HealthStatus | null
+  prevWeekStatus: HealthStatus | null
+}
+
+export const getWeekScoreComparison = cache(async (clientId: string): Promise<WeekScoreRow[]> => {
+  const { start: weekStart } = getWeekRange()
+  const prevWeekStart = new Date(weekStart)
+  prevWeekStart.setDate(prevWeekStart.getDate() - 7)
+  const prevWeekEnd = new Date(weekStart)
+  prevWeekEnd.setDate(prevWeekEnd.getDate() - 1)
+
+  const [thisWeekScores, prevWeekScores] = await Promise.all([
+    prisma.healthScore.findMany({
+      where: { clientId, period: 'WEEKLY', periodStart: { gte: weekStart } },
+      select: { metric: true, achievementPct: true, status: true },
+    }),
+    prisma.healthScore.findMany({
+      where: { clientId, period: 'WEEKLY', periodStart: { gte: prevWeekStart, lte: prevWeekEnd } },
+      select: { metric: true, achievementPct: true, status: true },
+    }),
+  ])
+
+  const allMetrics = new Set([...thisWeekScores.map((s) => s.metric), ...prevWeekScores.map((s) => s.metric)])
+
+  return Array.from(allMetrics).map((metric) => {
+    const thisW = thisWeekScores.find((s) => s.metric === metric)
+    const prevW = prevWeekScores.find((s) => s.metric === metric)
+    const thisPct = thisW ? Math.round(Number(thisW.achievementPct)) : null
+    const prevPct = prevW ? Math.round(Number(prevW.achievementPct)) : null
+    return {
+      metric,
+      label: metricLabels[metric] ?? metric,
+      thisWeekPct: thisPct,
+      prevWeekPct: prevPct,
+      delta: thisPct !== null && prevPct !== null ? thisPct - prevPct : null,
+      thisWeekStatus: thisW?.status ?? null,
+      prevWeekStatus: prevW?.status ?? null,
+    }
+  })
+})
+
+// ─── Health score weekly history (for trend chart) ───────────────────────────
+
+export type HealthWeekPoint = {
+  weekLabel: string   // 'DD/MM'
+  weekStart: string   // 'YYYY-MM-DD'
+  avgPct: number
+  status: HealthStatus | null
+}
+
+export const getHealthScoreHistory = cache(async (clientId: string, weeks = 8): Promise<HealthWeekPoint[]> => {
+  const since = new Date()
+  since.setDate(since.getDate() - weeks * 7)
+  since.setHours(0, 0, 0, 0)
+
+  const scores = await prisma.healthScore.findMany({
+    where: {
+      clientId,
+      period: 'WEEKLY',
+      periodStart: { gte: since },
+    },
+    orderBy: { periodStart: 'asc' },
+    select: { periodStart: true, achievementPct: true, status: true },
+  })
+
+  // Group by week start
+  const byWeek = new Map<string, { sum: number; count: number; statuses: HealthStatus[] }>()
+  for (const s of scores) {
+    const key = s.periodStart.toISOString().split('T')[0]
+    const cur = byWeek.get(key) ?? { sum: 0, count: 0, statuses: [] }
+    cur.sum += Number(s.achievementPct)
+    cur.count++
+    cur.statuses.push(s.status)
+    byWeek.set(key, cur)
+  }
+
+  return Array.from(byWeek.entries()).map(([key, { sum, count, statuses }]) => {
+    const d = new Date(key + 'T12:00:00')
+    const avgPct = Math.round(sum / count)
+    const status: HealthStatus | null =
+      statuses.includes('RUIM') ? 'RUIM'
+      : statuses.includes('REGULAR') ? 'REGULAR'
+      : statuses.length > 0 ? 'OTIMO'
+      : null
+    return {
+      weekStart: key,
+      weekLabel: `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`,
+      avgPct,
+      status,
+    }
+  })
 })

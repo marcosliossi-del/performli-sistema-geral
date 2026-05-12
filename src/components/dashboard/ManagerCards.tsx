@@ -1,7 +1,12 @@
 'use client'
 
+import { useState } from 'react'
+import Link from 'next/link'
 import { ManagerStat } from '@/lib/dal'
 import { formatCurrency, formatNumber } from '@/lib/utils'
+import { healthBgClasses, healthLabels } from '@/lib/health'
+import { HealthStatus } from '@prisma/client'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 
 interface Props {
   managers: ManagerStat[]
@@ -64,6 +69,7 @@ function HealthMiniBar({ healthy, warning, critical }: { healthy: number; warnin
 
 function ManagerCard({ manager }: { manager: ManagerStat }) {
   const total = manager.clientsHealthy + manager.clientsWarning + manager.clientsCritical
+  const [expanded, setExpanded] = useState(false)
 
   return (
     <div className="bg-[#0A1E2C] border border-[#38435C] rounded-xl p-4 space-y-4">
@@ -137,6 +143,48 @@ function ManagerCard({ manager }: { manager: ManagerStat }) {
             warning={manager.clientsWarning}
             critical={manager.clientsCritical}
           />
+        </div>
+      )}
+
+      {/* Expandable client list */}
+      {manager.clients.length > 0 && (
+        <div>
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="flex items-center gap-1 text-xs text-[#87919E] hover:text-[#EBEBEB] transition-colors"
+          >
+            {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            {expanded ? 'Ocultar clientes' : `Ver ${manager.clients.length} cliente${manager.clients.length !== 1 ? 's' : ''}`}
+          </button>
+          {expanded && (
+            <div className="mt-2 space-y-1">
+              {manager.clients.map((c) => (
+                <Link key={c.id} href={`/clients/${c.slug}`}>
+                  <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#38435C]/20 hover:bg-[#38435C]/40 transition-colors">
+                    <span className="text-xs text-[#EBEBEB] truncate max-w-[140px]">{c.name}</span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {c.overallStatus ? (
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${healthBgClasses[c.overallStatus as HealthStatus]}`}>
+                          {healthLabels[c.overallStatus as HealthStatus]}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[#87919E]">sem meta</span>
+                      )}
+                      {c.streakDays != null && c.streakDays >= 3 && c.streakStatus && (
+                        <span className={`text-[9px] px-1 py-0.5 rounded-full ${
+                          c.streakStatus === 'RUIM' ? 'text-[#EF4444] bg-[#EF4444]/10'
+                          : c.streakStatus === 'REGULAR' ? 'text-[#EAB308] bg-[#EAB308]/10'
+                          : 'text-[#22C55E] bg-[#22C55E]/10'
+                        }`}>
+                          {c.streakDays}d
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

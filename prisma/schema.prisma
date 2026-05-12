@@ -191,6 +191,7 @@ enum MetricType {
   VISITAS_PERFIL   // visitas ao perfil (Google Business, Instagram, Facebook)
   LIGACOES         // ligações recebidas (Google Business)
   AGENDAMENTOS     // agendamentos / reservas realizadas
+  LEADS            // leads gerados (evento de lead GA4 ou pixel)
 }
 
 model MetricSnapshot {

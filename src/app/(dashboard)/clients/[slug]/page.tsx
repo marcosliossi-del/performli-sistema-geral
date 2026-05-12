@@ -5,6 +5,7 @@ import {
   getClientKPIs, getGoalPaceMetrics, getClientChat, getClientWeeklyReport,
   getClientCampaigns, getLatestCampaignInsight, metricLabels,
   getClientDailyRevenue, getClientMonthlyComparison, getClientInteractions,
+  getHealthScoreHistory, getWeekScoreComparison,
 } from '@/lib/dal'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardValue } from '@/components/ui/card'
@@ -34,6 +35,9 @@ import { MonthlyComparisonChart } from '@/components/clients/MonthlyComparisonCh
 import { InteractionTimeline } from '@/components/clients/InteractionTimeline'
 import { EditClientButton } from '@/components/clients/ClientHeader'
 import { RemovePlatformButton } from '@/components/clients/RemovePlatformButton'
+import { HealthScoreHistoryChart } from '@/components/clients/HealthScoreHistoryChart'
+import { PillarBenchmarkPanel } from '@/components/clients/PillarBenchmarkPanel'
+import { WeekComparisonTable } from '@/components/clients/WeekComparisonTable'
 
 const platformColors: Record<string, string> = {
   META_ADS: '#1877F2',
@@ -109,7 +113,7 @@ export default async function ClientDetailPage({
   const activeFrom = from ?? defaultFrom
   const activeTo = to ?? defaultTo
 
-  const [metricHistory, kpis, paceGoals, chat, weeklyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions] = await Promise.all([
+  const [metricHistory, kpis, paceGoals, chat, weeklyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison] = await Promise.all([
     getClientMetricHistory(client.id, 14),
     getClientKPIs(client.id, activeFrom, activeTo),
     getGoalPaceMetrics(client.id),
@@ -120,6 +124,8 @@ export default async function ClientDetailPage({
     getClientDailyRevenue(client.id, activeFrom, activeTo),
     getClientMonthlyComparison(client.id),
     getClientInteractions(client.id),
+    getHealthScoreHistory(client.id, 8),
+    getWeekScoreComparison(client.id),
   ])
 
   const weeklyGoals = client.goals.filter((g) => g.period === 'WEEKLY')
@@ -492,6 +498,38 @@ export default async function ClientDetailPage({
           </div>
         )}
       </div>
+
+      {/* ── Comparativo semana vs semana anterior ────────────────────────── */}
+      {weekComparison.length > 0 && (
+        <WeekComparisonTable rows={weekComparison} />
+      )}
+
+      {/* ── Histórico de Saúde (8 semanas) ──────────────────────────────── */}
+      {healthHistory.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-[#EBEBEB]">Histórico de Saúde</h2>
+            <div className="flex items-center gap-3 text-[10px] text-[#87919E]">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#22C55E] inline-block" /> ≥90% Ótimo</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#EAB308] inline-block" /> ≥70% Regular</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#EF4444] inline-block" /> &lt;70% Ruim</span>
+            </div>
+          </div>
+          <div className="card p-4">
+            <HealthScoreHistoryChart data={healthHistory} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Benchmarks de mercado por pilar ─────────────────────────────── */}
+      <PillarBenchmarkPanel
+        roas={kpis.roas}
+        ctr={kpis.ctr}
+        cpc={kpis.cpc}
+        taxaConversao={kpis.taxaConversao}
+        ticketMedio={kpis.ticketMedio}
+        cpa={kpis.cpa}
+      />
 
       {/* ── Diagnóstico de KPIs ──────────────────────────────────────────── */}
       <KPIDiagnosticCard

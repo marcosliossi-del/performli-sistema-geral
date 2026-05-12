@@ -21,6 +21,8 @@ interface ClientHealth {
     pct: number
   }[]
   trend: 'up' | 'down' | 'stable'
+  streakDays?: number | null
+  streakStatus?: HealthStatus | null
 }
 
 interface ClientHealthGridProps {
@@ -97,14 +99,27 @@ function ClientCard({ client }: { client: ClientHealth }) {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <TrendIcon size={14} className={trendColor} />
-            {client.overallStatus ? (
-              <Badge variant={client.overallStatus.toLowerCase() as 'otimo' | 'regular' | 'ruim'}>
-                {healthLabels[client.overallStatus]}
-              </Badge>
-            ) : (
-              <span className="text-[10px] text-[#87919E] px-2 py-0.5 rounded-full bg-[#38435C]/50">Sem metas</span>
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <div className="flex items-center gap-1.5">
+              <TrendIcon size={14} className={trendColor} />
+              {client.overallStatus ? (
+                <Badge variant={client.overallStatus.toLowerCase() as 'otimo' | 'regular' | 'ruim'}>
+                  {healthLabels[client.overallStatus]}
+                </Badge>
+              ) : (
+                <span className="text-[10px] text-[#87919E] px-2 py-0.5 rounded-full bg-[#38435C]/50">Sem metas</span>
+              )}
+            </div>
+            {client.streakDays != null && client.streakDays >= 3 && client.streakStatus && (
+              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${
+                client.streakStatus === 'RUIM'
+                  ? 'bg-[#EF4444]/15 text-[#EF4444]'
+                  : client.streakStatus === 'REGULAR'
+                  ? 'bg-[#EAB308]/15 text-[#EAB308]'
+                  : 'bg-[#22C55E]/15 text-[#22C55E]'
+              }`}>
+                há {client.streakDays} dias
+              </span>
             )}
           </div>
         </div>
