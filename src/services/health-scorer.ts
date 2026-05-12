@@ -115,6 +115,25 @@ function aggregateSnapshots(snapshots: Snapshot[], metric: MetricType): number |
     return revenue > 0 ? revenue : null
   }
 
+  // ── LEADS: evento de lead — fonte Meta Ads (conversões da campanha) ────────
+  // Clientes com meta de tráfego/lead usam Meta Ads como fonte primária.
+  // ga4Purchases NÃO é usado aqui porque GA4 registra compras, não leads.
+  if (metric === 'LEADS') {
+    const adConversions = snapshots.filter(isAd).reduce((s, x) => s + toNum(x.conversions), 0)
+    return adConversions > 0 ? adConversions : null
+  }
+
+  // ── Métricas de negócios locais ───────────────────────────────────────────
+  // MENSAGENS, VISITAS_PERFIL, LIGACOES, AGENDAMENTOS: dados provenientes de
+  // Meta Ads (conversões customizadas) ou entrada manual futura.
+  // Por enquanto retorna null até haver snapshot com esses valores.
+  if (metric === 'MENSAGENS' || metric === 'VISITAS_PERFIL' ||
+      metric === 'LIGACOES'  || metric === 'AGENDAMENTOS') {
+    // Tenta conversões de Meta Ads como proxy (ex: lead/mensagem configurado como evento)
+    const adConversions = snapshots.filter(isAd).reduce((s, x) => s + toNum(x.conversions), 0)
+    return adConversions > 0 ? adConversions : null
+  }
+
   // ── Métricas diretas ──────────────────────────────────────────────────────
   const values = snapshots.map((s) => {
     switch (metric) {

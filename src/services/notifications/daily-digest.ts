@@ -51,7 +51,10 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
   const fetchFrom = monthStart < weekStart ? monthStart : weekStart
   const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1)
 
-  // Fetch all active clients with health score + primary manager + streak
+  // Fetch all active clients with ALL health scores for the period + primary manager + streak
+  // IMPORTANT: fetch ALL scores (no take: 1) — status is derived using worst-case logic
+  // to match the dashboard. A single take:1 (most recent) would return OTIMO even if
+  // another metric for the same client is RUIM.
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
     select: {
@@ -60,8 +63,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
       healthScores: {
         where:   { periodStart: { gte: fetchFrom } },
         orderBy: { calculatedAt: 'desc' },
-        take: 1,
-        select: { status: true },
+        select: { status: true, period: true, periodStart: true },
       },
       assignments: {
         where: { isPrimary: true },
@@ -96,7 +98,21 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
   }
 
   const rows: ClientRow[] = clients.map((c) => {
-    const status     = c.healthScores[0]?.status ?? null
+    // Mirror dashboard logic: prefer current-week WEEKLY scores, fall back to MONTHLY.
+    // Then derive overall status as worst-case (RUIM beats REGULAR beats OTIMO).
+    const weeklyScores  = c.healthScores.filter((s) => s.period === 'WEEKLY'  && s.periodStart >= weekStart)
+    const monthlyScores = c.healthScores.filter((s) => s.period === 'MONTHLY' && s.periodStart >= monthStart)
+    const scores = weeklyScores.length > 0 ? weeklyScores : monthlyScores
+
+    const status: string | null =
+      scores.length === 0
+        ? null
+        : scores.some((s) => s.status === 'RUIM')
+        ? 'RUIM'
+        : scores.some((s) => s.status === 'REGULAR')
+        ? 'REGULAR'
+        : 'OTIMO'
+
     const assignment = c.assignments[0]?.user
     if (status === 'OTIMO')        otimo++
     else if (status === 'REGULAR') regular++
