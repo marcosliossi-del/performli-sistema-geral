@@ -38,6 +38,13 @@ function toNum(v: { toNumber: () => number } | number | null | undefined): numbe
   return typeof v === 'number' ? v : v.toNumber()
 }
 
+// Metrics that are pace-based (value accumulates over period)
+const PACE_METRICS = new Set([
+  'FATURAMENTO', 'SALES', 'SPEND', 'INVESTMENT',
+  'LEADS', 'CONVERSIONS', 'MENSAGENS', 'SEGUIDORES',
+  'AGENDAMENTOS', 'LIGACOES', 'VISITAS_PERFIL',
+])
+
 // Compact formatting per metric type
 function formatVal(metric: string, value: number): string {
   if (value === 0) return '—'
@@ -115,14 +122,17 @@ function buildSmartInsight(
   const notRuim  = (m: string) => !ruimSet.has(m)
   const exists   = (m: string) => scores.some(s => s.metric === m)
 
-  // Compact "X vs target Y (Z%)" label for a single metric
+  // Compact "actual vs full-period target (pace X%)" label for a single metric
   const label = (metric: string): string => {
     const s = scores.find(s => s.metric === metric)
     if (!s) return metric
     const actual = toNum(s.actualValue)
     const target = toNum(s.targetValue)
     const pct    = Math.round(toNum(s.achievementPct))
-    return `${metric}: ${formatVal(metric, actual)} (meta ${formatVal(metric, target)}, ${pct}%)`
+    // For volume metrics the achievementPct is pace-adjusted (vs prorated target),
+    // so clarify with "ritmo" to avoid confusion (e.g. R$50k of R$100k = ritmo 110%)
+    const pctLabel = PACE_METRICS.has(metric) ? `ritmo ${pct}%` : `${pct}%`
+    return `${metric}: ${formatVal(metric, actual)} (meta ${formatVal(metric, target)}, ${pctLabel})`
   }
 
   const isLocal = businessType === 'LOCAL'

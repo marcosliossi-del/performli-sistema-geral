@@ -29,6 +29,26 @@ const LOWER_IS_BETTER: Set<MetricType> = new Set([
   'CPM',
 ])
 
+/**
+ * Métricas que se ACUMULAM ao longo do período (não são taxas/razões).
+ * Para essas, quando o período ainda está em progresso, comparamos o
+ * valor acumulado até hoje contra a META PROPORCIONAL ao tempo decorrido.
+ *
+ * Ex: meta mensal R$100k, dia 14 de 31, ritmo esperado = R$45.2k.
+ * Se faturou R$50k → 110% do esperado = ÓTIMO (sem prorating seria 50% = RUIM).
+ *
+ * Métricas de taxa (ROAS, CTR, TAXA_CONVERSAO, TICKET_MEDIO, CPL, etc.)
+ * NÃO entram aqui — são medidas pontualmente, sem acumulação linear.
+ */
+const PRORATE_METRICS: Set<MetricType> = new Set([
+  'FATURAMENTO', 'SALES',
+  'SPEND', 'INVESTMENT',
+  'LEADS', 'CONVERSIONS',
+  'MENSAGENS', 'SEGUIDORES',
+  'AGENDAMENTOS', 'LIGACOES', 'VISITAS_PERFIL',
+  'IMPRESSIONS', 'CLICKS', 'REACH',
+])
+
 type Snapshot = {
   spend: unknown
   roas: unknown
@@ -180,13 +200,39 @@ async function processGoals(
   let updated = 0
   const scores: ScoredMetric[] = []
 
+  // ── Pace calculation for in-progress periods ─────────────────────────────
+  // Compare against prorated target (elapsed/total) for accumulative metrics.
+  // Completed periods always use the full target (100%).
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const startDay = new Date(periodStart); startDay.setHours(0, 0, 0, 0)
+  const endDay   = new Date(periodEnd);   endDay.setHours(0, 0, 0, 0)
+
+  const periodInProgress = today < endDay
+
+  const totalDays   = Math.round((endDay.getTime()   - startDay.getTime()) / 86_400_000) + 1
+  const elapsedDays = Math.min(
+    Math.floor((today.getTime() - startDay.getTime()) / 86_400_000) + 1,
+    totalDays,
+  )
+  // Guard: never below 1 day to avoid division by zero or extreme early-period distortion
+  const elapsedFraction = Math.max(elapsedDays, 1) / totalDays
+
   for (const goal of goals) {
     const actual = aggregateSnapshots(snapshots, goal.metric)
     if (actual === null) continue
 
-    const target = typeof goal.targetValue === 'number' ? goal.targetValue : goal.targetValue.toNumber()
+    const rawTarget     = typeof goal.targetValue === 'number' ? goal.targetValue : goal.targetValue.toNumber()
     const lowerIsBetter = LOWER_IS_BETTER.has(goal.metric)
-    const pct = computeAchievementPct(actual, target, lowerIsBetter)
+
+    // For accumulative metrics during an open period, scale the target to
+    // the expected amount by today. Rate/ratio metrics are compared as-is.
+    const target = (periodInProgress && PRORATE_METRICS.has(goal.metric))
+      ? rawTarget * elapsedFraction
+      : rawTarget
+
+    const pct    = computeAchievementPct(actual, target, lowerIsBetter)
     const status = classifyHealth(lowerIsBetter ? target : actual, lowerIsBetter ? actual : target)
 
     const data = {
