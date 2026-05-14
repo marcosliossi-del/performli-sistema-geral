@@ -60,6 +60,22 @@ export async function updateClient(
   return { success: true, slug: updated.slug }
 }
 
+export async function bulkSetBusinessType(
+  clientIds: string[],
+  businessType: BusinessType
+): Promise<{ updated: number; error?: string }> {
+  await requireSession()
+  if (clientIds.length === 0) return { updated: 0 }
+
+  await prisma.client.updateMany({
+    where: { id: { in: clientIds } },
+    data:  { businessType },
+  })
+
+  revalidatePath('/clients')
+  return { updated: clientIds.length }
+}
+
 export async function deleteClient(clientId: string): Promise<UpdateClientState> {
   const session = await requireSession()
   if (session.role !== 'ADMIN') return { error: 'Sem permissão.' }

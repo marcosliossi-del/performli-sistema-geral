@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { Search, Filter, Plus, MessageCircle, Pencil, Trash2 } from 'lucide-react'
+import { useState, useTransition } from 'react'
+import { Search, Plus, MessageCircle, Pencil, ShoppingCart, MapPin } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
+import { bulkSetBusinessType } from '@/app/actions/updateClient'
 
 export interface ClientRow {
   id:            string
@@ -14,6 +15,7 @@ export interface ClientRow {
   status:        string
   contractValue: number | null
   createdAt:     string
+  businessType:  string
 }
 
 interface Props {
@@ -21,22 +23,30 @@ interface Props {
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  ACTIVE:  { label: 'Ativo',      color: '#22C55E' },
-  PAUSED:  { label: 'Pausado',    color: '#F59E0B' },
-  CHURNED: { label: 'Cancelado',  color: '#EF4444' },
+  ACTIVE:  { label: 'Ativo',     color: '#22C55E' },
+  PAUSED:  { label: 'Pausado',   color: '#F59E0B' },
+  CHURNED: { label: 'Cancelado', color: '#EF4444' },
+}
+
+const TYPE_CONFIG = {
+  ECOMMERCE: { label: 'E-commerce', icon: ShoppingCart, color: '#95BBE2' },
+  LOCAL:     { label: 'Local',       icon: MapPin,       color: '#A78BFA' },
 }
 
 export function ClientesTable({ clients }: Props) {
-  const [search, setSearch]   = useState('')
-  const [filter, setFilter]   = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'CHURNED'>('ALL')
+  const [search,   setSearch]   = useState('')
+  const [filter,   setFilter]   = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'CHURNED'>('ALL')
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'ECOMMERCE' | 'LOCAL'>('ALL')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [isPending, startTransition] = useTransition()
 
   const filtered = clients.filter(c => {
     const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) ||
       (c.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (c.phone ?? '').includes(search)
     const matchFilter = filter === 'ALL' || c.status === filter
-    return matchSearch && matchFilter
+    const matchType   = typeFilter === 'ALL' || c.businessType === typeFilter
+    return matchSearch && matchFilter && matchType
   })
 
   function toggleAll() {
@@ -55,6 +65,13 @@ export function ClientesTable({ clients }: Props) {
     })
   }
 
+  function handleBulkSet(type: 'ECOMMERCE' | 'LOCAL') {
+    startTransition(async () => {
+      await bulkSetBusinessType(Array.from(selected), type)
+      setSelected(new Set())
+    })
+  }
+
   return (
     <div className="bg-[#0D2137] border border-[#38435C] rounded-2xl overflow-hidden">
       {/* Toolbar */}
@@ -69,19 +86,32 @@ export function ClientesTable({ clients }: Props) {
           />
         </div>
 
-        {/* Filter tabs */}
+        {/* Status filter */}
         <div className="flex items-center gap-1 bg-[#0A1E2C] border border-[#38435C] rounded-lg p-1">
           {(['ALL', 'ACTIVE', 'PAUSED', 'CHURNED'] as const).map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}
               className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                filter === f
-                  ? 'bg-[#38435C] text-[#EBEBEB]'
-                  : 'text-[#87919E] hover:text-[#EBEBEB]'
+                filter === f ? 'bg-[#38435C] text-[#EBEBEB]' : 'text-[#87919E] hover:text-[#EBEBEB]'
               }`}
             >
               {f === 'ALL' ? 'Todos' : STATUS_LABELS[f].label}
+            </button>
+          ))}
+        </div>
+
+        {/* Type filter */}
+        <div className="flex items-center gap-1 bg-[#0A1E2C] border border-[#38435C] rounded-lg p-1">
+          {(['ALL', 'ECOMMERCE', 'LOCAL'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setTypeFilter(t)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                typeFilter === t ? 'bg-[#38435C] text-[#EBEBEB]' : 'text-[#87919E] hover:text-[#EBEBEB]'
+              }`}
+            >
+              {t === 'ALL' ? 'Todos tipos' : TYPE_CONFIG[t].label}
             </button>
           ))}
         </div>
@@ -94,6 +124,40 @@ export function ClientesTable({ clients }: Props) {
           Novo cliente
         </a>
       </div>
+
+      {/* Bulk action bar — appears when rows are selected */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-[#95BBE2]/10 border-b border-[#95BBE2]/30">
+          <span className="text-xs text-[#95BBE2] font-medium">
+            {selected.size} cliente{selected.size !== 1 ? 's' : ''} selecionado{selected.size !== 1 ? 's' : ''}
+          </span>
+          <span className="text-[#38435C]">·</span>
+          <span className="text-xs text-[#87919E]">Definir tipo como:</span>
+          <button
+            onClick={() => handleBulkSet('ECOMMERCE')}
+            disabled={isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#95BBE2]/20 text-[#95BBE2] text-xs font-semibold hover:bg-[#95BBE2]/30 disabled:opacity-50 transition-colors"
+          >
+            <ShoppingCart size={12} />
+            E-commerce
+          </button>
+          <button
+            onClick={() => handleBulkSet('LOCAL')}
+            disabled={isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#A78BFA]/20 text-[#A78BFA] text-xs font-semibold hover:bg-[#A78BFA]/30 disabled:opacity-50 transition-colors"
+          >
+            <MapPin size={12} />
+            Negócio Local
+          </button>
+          {isPending && <span className="text-xs text-[#87919E]">Salvando...</span>}
+          <button
+            onClick={() => setSelected(new Set())}
+            className="ml-auto text-xs text-[#87919E] hover:text-[#EBEBEB] transition-colors"
+          >
+            Cancelar seleção
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <div className="overflow-x-auto">
@@ -109,6 +173,7 @@ export function ClientesTable({ clients }: Props) {
                 />
               </th>
               <th className="text-left px-3 py-3 font-medium">NOME</th>
+              <th className="text-left px-3 py-3 font-medium">TIPO</th>
               <th className="text-left px-3 py-3 font-medium">ORIGEM</th>
               <th className="text-left px-3 py-3 font-medium">TELEFONE</th>
               <th className="text-left px-3 py-3 font-medium">CONTRATO</th>
@@ -120,17 +185,21 @@ export function ClientesTable({ clients }: Props) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center py-12 text-sm text-[#87919E]">
+                <td colSpan={9} className="text-center py-12 text-sm text-[#87919E]">
                   Nenhum cliente encontrado
                 </td>
               </tr>
             ) : (
               filtered.map(client => {
-                const st = STATUS_LABELS[client.status] ?? STATUS_LABELS.ACTIVE
+                const st  = STATUS_LABELS[client.status] ?? STATUS_LABELS.ACTIVE
+                const typ = TYPE_CONFIG[client.businessType as 'ECOMMERCE' | 'LOCAL'] ?? TYPE_CONFIG.ECOMMERCE
+                const TypeIcon = typ.icon
                 return (
                   <tr
                     key={client.id}
-                    className="border-b border-[#38435C]/50 hover:bg-[#38435C]/10 transition-colors"
+                    className={`border-b border-[#38435C]/50 hover:bg-[#38435C]/10 transition-colors ${
+                      selected.has(client.id) ? 'bg-[#95BBE2]/5' : ''
+                    }`}
                   >
                     <td className="px-4 py-3">
                       <input
@@ -150,6 +219,15 @@ export function ClientesTable({ clients }: Props) {
                       {client.email && (
                         <p className="text-[11px] text-[#87919E] truncate max-w-[180px]">{client.email}</p>
                       )}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span
+                        className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                        style={{ color: typ.color, background: `${typ.color}18` }}
+                      >
+                        <TypeIcon size={9} />
+                        {typ.label}
+                      </span>
                     </td>
                     <td className="px-3 py-3 text-xs text-[#87919E]">
                       {client.source ?? <span className="text-[#38435C]">—</span>}

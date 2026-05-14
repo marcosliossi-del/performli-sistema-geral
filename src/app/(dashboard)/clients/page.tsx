@@ -21,6 +21,7 @@ async function getClientesData(userId: string, role: string) {
       select: {
         id: true, name: true, slug: true, source: true, phone: true,
         email: true, status: true, contractValue: true, createdAt: true,
+        businessType: true,
       },
       orderBy: { name: 'asc' },
     }),

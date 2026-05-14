@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { slugify } from '@/lib/utils'
-import { PipelineStage } from '@prisma/client'
+import { PipelineStage, BusinessType } from '@prisma/client'
 
 export type ClientFormState = {
   error?: string
@@ -28,7 +28,8 @@ export async function createClient(
   const source           = (formData.get('source') as string)?.trim()
   const contractValueRaw = (formData.get('contractValue') as string)?.trim()
   const contractStartRaw = (formData.get('contractStart') as string)?.trim()
-  const pipelineStageRaw = (formData.get('pipelineStage') as string)?.trim()
+  const pipelineStageRaw  = (formData.get('pipelineStage') as string)?.trim()
+  const businessTypeRaw   = (formData.get('businessType') as string)?.trim()
 
   if (!name) return { error: 'Nome do cliente é obrigatório.' }
 
@@ -41,12 +42,14 @@ export async function createClient(
   }
 
   const assignedUserId = managerId || session.userId
-  const pipelineStage = (pipelineStageRaw as PipelineStage) || 'ATIVO'
+  const pipelineStage  = (pipelineStageRaw as PipelineStage) || 'ATIVO'
+  const businessType   = (businessTypeRaw as BusinessType) || 'ECOMMERCE'
 
   const client = await prisma.client.create({
     data: {
       name,
       slug,
+      businessType,
       industry: industry || null,
       website: website || null,
       source:  source || null,

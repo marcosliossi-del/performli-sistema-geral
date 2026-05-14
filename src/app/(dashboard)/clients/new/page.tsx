@@ -1,11 +1,11 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import Link from 'next/link'
 import { createClient, type ClientFormState } from '@/app/actions/clients'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ArrowLeft, UserPlus } from 'lucide-react'
+import { ArrowLeft, UserPlus, ShoppingCart, MapPin } from 'lucide-react'
 
 const PIPELINE_STAGES = [
   { value: 'LEAD',       label: 'Lead'       },
@@ -30,8 +30,14 @@ const industries = [
   'Outros',
 ]
 
+const BUSINESS_TYPES = [
+  { value: 'ECOMMERCE', label: 'E-commerce',    icon: ShoppingCart, desc: 'ROAS, Faturamento, Conversões' },
+  { value: 'LOCAL',     label: 'Negócio Local',  icon: MapPin,       desc: 'Leads, Mensagens, Seguidores' },
+] as const
+
 export default function NewClientPage() {
   const [state, formAction, pending] = useActionState(createClient, initialState)
+  const [businessType, setBusinessType] = useState<'ECOMMERCE' | 'LOCAL'>('ECOMMERCE')
 
   return (
     <div className="max-w-xl space-y-6">
@@ -64,6 +70,34 @@ export default function NewClientPage() {
               Nome *
             </label>
             <Input name="name" placeholder="Ex: Loja Alpha" required />
+          </div>
+
+          {/* Tipo de negócio */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[#95BBE2] uppercase tracking-wider">
+              Tipo de Negócio *
+            </label>
+            <input type="hidden" name="businessType" value={businessType} />
+            <div className="flex gap-2">
+              {BUSINESS_TYPES.map(({ value, label, icon: Icon, desc }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setBusinessType(value)}
+                  className={`flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left transition-all ${
+                    businessType === value
+                      ? 'border-[#95BBE2] bg-[#95BBE2]/10'
+                      : 'border-[#38435C] hover:border-[#95BBE2]/40'
+                  }`}
+                >
+                  <Icon size={15} className={businessType === value ? 'text-[#95BBE2]' : 'text-[#87919E]'} />
+                  <div>
+                    <p className={`text-xs font-semibold ${businessType === value ? 'text-[#95BBE2]' : 'text-[#EBEBEB]'}`}>{label}</p>
+                    <p className="text-[10px] text-[#87919E]">{desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="space-y-1.5">
