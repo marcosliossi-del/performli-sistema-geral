@@ -4,6 +4,67 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { MetricType } from '@prisma/client'
+import { getWeekRange, getMonthRange } from '@/lib/utils'
+
+// Métricas onde a meta é a mesma independente do período (taxas, médias, razões)
+const RATE_METRICS = new Set<MetricType>([
+  'ROAS', 'CTR', 'TAXA_CONVERSAO', 'TICKET_MEDIO', 'CPS', 'CPL', 'CPA', 'CAC', 'CPM',
+])
+const WEEKS_PER_MONTH = 4.33 // média de semanas por mês
+
+/**
+ * Para cada cliente ativo com meta MENSAL no mês atual,
+ * cria uma meta SEMANAL equivalente para a semana corrente — se ainda não existir.
+ *
+ * - Métricas de taxa/ratio (ROAS, CTR, etc.): mesma meta
+ * - Métricas de volume (FATURAMENTO, LEADS, etc.): meta mensal ÷ 4.33
+ *
+ * Metas semanais existentes não são sobrescritas (respeitando ajustes manuais).
+ */
+export async function syncWeeklyGoalsFromMonthly(): Promise<{
+  created: number
+  total: number
+  error?: string
+}> {
+  await requireSession()
+
+  const { start: weekStart, end: weekEnd } = getWeekRange()
+  const now = new Date()
+  const { start: monthStart, end: monthEnd } = getMonthRange(now)
+
+  // Fetch all active clients' monthly goals for this month
+  const monthlyGoals = await prisma.goal.findMany({
+    where: {
+      period:    'MONTHLY',
+      startDate: { lte: monthEnd },
+      endDate:   { gte: monthStart },
+      client:    { status: 'ACTIVE' },
+    },
+    select: { clientId: true, metric: true, targetValue: true },
+  })
+
+  if (monthlyGoals.length === 0) return { created: 0, total: 0 }
+
+  const toCreate = monthlyGoals.map((g) => {
+    const monthly = Number(g.targetValue)
+    const weekly  = RATE_METRICS.has(g.metric) ? monthly : Math.round((monthly / WEEKS_PER_MONTH) * 100) / 100
+    return {
+      clientId:    g.clientId,
+      metric:      g.metric,
+      period:      'WEEKLY' as const,
+      targetValue: weekly,
+      startDate:   weekStart,
+      endDate:     weekEnd,
+    }
+  })
+
+  const result = await prisma.goal.createMany({ data: toCreate, skipDuplicates: true })
+
+  revalidatePath('/agency/metas')
+  revalidatePath('/clients')
+  revalidatePath('/dashboard')
+  return { created: result.count, total: monthlyGoals.length }
+}
 
 export type GoalUpsert = {
   clientId: string

@@ -5,6 +5,7 @@ import { MetasBulkTable } from '@/components/agency/MetasBulkTable'
 import { MetasDashboard } from '@/components/agency/MetasDashboard'
 import { fetchMonthProgress } from '@/app/actions/progress'
 import { MetasPageTabs } from '@/components/agency/MetasPageTabs'
+import { SyncWeeklyGoalsButton } from '@/components/agency/SyncWeeklyGoalsButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -83,11 +84,19 @@ export default async function MetasPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-[#EBEBEB]">Metas Mensais</h1>
-        <p className="text-[#87919E] text-sm mt-0.5">
-          Acompanhe o progresso de cada cliente e defina metas com auto-cálculo de ROAS e CPA.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-[#EBEBEB]">Metas Mensais</h1>
+          <p className="text-[#87919E] text-sm mt-0.5">
+            Acompanhe o progresso de cada cliente e defina metas com auto-cálculo de ROAS e CPA.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+          <SyncWeeklyGoalsButton />
+          <p className="text-[10px] text-[#87919E] max-w-xs text-right">
+            Cria metas semanais a partir das mensais para o health score funcionar por semana
+          </p>
+        </div>
       </div>
       <MetasPageTabs
         clientsData={clientsData}

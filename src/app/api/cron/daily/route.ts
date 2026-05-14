@@ -12,6 +12,7 @@ import { generateAllWeeklyChecklists } from '@/services/weekly-checklist-generat
 import { sendDailyDigest } from '@/services/notifications/daily-digest'
 import { syncAsaasData } from '@/services/asaas/sync'
 import { detectCriticalAccounts } from '@/services/critical-account-detector'
+import { syncWeeklyGoalsFromMonthly } from '@/app/actions/goals'
 
 /**
  * GET /api/cron/daily  ← Vercel Cron triggers GET requests
@@ -32,10 +33,13 @@ function isAuthorized(request: NextRequest): boolean {
 }
 
 async function runDailySync() {
-  const isSunday = new Date().getDay() === 0
+  const day      = new Date().getDay()
+  const isSunday = day === 0
+  const isMonday = day === 1
 
   const summary: Record<string, unknown> = {
     synced: { meta: { ok: false }, ga4: { ok: false }, googleAds: { ok: false }, nuvemshop: { ok: false } },
+    weeklyGoalsSync: isMonday ? { ok: false } : { ok: true, skipped: true },
     asaas: { ok: false },
     healthScores: { ok: false },
     alerts: { ok: false },
@@ -84,6 +88,21 @@ async function runDailySync() {
   } catch (err) {
     ;(summary.synced as Record<string, unknown>).nuvemshop = {
       ok: false, error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // ── Step 2d: Monday — sync weekly goals from monthly ─────────────────────
+  // Runs every Monday so new weekly goals exist before health scores are computed.
+  // Converts monthly goals → weekly (same target for rates, ÷4.33 for volumes).
+  if (isMonday) {
+    try {
+      const syncResult = await syncWeeklyGoalsFromMonthly()
+      summary.weeklyGoalsSync = { ok: true, created: syncResult.created, total: syncResult.total }
+    } catch (err) {
+      summary.weeklyGoalsSync = {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      }
     }
   }
 
