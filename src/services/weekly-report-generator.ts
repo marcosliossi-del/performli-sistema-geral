@@ -93,19 +93,27 @@ export async function generateWeeklyReportForClient(
     const spend = metaSpend + googleSpend + tiktokSpend
 
     // Faturamento e compras sempre via GA4 (fonte de verdade de receita)
-    const revenue   = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
-    const purchases = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
-    const sessions  = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
+    const revenue          = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+    const purchases        = ga4.reduce((s, x) => s + (x.conversions      ?? 0), 0)
+    const sessions         = ga4.reduce((s, x) => s + (x.clicks           ?? 0), 0)
+    const addToCarts       = ga4.reduce((s, x) => s + (x.addToCarts       ?? 0), 0)
+    const checkoutsStarted = ga4.reduce((s, x) => s + (x.checkoutsStarted ?? 0), 0)
 
     return {
       spend,
       sessions,
       purchases,
       revenue,
-      roas: spend > 0 && revenue > 0 ? revenue / spend : null,
-      cpa: spend > 0 && purchases > 0 ? spend / purchases : null,
-      taxaConversao: sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null,
-      ticketMedio: purchases > 0 && revenue > 0 ? revenue / purchases : null,
+      addToCarts,
+      checkoutsStarted,
+      roas:               spend > 0    && revenue   > 0 ? revenue / spend            : null,
+      cpa:                spend > 0    && purchases > 0 ? spend / purchases           : null,
+      cps:                sessions > 0 && spend     > 0 ? spend / sessions            : null,
+      taxaConversao:      sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null,
+      ticketMedio:        purchases > 0 && revenue  > 0 ? revenue / purchases         : null,
+      visitToCart:        sessions > 0 && addToCarts       > 0 ? (addToCarts       / sessions)         * 100 : null,
+      cartToCheckout:     addToCarts > 0 && checkoutsStarted > 0 ? (checkoutsStarted / addToCarts)     * 100 : null,
+      checkoutToPurchase: checkoutsStarted > 0 && purchases > 0  ? (purchases / checkoutsStarted)      * 100 : null,
     }
   }
 
@@ -162,9 +170,75 @@ export async function generateWeeklyReportForClient(
     ? formatCurrency(Number(faturamentoGoal.targetValue))
     : 'não definida'
 
-  const rwRevChange = pctChange(lw.revenue, pw.revenue)
+  const rwRevChange       = pctChange(lw.revenue,   pw.revenue)
   const rwPurchasesChange = pctChange(lw.purchases, pw.purchases)
-  const rwSessionsChange = pctChange(lw.sessions, pw.sessions)
+  const rwSessionsChange  = pctChange(lw.sessions,  pw.sessions)
+
+  // ── Funnel diagnosis ────────────────────────────────────────────────────────
+  // Benchmarks e-commerce (referência do setor)
+  const BENCH = { visitToCart: { min: 4, max: 8 }, cartToCheckout: { min: 38, max: 56 }, checkoutToPurchase: { min: 55, max: 82 } }
+
+  function funnelStatus(val: number | null, bench: { min: number; max: number }): 'ok' | 'low' | 'nodata' {
+    if (val === null) return 'nodata'
+    return val >= bench.min ? 'ok' : 'low'
+  }
+
+  const hasFunnelData = lw.visitToCart !== null || lw.cartToCheckout !== null || lw.checkoutToPurchase !== null
+
+  // Builds a plain-text funnel block to inject into the AI prompt
+  let funnelBlock = ''
+  if (hasFunnelData) {
+    const lines: string[] = []
+
+    lines.push(`FUNIL DE COMPRA (semana passada, GA4):`)
+    lines.push(`- Sessões: ${lw.sessions.toLocaleString('pt-BR')}`)
+    lines.push(`- Add to cart: ${lw.addToCarts.toLocaleString('pt-BR')}${lw.visitToCart !== null ? ` (${lw.visitToCart.toFixed(1)}% das sessões, ref 4–8%)` : ''}`)
+    lines.push(`- Início checkout: ${lw.checkoutsStarted.toLocaleString('pt-BR')}${lw.cartToCheckout !== null ? ` (${lw.cartToCheckout.toFixed(1)}% dos carrinhos, ref 38–56%)` : ''}`)
+    lines.push(`- Compras: ${lw.purchases.toLocaleString('pt-BR')}${lw.checkoutToPurchase !== null ? ` (${lw.checkoutToPurchase.toFixed(1)}% dos checkouts, ref 55–82%)` : ''}`)
+
+    // Changes vs previous week
+    if (pw.visitToCart !== null && lw.visitToCart !== null) {
+      const delta = lw.visitToCart - pw.visitToCart
+      lines.push(`- Taxa visita→carrinho semana anterior: ${pw.visitToCart.toFixed(1)}% (variação: ${delta > 0 ? '+' : ''}${delta.toFixed(1)}pp)`)
+    }
+    if (pw.cartToCheckout !== null && lw.cartToCheckout !== null) {
+      const delta = lw.cartToCheckout - pw.cartToCheckout
+      lines.push(`- Taxa carrinho→checkout semana anterior: ${pw.cartToCheckout.toFixed(1)}% (variação: ${delta > 0 ? '+' : ''}${delta.toFixed(1)}pp)`)
+    }
+
+    // Specific bottleneck diagnosis
+    const vtcStatus  = funnelStatus(lw.visitToCart,        BENCH.visitToCart)
+    const ctcStatus  = funnelStatus(lw.cartToCheckout,     BENCH.cartToCheckout)
+    const ctpStatus  = funnelStatus(lw.checkoutToPurchase, BENCH.checkoutToPurchase)
+    const cpsOk      = lw.cps !== null && lw.cps < 2.0  // CPS abaixo de R$2 = eficiente
+
+    lines.push(``)
+    lines.push(`DIAGNÓSTICO DO FUNIL (use isso para gerar o bloco de funil se houver gargalo):`)
+
+    if (vtcStatus === 'low' && cpsOk) {
+      lines.push(`⚠️ GARGALO: CPS eficiente (R$${lw.cps!.toFixed(2)}/sessão) mas só ${lw.visitToCart!.toFixed(1)}% das visitas adicionam ao carrinho (ref mín 4%). Visitantes chegam mas não se engajam com os produtos. Possíveis causas: site confuso, imagens ruins, produto sem destaque ou preço fora da expectativa.`)
+    } else if (vtcStatus === 'low') {
+      lines.push(`⚠️ GARGALO: Taxa de adição ao carrinho baixa (${lw.visitToCart!.toFixed(1)}%, ref mín 4%). Produtos não estão convertendo visitas em intenção de compra. Verificar páginas de produto, galeria de fotos e descrições.`)
+    }
+
+    if (ctcStatus === 'low') {
+      lines.push(`⚠️ GARGALO: Muitos carrinhos abandonados antes do checkout (${lw.cartToCheckout!.toFixed(1)}%, ref mín 38%). Possíveis causas: frete caro aparecendo ao abrir o carrinho, falta de cupom ou processo de login obrigatório.`)
+    }
+
+    if (ctpStatus === 'low') {
+      lines.push(`⚠️ GARGALO: Abandonos na finalização da compra (${lw.checkoutToPurchase!.toFixed(1)}% concluem, ref mín 55%). Possíveis causas: problema de pagamento, campos complexos, falta de opção de parcelamento ou insegurança do cliente.`)
+    }
+
+    if (vtcStatus === 'ok' && ctcStatus === 'ok' && ctpStatus === 'ok' && lw.taxaConversao !== null && lw.taxaConversao < 1) {
+      lines.push(`ℹ️ Funil eficiente em todos os passos mas taxa de conversão geral abaixo de 1% (${lw.taxaConversao.toFixed(2)}%). O gargalo provavelmente é volume de tráfego qualificado, não o site em si.`)
+    }
+
+    if (vtcStatus === 'ok' && ctcStatus === 'ok' && ctpStatus === 'ok') {
+      lines.push(`✅ Funil saudável — todas as taxas dentro ou acima do benchmark.`)
+    }
+
+    funnelBlock = lines.join('\n')
+  }
 
   // Avalia se resultado está acima ou abaixo da meta de ROAS
   const roasAboveMeta =
@@ -182,6 +256,12 @@ export async function generateWeeklyReportForClient(
   const receitaOkVsPacing = pacedGoalMes != null && month.revenue >= pacedGoalMes * 0.85
   const roasOk = roasAboveMeta === true
   const clienteNoPrazo = receitaOkVsPacing || roasOk
+
+  const hasFunnelBottleneck = hasFunnelData && (
+    funnelStatus(lw.visitToCart, BENCH.visitToCart) === 'low' ||
+    funnelStatus(lw.cartToCheckout, BENCH.cartToCheckout) === 'low' ||
+    funnelStatus(lw.checkoutToPurchase, BENCH.checkoutToPurchase) === 'low'
+  )
 
   const prompt = `Você é o gestor de tráfego pago da Arkza enviando um resumo semanal para o cliente via WhatsApp.
 Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrolação, sem cara de relatório corporativo, sem cara de IA.
@@ -207,6 +287,8 @@ Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrola
 TOP PRODUTOS DA SEMANA (dados reais do GA4):
 ${topProductsStr}
 
+${hasFunnelData ? funnelBlock : ''}
+
 📊 ESTRUTURA DO RELATÓRIO (siga exatamente):
 
 📊 Semana de ${periodoStr}
@@ -225,16 +307,22 @@ ${clienteNoPrazo
 🛍️ O que mais vendeu
 [Máximo 4 linhas. Liste os produtos ou categorias que lideraram. Se uma categoria dominar, diga isso em 1 frase simples. Só o essencial.]
 
+${hasFunnelBottleneck ? `🛒 O que está travando as vendas no site
+[OBRIGATÓRIO — há gargalo no funil de compra. Máximo 3 linhas. Use os dados do DIAGNÓSTICO DO FUNIL acima.
+Escreva na linguagem do cliente, sem termos técnicos. Ex: "Muita gente visita o site mas menos de 4% adiciona algo ao carrinho. Isso pode indicar que o site está confuso ou os produtos precisam de mais destaque." ou "Boa parte dos carrinhos é abandonada antes de fechar a compra. Vale checar se o frete só aparece no final do processo." ou "Vários clientes chegam ao checkout mas não finalizam. Pode ser problema na etapa de pagamento."
+Tom: parceiro apontando algo que a equipe já identificou e vai resolver, não alarmista.]` : `NÃO inclua o bloco de funil pois o funil está saudável ou sem dados suficientes.`}
+
 📌 O que vem por aí
 [3 frases curtas sobre o que a equipe vai fazer na próxima semana. Escreva na primeira pessoa do plural.
 ${clienteNoPrazo
   ? 'CLIENTE NO PRAZO: ações de manutenção e escala, ex: "Vamos reforçar o que funcionou...", "Vamos testar..."'
-  : 'CLIENTE ABAIXO DO PRAZO: mostre movimento e plano, ex: "Já estamos ajustando os anúncios...", "Vamos reunir internamente essa semana para rever a estratégia...", "Vamos testar novos criativos...". Transmita que a equipe está agindo, não esperando.'}]
+  : 'CLIENTE ABAIXO DO PRAZO: mostre movimento e plano, ex: "Já estamos ajustando os anúncios...", "Vamos reunir internamente essa semana para rever a estratégia...", "Vamos testar novos criativos...". Transmita que a equipe está agindo, não esperando.'}
+${hasFunnelBottleneck ? 'Como há gargalo no funil, inclua 1 ação específica sobre o site, ex: "Vamos revisar o fluxo do carrinho para reduzir o abandono antes do checkout."' : ''}]
 
-${lw.taxaConversao !== null && lw.taxaConversao < 1 ? `⚠️ INCLUA este bloco — taxa de conversão abaixo de 1%:
+${lw.taxaConversao !== null && lw.taxaConversao < 1 && !hasFunnelBottleneck ? `⚠️ INCLUA este bloco — taxa de conversão abaixo de 1% mas sem gargalo específico identificado:
 
 🔎 Um ponto de atenção
-[Máximo 3 linhas. Explique em linguagem simples que poucas pessoas que entram no site estão comprando, dê 1 possível motivo prático e 1 sugestão clara. Tom de parceiro, não de alarme.]` : `NÃO inclua o bloco de atenção pois a taxa de conversão está adequada (>=1%).`}
+[Máximo 3 linhas. Explique em linguagem simples que poucas pessoas que entram no site estão comprando, dê 1 possível motivo prático e 1 sugestão clara. Tom de parceiro, não de alarme.]` : `NÃO inclua o bloco de atenção genérico — ${hasFunnelBottleneck ? 'o bloco de funil já cobre isso' : 'a taxa de conversão está adequada (>=1%)'}.`}
 
 ⚙️ REGRAS OBRIGATÓRIAS:
 - Linguagem de conversa, não de relatório corporativo
