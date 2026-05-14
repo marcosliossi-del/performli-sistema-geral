@@ -183,7 +183,10 @@ export async function generateWeeklyReportForClient(
     return val >= bench.min ? 'ok' : 'low'
   }
 
-  const hasFunnelData = lw.visitToCart !== null || lw.cartToCheckout !== null || lw.checkoutToPurchase !== null
+  // Only treat as "has funnel data" when GA4 actually sent add_to_cart events.
+  // Old snapshots have addToCarts=0 which would compute a 0% visit-to-cart rate
+  // and falsely trigger the "site confuso" bottleneck diagnosis.
+  const hasFunnelData = lw.addToCarts > 0
 
   // Builds a plain-text funnel block to inject into the AI prompt
   let funnelBlock = ''

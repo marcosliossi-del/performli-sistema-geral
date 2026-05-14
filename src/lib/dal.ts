@@ -2323,7 +2323,10 @@ export const getClientSalesFunnel = cache(async (
   const checkoutsStarted = snapshots.reduce((s, x) => s + (x.checkoutsStarted ?? 0), 0)
   const purchases        = snapshots.reduce((s, x) => s + (x.conversions      ?? 0), 0)
 
-  const hasData = sessions > 0
+  // hasData requires actual funnel events — sessions alone are not enough.
+  // Old snapshots (before the addToCarts column was added) will have addToCarts=0,
+  // which would show a misleading 0% visit-to-cart rate.
+  const hasData = addToCarts > 0
 
   return {
     sessions,

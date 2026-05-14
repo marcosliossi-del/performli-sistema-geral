@@ -338,7 +338,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
       })
     : []
 
-  // clientId → funnel rates
+  // clientId → funnel rates (only when GA4 is tracking add_to_cart events)
   const funnelMap = new Map<string, FunnelRates>()
   for (const cid of ecommerceClientIds) {
     const snaps = funnelSnaps.filter((s) => s.clientId === cid)
@@ -346,7 +346,9 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     const addToCarts       = snaps.reduce((s, x) => s + (x.addToCarts       ?? 0), 0)
     const checkoutsStarted = snaps.reduce((s, x) => s + (x.checkoutsStarted ?? 0), 0)
     const purchases        = snaps.reduce((s, x) => s + (x.conversions      ?? 0), 0)
-    if (sessions > 0) {
+    // Require addToCarts > 0 — old snapshots have null/0 for funnel fields
+    // and a 0% visit-to-cart rate would generate false "site confuso" insights
+    if (addToCarts > 0) {
       funnelMap.set(cid, {
         visitToCart:        sessions         > 0 ? (addToCarts       / sessions)         * 100 : null,
         cartToCheckout:     addToCarts       > 0 ? (checkoutsStarted / addToCarts)       * 100 : null,
