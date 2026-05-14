@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { EditClientModal } from './EditClientModal'
 import { Pencil } from 'lucide-react'
+import { BusinessType } from '@prisma/client'
 
 interface Props {
   client: {
@@ -17,6 +18,7 @@ interface Props {
     contractValue: number | null
     contractStart: Date | null
     source: string | null
+    businessType: BusinessType
   }
 }
 

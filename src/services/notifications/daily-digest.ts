@@ -16,6 +16,45 @@ function emoji(status: string | null) {
   return '⚪'
 }
 
+// Rule-based insight for worst RUIM metric on a client
+const METRIC_INSIGHT: Record<string, { reason: string; action: string }> = {
+  ROAS:          { reason: 'ROAS abaixo da meta',           action: 'revisar campanhas de menor retorno' },
+  FATURAMENTO:   { reason: 'faturamento abaixo da meta',    action: 'analisar produtos e promoções ativas' },
+  TICKET_MEDIO:  { reason: 'ticket médio caiu',             action: 'investigar mix de produtos vendidos' },
+  TAXA_CONVERSAO:{ reason: 'taxa de conversão baixa',       action: 'revisar landing pages e anúncios' },
+  CONVERSIONS:   { reason: 'conversões abaixo da meta',     action: 'verificar funil de vendas' },
+  LEADS:         { reason: 'geração de leads baixa',        action: 'revisar criativos e formulários de captação' },
+  MENSAGENS:     { reason: 'volume de mensagens baixo',     action: 'revisar segmentação e criativos' },
+  SEGUIDORES:    { reason: 'crescimento de seguidores lento', action: 'revisar estratégia de conteúdo' },
+  CPL:           { reason: 'CPL acima da meta',             action: 'otimizar anúncios de captação' },
+  CPA:           { reason: 'CPA acima da meta',             action: 'revisar campanhas de conversão' },
+  CAC:           { reason: 'CAC acima da meta',             action: 'rever estratégia de aquisição' },
+  CTR:           { reason: 'CTR baixo',                     action: 'testar novos criativos' },
+  INVESTMENT:    { reason: 'investimento acima do orçamento', action: 'ajustar limite de gastos' },
+  SPEND:         { reason: 'budget acima do limite',        action: 'ajustar limite de gastos' },
+}
+
+type HealthScoreRow = {
+  status: string
+  period: string
+  periodStart: Date
+  metric: string
+  achievementPct: { toNumber: () => number } | number
+  actualValue: { toNumber: () => number } | number
+  targetValue: { toNumber: () => number } | number
+}
+
+function worstRuimMetric(scores: HealthScoreRow[]): string | null {
+  const ruim = scores.filter((s) => s.status === 'RUIM')
+  if (ruim.length === 0) return null
+  ruim.sort((a, b) => {
+    const pa = typeof a.achievementPct === 'number' ? a.achievementPct : a.achievementPct.toNumber()
+    const pb = typeof b.achievementPct === 'number' ? b.achievementPct : b.achievementPct.toNumber()
+    return pa - pb
+  })
+  return ruim[0].metric
+}
+
 function statusOrder(status: string | null): number {
   if (status === 'RUIM')    return 0
   if (status === 'REGULAR') return 1
@@ -63,7 +102,15 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
       healthScores: {
         where:   { periodStart: { gte: fetchFrom } },
         orderBy: { calculatedAt: 'desc' },
-        select: { status: true, period: true, periodStart: true },
+        select: {
+          status: true,
+          period: true,
+          periodStart: true,
+          metric: true,
+          achievementPct: true,
+          actualValue: true,
+          targetValue: true,
+        },
       },
       assignments: {
         where: { isPrimary: true },
@@ -95,6 +142,8 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     managerName: string
     managerId: string
     streakDays: number
+    worstMetric: string | null
+    activeScores: HealthScoreRow[]
   }
 
   const rows: ClientRow[] = clients.map((c) => {
@@ -119,11 +168,13 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     else if (status === 'RUIM')    ruim++
     else                           semDados++
     return {
-      name:        c.name,
+      name:         c.name,
       status,
-      managerName: assignment?.name ?? 'Sem Gestor',
-      managerId:   assignment?.id   ?? '__none__',
-      streakDays:  c.statusStreak?.days ?? 1,
+      managerName:  assignment?.name ?? 'Sem Gestor',
+      managerId:    assignment?.id   ?? '__none__',
+      streakDays:   c.statusStreak?.days ?? 1,
+      worstMetric:  worstRuimMetric(scores as HealthScoreRow[]),
+      activeScores: scores as HealthScoreRow[],
     }
   })
 
@@ -212,13 +263,19 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
 
     for (const c of mClients) {
       let line = `${emoji(c.status)} ${c.name}`
-      // Always show streak for RUIM and REGULAR; show for OTIMO only if ≥ 5 days (reconhecimento)
       if (c.status === 'RUIM' || c.status === 'REGULAR') {
         line += ` — _${streakLabel(c.status, c.streakDays)}_`
       } else if (c.status === 'OTIMO' && c.streakDays >= 5) {
         line += ` — _${streakLabel(c.status, c.streakDays)}_`
       }
       lines.push(line)
+      // Show insight for RUIM clients with streak ≥ 3 days
+      if (c.status === 'RUIM' && c.streakDays >= 3 && c.worstMetric) {
+        const insight = METRIC_INSIGHT[c.worstMetric]
+        if (insight) {
+          lines.push(`   ↳ _Motivo principal: ${insight.reason}_ — ${insight.action}`)
+        }
+      }
     }
   }
 
@@ -229,6 +286,12 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     lines.push(`*⚠️ Em Atenção — Risco de Churn*`)
     for (const c of atencao) {
       lines.push(`${emoji(c.status)} ${c.name} — *${streakLabel(c.status, c.streakDays)}* — gestor ${c.managerName}`)
+      if (c.status === 'RUIM' && c.worstMetric) {
+        const insight = METRIC_INSIGHT[c.worstMetric]
+        if (insight) {
+          lines.push(`   ↳ _${insight.reason}_ — ${insight.action}`)
+        }
+      }
     }
   }
 

@@ -311,9 +311,33 @@ function dominantStatus(scores: ScoredMetric[]): HealthStatus | null {
   )
 }
 
-async function updateStreak(clientId: string, scores: ScoredMetric[]): Promise<void> {
-  const status = dominantStatus(scores)
-  if (!status) return
+// Derives the current status from stored HealthScore records using the same
+// weekly-priority logic as the dashboard and daily digest. This avoids
+// streak resets caused by mismatches when snapshots haven't arrived yet for
+// the current week (which would make processGoals return no scores).
+async function updateStreak(clientId: string): Promise<void> {
+  const { start: weekStart }  = getWeekRange()
+  const { start: monthStart } = getMonthRange()
+
+  const healthScores = await prisma.healthScore.findMany({
+    where: {
+      clientId,
+      OR: [
+        { period: 'WEEKLY',  periodStart: { gte: weekStart } },
+        { period: 'MONTHLY', periodStart: { gte: monthStart } },
+      ],
+    },
+    select: { status: true, period: true },
+  })
+
+  const weeklyScores  = healthScores.filter((s) => s.period === 'WEEKLY')
+  const monthlyScores = healthScores.filter((s) => s.period === 'MONTHLY')
+  const scores = weeklyScores.length > 0 ? weeklyScores : monthlyScores
+  if (scores.length === 0) return
+
+  const status =
+    scores.some((s) => s.status === 'RUIM')    ? 'RUIM'    :
+    scores.some((s) => s.status === 'REGULAR') ? 'REGULAR' : 'OTIMO'
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -321,7 +345,9 @@ async function updateStreak(clientId: string, scores: ScoredMetric[]): Promise<v
   const existing = await prisma.clientStatusStreak.findUnique({ where: { clientId } })
 
   if (existing && existing.status === status) {
-    const days = Math.floor((today.getTime() - existing.since.getTime()) / 86_400_000) + 1
+    const sinceDay = new Date(existing.since)
+    sinceDay.setHours(0, 0, 0, 0)
+    const days = Math.floor((today.getTime() - sinceDay.getTime()) / 86_400_000) + 1
     await prisma.clientStatusStreak.update({ where: { clientId }, data: { days } })
   } else {
     await prisma.clientStatusStreak.upsert({
@@ -349,7 +375,7 @@ export async function recalculateAllClientsHealth(): Promise<{
     const result = await recalculateClientHealth(client.id)
     totalCreated += result.created
     totalUpdated += result.updated
-    await updateStreak(client.id, result.scores)
+    await updateStreak(client.id)
   }
 
   return { clientsProcessed: clients.length, totalCreated, totalUpdated }

@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { slugify } from '@/lib/utils'
+import { BusinessType } from '@prisma/client'
 
 export type UpdateClientState = { error?: string; success?: boolean; slug?: string }
 
@@ -21,6 +22,7 @@ export async function updateClient(
     contractValue?: number | null
     contractStart?: Date | null
     source?: string | null
+    businessType?: BusinessType | null
   }
 ): Promise<UpdateClientState> {
   await requireSession()
@@ -49,6 +51,7 @@ export async function updateClient(
   if ('contractValue' in data) updateData.contractValue = data.contractValue ?? null
   if ('contractStart' in data) updateData.contractStart = data.contractStart ?? null
   if ('source' in data) updateData.source = data.source ?? null
+  if ('businessType' in data && data.businessType != null) updateData.businessType = data.businessType
 
   const updated = await prisma.client.update({ where: { id: clientId }, data: updateData })
 

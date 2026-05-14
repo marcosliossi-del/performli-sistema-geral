@@ -38,6 +38,7 @@ import { RemovePlatformButton } from '@/components/clients/RemovePlatformButton'
 import { HealthScoreHistoryChart } from '@/components/clients/HealthScoreHistoryChart'
 import { PillarBenchmarkPanel } from '@/components/clients/PillarBenchmarkPanel'
 import { WeekComparisonTable } from '@/components/clients/WeekComparisonTable'
+import { LocalBusinessKPISection } from '@/components/clients/LocalBusinessKPISection'
 
 const platformColors: Record<string, string> = {
   META_ADS: '#1877F2',
@@ -140,6 +141,7 @@ export default async function ClientDetailPage({
       ? 'REGULAR'
       : 'OTIMO'
 
+  const isLocal = client.businessType === 'LOCAL'
   const hasData = kpis.faturamento > 0 || kpis.investimento > 0 || kpis.sessoes > 0
 
   return (
@@ -186,10 +188,11 @@ export default async function ClientDetailPage({
               contractValue: client.contractValue != null ? Number(client.contractValue) : null,
               contractStart: client.contractStart ?? null,
               source: client.source ?? null,
+              businessType: client.businessType,
             }}
           />
           <SyncButton clientId={client.id} />
-          <GoalFormModal clientId={client.id} />
+          <GoalFormModal clientId={client.id} businessType={client.businessType} />
         </div>
       </div>
 
@@ -270,128 +273,144 @@ export default async function ClientDetailPage({
         </Card>
       </div>
 
-      {/* ── KPIs do Mês ─────────────────────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h2 className="text-sm font-semibold text-[#EBEBEB]">
-              KPIs
-              <span className="text-[#87919E] font-normal ml-2 text-xs capitalize">{kpis.periodLabel}</span>
-            </h2>
-            <p className="text-[10px] text-[#87919E] mt-0.5">
-              {kpis.daysElapsed} dias · vs. período anterior equivalente
-            </p>
-          </div>
-          <DateRangePicker from={activeFrom} to={activeTo} clientId={client.id} />
-        </div>
-
-        {!hasData ? (
-          <div className="bg-[#0A1E2C] border border-[#38435C] rounded-xl p-6 text-center">
-            <p className="text-[#87919E] text-sm">Sem dados de métricas este mês. Sincronize as plataformas para ver os KPIs.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {/* Row 1 — Financeiro */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
-              <KpiCard
-                label="Receita (GA4)"
-                value={kpis.faturamento > 0 ? formatCurrency(kpis.faturamento) : '—'}
-                trend={kpis.faturamentoTrend}
-                sub="fonte: GA4"
-              />
-              <KpiCard
-                label="Investimento Total"
-                value={kpis.investimento > 0 ? formatCurrency(kpis.investimento) : '—'}
-                trend={kpis.investimentoTrend}
-                lowerIsBetter
-                sub="Meta + Google + TikTok"
-              />
-              <KpiCard
-                label="ROAS Total"
-                value={kpis.roas !== null ? `${kpis.roas.toFixed(2)}x` : '—'}
-                trend={kpis.roasTrend}
-                sub="GA4 receita / invest. total"
-              />
-              <KpiCard
-                label="Compras (GA4)"
-                value={kpis.compras > 0 ? kpis.compras.toLocaleString('pt-BR') : '—'}
-                trend={kpis.comprasTrend}
-                sub="fonte: GA4"
-              />
-              <KpiCard
-                label="Projeção do Mês"
-                value={kpis.projecaoMes !== null ? formatCurrency(kpis.projecaoMes) : '—'}
-                sub={kpis.projecaoMes !== null ? `${kpis.daysElapsed}d de dados` : undefined}
-              />
-            </div>
-
-            {/* Row 2 — Investimento e ROAS por plataforma */}
-            {(kpis.investimentoMeta > 0 || kpis.investimentoGoogle > 0 || kpis.investimentoTiktok > 0) && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
-                {kpis.investimentoMeta > 0 && (
-                  <KpiCard label="Invest. Meta" value={formatCurrency(kpis.investimentoMeta)} lowerIsBetter sub="Meta Ads" />
-                )}
-                {kpis.investimentoGoogle > 0 && (
-                  <KpiCard label="Invest. Google" value={formatCurrency(kpis.investimentoGoogle)} lowerIsBetter sub="Google Ads" />
-                )}
-                {kpis.investimentoTiktok > 0 && (
-                  <KpiCard label="Invest. TikTok" value={formatCurrency(kpis.investimentoTiktok)} lowerIsBetter sub="TikTok Ads" />
-                )}
-                {kpis.roasMeta !== null && (
-                  <KpiCard label="ROAS Meta" value={`${kpis.roasMeta.toFixed(2)}x`} sub="GA4 / Meta spend" />
-                )}
-                {kpis.roasGoogle !== null && (
-                  <KpiCard label="ROAS Google" value={`${kpis.roasGoogle.toFixed(2)}x`} sub="GA4 / Google spend" />
-                )}
-                {kpis.roasTiktok !== null && (
-                  <KpiCard label="ROAS TikTok" value={`${kpis.roasTiktok.toFixed(2)}x`} sub="GA4 / TikTok spend" />
-                )}
-              </div>
-            )}
-
-            {/* Row 3 — Eficiência */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
-              <KpiCard
-                label="Sessões"
-                value={kpis.sessoes > 0 ? kpis.sessoes.toLocaleString('pt-BR') : '—'}
-                trend={kpis.sessoesTrend}
-              />
-              <KpiCard
-                label="Taxa de Conversão"
-                value={kpis.taxaConversao !== null ? `${kpis.taxaConversao.toFixed(2)}%` : '—'}
-                trend={kpis.taxaConversaoTrend}
-              />
-              <KpiCard
-                label="Ticket Médio"
-                value={kpis.ticketMedio !== null ? formatCurrency(kpis.ticketMedio) : '—'}
-                trend={kpis.ticketMedioTrend}
-              />
-              <KpiCard
-                label="CPA (Custo por Venda)"
-                value={kpis.cpa !== null ? formatCurrency(kpis.cpa) : '—'}
-                trend={kpis.cpaTrend}
-                lowerIsBetter
-              />
-              <KpiCard
-                label="CAC (Custo p/ Novo Cliente)"
-                value={kpis.cac !== null ? formatCurrency(kpis.cac) : '—'}
-                trend={kpis.cacTrend}
-                lowerIsBetter
-                sub={kpis.cac !== null ? 'invest / novos compradores' : 'requer sync GA4'}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── Revenue Pace + Monthly Comparison ────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <RevenuePaceChart
-          data={dailyRevenue}
-          goal={monthlyGoals.find((g) => g.metric === 'FATURAMENTO') ? Number(monthlyGoals.find((g) => g.metric === 'FATURAMENTO')!.targetValue) : null}
+      {/* ── KPIs ─────────────────────────────────────────────────────── */}
+      {isLocal ? (
+        <LocalBusinessKPISection
+          kpis={{
+            investimento:   kpis.investimento,
+            adLeads:        kpis.adLeads,
+            adAlcance:      kpis.adAlcance,
+            adImpressions:  kpis.adImpressions,
+            ctr:            kpis.ctr,
+            cpc:            kpis.cpc,
+            cpl:            kpis.cpl,
+          }}
         />
-        <MonthlyComparisonChart data={monthlyComparison} />
-      </div>
+      ) : (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-sm font-semibold text-[#EBEBEB]">
+                KPIs
+                <span className="text-[#87919E] font-normal ml-2 text-xs capitalize">{kpis.periodLabel}</span>
+              </h2>
+              <p className="text-[10px] text-[#87919E] mt-0.5">
+                {kpis.daysElapsed} dias · vs. período anterior equivalente
+              </p>
+            </div>
+            <DateRangePicker from={activeFrom} to={activeTo} clientId={client.id} />
+          </div>
+
+          {!hasData ? (
+            <div className="bg-[#0A1E2C] border border-[#38435C] rounded-xl p-6 text-center">
+              <p className="text-[#87919E] text-sm">Sem dados de métricas este mês. Sincronize as plataformas para ver os KPIs.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Row 1 — Financeiro */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+                <KpiCard
+                  label="Receita (GA4)"
+                  value={kpis.faturamento > 0 ? formatCurrency(kpis.faturamento) : '—'}
+                  trend={kpis.faturamentoTrend}
+                  sub="fonte: GA4"
+                />
+                <KpiCard
+                  label="Investimento Total"
+                  value={kpis.investimento > 0 ? formatCurrency(kpis.investimento) : '—'}
+                  trend={kpis.investimentoTrend}
+                  lowerIsBetter
+                  sub="Meta + Google + TikTok"
+                />
+                <KpiCard
+                  label="ROAS Total"
+                  value={kpis.roas !== null ? `${kpis.roas.toFixed(2)}x` : '—'}
+                  trend={kpis.roasTrend}
+                  sub="GA4 receita / invest. total"
+                />
+                <KpiCard
+                  label="Compras (GA4)"
+                  value={kpis.compras > 0 ? kpis.compras.toLocaleString('pt-BR') : '—'}
+                  trend={kpis.comprasTrend}
+                  sub="fonte: GA4"
+                />
+                <KpiCard
+                  label="Projeção do Mês"
+                  value={kpis.projecaoMes !== null ? formatCurrency(kpis.projecaoMes) : '—'}
+                  sub={kpis.projecaoMes !== null ? `${kpis.daysElapsed}d de dados` : undefined}
+                />
+              </div>
+
+              {/* Row 2 — Investimento e ROAS por plataforma */}
+              {(kpis.investimentoMeta > 0 || kpis.investimentoGoogle > 0 || kpis.investimentoTiktok > 0) && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+                  {kpis.investimentoMeta > 0 && (
+                    <KpiCard label="Invest. Meta" value={formatCurrency(kpis.investimentoMeta)} lowerIsBetter sub="Meta Ads" />
+                  )}
+                  {kpis.investimentoGoogle > 0 && (
+                    <KpiCard label="Invest. Google" value={formatCurrency(kpis.investimentoGoogle)} lowerIsBetter sub="Google Ads" />
+                  )}
+                  {kpis.investimentoTiktok > 0 && (
+                    <KpiCard label="Invest. TikTok" value={formatCurrency(kpis.investimentoTiktok)} lowerIsBetter sub="TikTok Ads" />
+                  )}
+                  {kpis.roasMeta !== null && (
+                    <KpiCard label="ROAS Meta" value={`${kpis.roasMeta.toFixed(2)}x`} sub="GA4 / Meta spend" />
+                  )}
+                  {kpis.roasGoogle !== null && (
+                    <KpiCard label="ROAS Google" value={`${kpis.roasGoogle.toFixed(2)}x`} sub="GA4 / Google spend" />
+                  )}
+                  {kpis.roasTiktok !== null && (
+                    <KpiCard label="ROAS TikTok" value={`${kpis.roasTiktok.toFixed(2)}x`} sub="GA4 / TikTok spend" />
+                  )}
+                </div>
+              )}
+
+              {/* Row 3 — Eficiência */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+                <KpiCard
+                  label="Sessões"
+                  value={kpis.sessoes > 0 ? kpis.sessoes.toLocaleString('pt-BR') : '—'}
+                  trend={kpis.sessoesTrend}
+                />
+                <KpiCard
+                  label="Taxa de Conversão"
+                  value={kpis.taxaConversao !== null ? `${kpis.taxaConversao.toFixed(2)}%` : '—'}
+                  trend={kpis.taxaConversaoTrend}
+                />
+                <KpiCard
+                  label="Ticket Médio"
+                  value={kpis.ticketMedio !== null ? formatCurrency(kpis.ticketMedio) : '—'}
+                  trend={kpis.ticketMedioTrend}
+                />
+                <KpiCard
+                  label="CPA (Custo por Venda)"
+                  value={kpis.cpa !== null ? formatCurrency(kpis.cpa) : '—'}
+                  trend={kpis.cpaTrend}
+                  lowerIsBetter
+                />
+                <KpiCard
+                  label="CAC (Custo p/ Novo Cliente)"
+                  value={kpis.cac !== null ? formatCurrency(kpis.cac) : '—'}
+                  trend={kpis.cacTrend}
+                  lowerIsBetter
+                  sub={kpis.cac !== null ? 'invest / novos compradores' : 'requer sync GA4'}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Revenue Pace + Monthly Comparison (E-commerce only) ────────────── */}
+      {!isLocal && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <RevenuePaceChart
+            data={dailyRevenue}
+            goal={monthlyGoals.find((g) => g.metric === 'FATURAMENTO') ? Number(monthlyGoals.find((g) => g.metric === 'FATURAMENTO')!.targetValue) : null}
+          />
+          <MonthlyComparisonChart data={monthlyComparison} />
+        </div>
+      )}
 
       {/* ── Metas do Mês ────────────────────────────────────────────────────── */}
       {monthlyGoals.length > 0 && (
@@ -444,7 +463,7 @@ export default async function ClientDetailPage({
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-[#EBEBEB]">Metas da Semana</h2>
           {weeklyGoals.length === 0 && (
-            <GoalFormModal clientId={client.id} label="Adicionar primeira meta" />
+            <GoalFormModal clientId={client.id} businessType={client.businessType} label="Adicionar primeira meta" />
           )}
         </div>
 
@@ -521,25 +540,29 @@ export default async function ClientDetailPage({
         </div>
       )}
 
-      {/* ── Benchmarks de mercado por pilar ─────────────────────────────── */}
-      <PillarBenchmarkPanel
-        roas={kpis.roas}
-        ctr={kpis.ctr}
-        cpc={kpis.cpc}
-        taxaConversao={kpis.taxaConversao}
-        ticketMedio={kpis.ticketMedio}
-        cpa={kpis.cpa}
-      />
+      {/* ── Benchmarks de mercado por pilar (E-commerce only) ─────────── */}
+      {!isLocal && (
+        <PillarBenchmarkPanel
+          roas={kpis.roas}
+          ctr={kpis.ctr}
+          cpc={kpis.cpc}
+          taxaConversao={kpis.taxaConversao}
+          ticketMedio={kpis.ticketMedio}
+          cpa={kpis.cpa}
+        />
+      )}
 
-      {/* ── Diagnóstico de KPIs ──────────────────────────────────────────── */}
-      <KPIDiagnosticCard
-        cps={kpis.cps}
-        taxaConversao={kpis.taxaConversao}
-        ticketMedio={kpis.ticketMedio}
-        cpsPct={kpis.cpsTrend}
-        taxaPct={kpis.taxaConversaoTrend}
-        ticketPct={kpis.ticketMedioTrend}
-      />
+      {/* ── Diagnóstico de KPIs (E-commerce only) ───────────────────────── */}
+      {!isLocal && (
+        <KPIDiagnosticCard
+          cps={kpis.cps}
+          taxaConversao={kpis.taxaConversao}
+          ticketMedio={kpis.ticketMedio}
+          cpsPct={kpis.cpsTrend}
+          taxaPct={kpis.taxaConversaoTrend}
+          ticketPct={kpis.ticketMedioTrend}
+        />
+      )}
 
       {/* ── Ritmo das Metas Mensais ───────────────────────────────────────── */}
       {paceGoals.length > 0 && (
@@ -556,26 +579,28 @@ export default async function ClientDetailPage({
         <MetricsChartsGrid data={metricHistory} />
       </div>
 
-      {/* ── Campanhas de Anúncio ─────────────────────────────────────────── */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-[#EBEBEB]">Campanhas de Anúncio</h2>
-            <p className="text-[10px] text-[#87919E] mt-0.5">
-              Performance por campanha/conjunto — Meta Ads · últimos 7 dias
-            </p>
+      {/* ── Campanhas de Anúncio (E-commerce only) ──────────────────────── */}
+      {!isLocal && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-[#EBEBEB]">Campanhas de Anúncio</h2>
+              <p className="text-[10px] text-[#87919E] mt-0.5">
+                Performance por campanha/conjunto — Meta Ads · últimos 7 dias
+              </p>
+            </div>
           </div>
+          <CampaignBreakdownTable campaigns={campaigns} periodDays={7} />
+          <CampaignInsightCard
+            clientId={client.id}
+            clientSlug={slug}
+            existingInsight={campaignInsight
+              ? { content: campaignInsight.content, createdAt: campaignInsight.createdAt }
+              : null
+            }
+          />
         </div>
-        <CampaignBreakdownTable campaigns={campaigns} periodDays={7} />
-        <CampaignInsightCard
-          clientId={client.id}
-          clientSlug={slug}
-          existingInsight={campaignInsight
-            ? { content: campaignInsight.content, createdAt: campaignInsight.createdAt }
-            : null
-          }
-        />
-      </div>
+      )}
 
       {/* ── Relatório Semanal ─────────────────────────────────────────────── */}
       <WeeklyReportCard

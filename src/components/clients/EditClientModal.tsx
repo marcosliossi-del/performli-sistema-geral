@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { updateClient, deleteClient } from '@/app/actions/updateClient'
-import { X, Trash2, AlertTriangle } from 'lucide-react'
+import { X, Trash2, AlertTriangle, ShoppingCart, MapPin } from 'lucide-react'
+import { BusinessType } from '@prisma/client'
 
 interface ClientData {
   id: string
@@ -16,6 +17,7 @@ interface ClientData {
   contractValue: number | null
   contractStart: Date | null
   source: string | null
+  businessType: BusinessType
 }
 
 interface Props {
@@ -43,6 +45,7 @@ export function EditClientModal({ client, onClose }: Props) {
     contractStart: client.contractStart
       ? new Date(client.contractStart).toISOString().split('T')[0]
       : '',
+    businessType: client.businessType as BusinessType,
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -69,6 +72,7 @@ export function EditClientModal({ client, onClose }: Props) {
         document: form.document || null,
         contractValue: form.contractValue ? parseFloat(form.contractValue) : null,
         contractStart: form.contractStart ? new Date(form.contractStart) : null,
+        businessType: form.businessType,
       })
       if (result.error) {
         setError(result.error)
@@ -111,6 +115,34 @@ export function EditClientModal({ client, onClose }: Props) {
                 required
                 className="w-full h-9 px-3 rounded-lg bg-[#1B2B3A] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
               />
+            </div>
+
+            {/* Tipo de negócio */}
+            <div className="col-span-2 space-y-1.5">
+              <label className="text-xs text-[#87919E]">Tipo de Negócio</label>
+              <div className="flex gap-2">
+                {([
+                  { value: 'ECOMMERCE', label: 'E-commerce', icon: ShoppingCart, desc: 'ROAS, Faturamento, Conversões' },
+                  { value: 'LOCAL',     label: 'Negócio Local', icon: MapPin,     desc: 'Leads, Mensagens, Seguidores' },
+                ] as const).map(({ value, label, icon: Icon, desc }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, businessType: value }))}
+                    className={`flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-left transition-all ${
+                      form.businessType === value
+                        ? 'border-[#95BBE2] bg-[#95BBE2]/10'
+                        : 'border-[#38435C] hover:border-[#38435C]/80'
+                    }`}
+                  >
+                    <Icon size={15} className={form.businessType === value ? 'text-[#95BBE2]' : 'text-[#87919E]'} />
+                    <div>
+                      <p className={`text-xs font-semibold ${form.businessType === value ? 'text-[#95BBE2]' : 'text-[#EBEBEB]'}`}>{label}</p>
+                      <p className="text-[10px] text-[#87919E]">{desc}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-1.5">

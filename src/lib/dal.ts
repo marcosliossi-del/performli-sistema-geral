@@ -481,6 +481,11 @@ export type ClientKPIs = {
   // Link CTR e CPC (calculados a partir de clicks/impressions dos ad platforms)
   ctr: number | null
   cpc: number | null
+  // Métricas de negócio local (ad platforms)
+  adLeads: number | null        // conversões de anúncio = leads/mensagens
+  adAlcance: number | null      // alcance total (reach)
+  adImpressions: number | null  // impressões totais
+  cpl: number | null            // custo por lead = spend / adLeads
 }
 
 export const getClientKPIs = cache(async (
@@ -540,11 +545,14 @@ export const getClientKPIs = cache(async (
     const newUsers  = ga4.reduce((s, x) => s + (x.newUsers ?? 0), 0)
     const adImpr    = meta.reduce((s, x) => s + (x.impressions ?? 0), 0)
     // Link CTR = ad clicks / impressions (not stored ctr which is CTR All)
-    const ads         = snaps.filter((x) => x.platformAccount.platform !== 'GA4')
-    const adClicks    = ads.reduce((s, x) => s + (x.clicks ?? 0), 0)
-    const allImpr     = ads.reduce((s, x) => s + (x.impressions ?? 0), 0)
-    const ctrLink     = allImpr > 0 && adClicks > 0 ? (adClicks / allImpr) * 100 : null
-    const cpcLink     = totalSpend > 0 && adClicks > 0 ? totalSpend / adClicks : null
+    const ads            = snaps.filter((x) => x.platformAccount.platform !== 'GA4')
+    const adClicks       = ads.reduce((s, x) => s + (x.clicks ?? 0), 0)
+    const allImpr        = ads.reduce((s, x) => s + (x.impressions ?? 0), 0)
+    const adReach        = ads.reduce((s, x) => s + (x.reach ?? 0), 0)
+    // Ad conversions = event-based leads/messages from Meta Ads (used for local business CPL)
+    const adConversions  = ads.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const ctrLink        = allImpr > 0 && adClicks > 0 ? (adClicks / allImpr) * 100 : null
+    const cpcLink        = totalSpend > 0 && adClicks > 0 ? totalSpend / adClicks : null
 
     const roas       = totalSpend  > 0 && revenue > 0 ? revenue / totalSpend  : null
     const roasMeta   = metaSpend   > 0 && revenue > 0 ? revenue / metaSpend   : null
@@ -556,12 +564,16 @@ export const getClientKPIs = cache(async (
       sessions, purchases, revenue, adImpr, newUsers,
       roas, roasMeta, roasGoogle, roasTiktok,
       ctrLink, cpcLink,
+      adLeads:       adConversions > 0 ? adConversions : null,
+      adAlcance:     adReach > 0 ? adReach : null,
+      adImpressions: allImpr > 0 ? allImpr : null,
       ticketMedio:   purchases > 0 && revenue > 0 ? revenue / purchases : null,
       taxaConversao: sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null,
       cps:           sessions > 0 && totalSpend > 0 ? totalSpend / sessions : null,
       cpm:           adImpr > 0 && metaSpend > 0 ? (metaSpend / adImpr) * 1000 : null,
       cpa:           purchases > 0 && totalSpend > 0 ? totalSpend / purchases : null,
       cac:           purchases > 0 && totalSpend > 0 ? totalSpend / purchases : null,
+      cpl:           adConversions > 0 && totalSpend > 0 ? totalSpend / adConversions : null,
     }
   }
 
@@ -617,6 +629,10 @@ export const getClientKPIs = cache(async (
     cacTrend: pctChange(curr.cac, prev.cac),
     ctr: curr.ctrLink,
     cpc: curr.cpcLink,
+    adLeads:       curr.adLeads,
+    adAlcance:     curr.adAlcance,
+    adImpressions: curr.adImpressions,
+    cpl:           curr.cpl,
   }
 })
 
@@ -647,6 +663,7 @@ export const metricLabels: Record<string, string> = {
   LIGACOES: 'Ligações',
   AGENDAMENTOS: 'Agendamentos',
   LEADS: 'Leads Gerados',
+  SEGUIDORES: 'Seguidores',
 }
 
 // ─── Metric history (charts) ──────────────────────────────────────────────────

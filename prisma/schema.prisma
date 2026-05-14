@@ -46,6 +46,11 @@ enum ClientStatus {
   CHURNED
 }
 
+enum BusinessType {
+  ECOMMERCE
+  LOCAL
+}
+
 enum PipelineStage {
   LEAD
   PROPOSTA
@@ -75,6 +80,7 @@ model Client {
   phone          String?
   document       String?
   status         ClientStatus  @default(ACTIVE)
+  businessType   BusinessType  @default(ECOMMERCE)
   pipelineStage  PipelineStage @default(ATIVO)
   contractValue  Decimal?
   contractStart  DateTime?
@@ -192,6 +198,7 @@ enum MetricType {
   LIGACOES         // ligações recebidas (Google Business)
   AGENDAMENTOS     // agendamentos / reservas realizadas
   LEADS            // leads gerados (evento de lead GA4 ou pixel)
+  SEGUIDORES       // seguidores (Meta/Instagram)
 }
 
 model MetricSnapshot {
