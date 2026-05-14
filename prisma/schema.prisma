@@ -220,6 +220,8 @@ model MetricSnapshot {
   roas            Decimal? @db.Decimal(8, 4)
   cpl             Decimal? @db.Decimal(10, 4)
   cpa             Decimal? @db.Decimal(10, 4)
+  addToCarts      Int?     // GA4: eventos add_to_cart
+  checkoutsStarted Int?    // GA4: eventos begin_checkout
   rawData         Json?
 
   syncedAt  DateTime @default(now())

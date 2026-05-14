@@ -21,6 +21,8 @@ export interface GA4Row {
   purchaseRevenue: string
   totalRevenue: string
   newUsers: string
+  addToCarts: string
+  checkouts: string
 }
 
 export interface GA4ItemRow {
@@ -42,6 +44,8 @@ const METRIC_NAMES = [
   'purchaseRevenue',
   'totalRevenue',
   'newUsers',
+  'addToCarts',
+  'checkouts',
 ]
 
 // ── Service Account JWT auth ───────────────────────────────────────────────────
@@ -281,6 +285,8 @@ export class GA4Client {
       purchaseRevenue:      row.metricValues[5].value,
       totalRevenue:         row.metricValues[6].value,
       newUsers:             row.metricValues[7].value,
+      addToCarts:           row.metricValues[8].value,
+      checkouts:            row.metricValues[9].value,
     }))
   }
 }
