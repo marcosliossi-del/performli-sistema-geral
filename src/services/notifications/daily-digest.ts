@@ -1,58 +1,21 @@
 /**
  * Daily Digest WhatsApp
  *
- * Resumo diário da agência enviado às 08:30 BRT/São Paulo.
- * Formato: visão geral + breakdown por gestor + seção de atenção (streak longo).
+ * Envia múltiplos blocos separados por gestor, ordenados do mais crítico ao melhor.
+ * Cada bloco inclui insights baseados no histórico real do cliente (queda vs. média histórica).
  */
 
 import { prisma } from '@/lib/prisma'
 import { broadcastWhatsApp } from '@/lib/whatsapp'
 import { getMonthRange, getWeekRange } from '@/lib/utils'
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 function emoji(status: string | null) {
   if (status === 'OTIMO')   return '✅'
   if (status === 'REGULAR') return '⚠️'
   if (status === 'RUIM')    return '🔴'
   return '⚪'
-}
-
-// Rule-based insight for worst RUIM metric on a client
-const METRIC_INSIGHT: Record<string, { reason: string; action: string }> = {
-  ROAS:          { reason: 'ROAS abaixo da meta',           action: 'revisar campanhas de menor retorno' },
-  FATURAMENTO:   { reason: 'faturamento abaixo da meta',    action: 'analisar produtos e promoções ativas' },
-  TICKET_MEDIO:  { reason: 'ticket médio caiu',             action: 'investigar mix de produtos vendidos' },
-  TAXA_CONVERSAO:{ reason: 'taxa de conversão baixa',       action: 'revisar landing pages e anúncios' },
-  CONVERSIONS:   { reason: 'conversões abaixo da meta',     action: 'verificar funil de vendas' },
-  LEADS:         { reason: 'geração de leads baixa',        action: 'revisar criativos e formulários de captação' },
-  MENSAGENS:     { reason: 'volume de mensagens baixo',     action: 'revisar segmentação e criativos' },
-  SEGUIDORES:    { reason: 'crescimento de seguidores lento', action: 'revisar estratégia de conteúdo' },
-  CPL:           { reason: 'CPL acima da meta',             action: 'otimizar anúncios de captação' },
-  CPA:           { reason: 'CPA acima da meta',             action: 'revisar campanhas de conversão' },
-  CAC:           { reason: 'CAC acima da meta',             action: 'rever estratégia de aquisição' },
-  CTR:           { reason: 'CTR baixo',                     action: 'testar novos criativos' },
-  INVESTMENT:    { reason: 'investimento acima do orçamento', action: 'ajustar limite de gastos' },
-  SPEND:         { reason: 'budget acima do limite',        action: 'ajustar limite de gastos' },
-}
-
-type HealthScoreRow = {
-  status: string
-  period: string
-  periodStart: Date
-  metric: string
-  achievementPct: { toNumber: () => number } | number
-  actualValue: { toNumber: () => number } | number
-  targetValue: { toNumber: () => number } | number
-}
-
-function worstRuimMetric(scores: HealthScoreRow[]): string | null {
-  const ruim = scores.filter((s) => s.status === 'RUIM')
-  if (ruim.length === 0) return null
-  ruim.sort((a, b) => {
-    const pa = typeof a.achievementPct === 'number' ? a.achievementPct : a.achievementPct.toNumber()
-    const pb = typeof b.achievementPct === 'number' ? b.achievementPct : b.achievementPct.toNumber()
-    return pa - pb
-  })
-  return ruim[0].metric
 }
 
 function statusOrder(status: string | null): number {
@@ -67,7 +30,127 @@ function streakLabel(status: string | null, days: number): string {
   if (status === 'RUIM')    return `${ordinal} em estado crítico`
   if (status === 'REGULAR') return `${ordinal} em estado regular`
   if (status === 'OTIMO')   return `${ordinal} em ótimo estado`
-  return `${ordinal}`
+  return ordinal
+}
+
+function toNum(v: { toNumber: () => number } | number | null | undefined): number {
+  if (v == null) return 0
+  return typeof v === 'number' ? v : v.toNumber()
+}
+
+// Insight baseado no histórico real do cliente vs. meta
+// histDrop: quando caiu vs. histórico do próprio cliente (mais específico)
+// belowGoal: quando só está abaixo da meta (sem histórico suficiente)
+const METRIC_CONTEXT: Record<string, { histDrop: string; belowGoal: string; action: string }> = {
+  TICKET_MEDIO:  {
+    histDrop:  'ticket médio caiu vs. histórico do cliente',
+    belowGoal: 'ticket médio abaixo da meta',
+    action:    'reveja produtos anunciados — possível grade quebrada ou falta de estoque',
+  },
+  ROAS: {
+    histDrop:  'ROAS caiu vs. média histórica do cliente',
+    belowGoal: 'ROAS abaixo da meta',
+    action:    'revisar campanhas de menor retorno e criativos ativos',
+  },
+  FATURAMENTO: {
+    histDrop:  'faturamento abaixo do padrão histórico do cliente',
+    belowGoal: 'faturamento abaixo da meta do mês',
+    action:    'analisar produtos mais vendidos e promoções ativas',
+  },
+  TAXA_CONVERSAO: {
+    histDrop:  'taxa de conversão caiu vs. histórico do cliente',
+    belowGoal: 'taxa de conversão abaixo da meta',
+    action:    'revisar landing pages, checkout e anúncios de fundo de funil',
+  },
+  CONVERSIONS: {
+    histDrop:  'volume de conversões abaixo do padrão histórico',
+    belowGoal: 'conversões abaixo da meta',
+    action:    'verificar funil de vendas e campanhas de conversão',
+  },
+  LEADS: {
+    histDrop:  'geração de leads abaixo do histórico do cliente',
+    belowGoal: 'leads abaixo da meta',
+    action:    'revisar formulários, criativos e segmentação de captação',
+  },
+  MENSAGENS: {
+    histDrop:  'volume de mensagens abaixo do padrão histórico',
+    belowGoal: 'mensagens abaixo da meta',
+    action:    'revisar segmentação, criativos e botão de WhatsApp nos anúncios',
+  },
+  SEGUIDORES: {
+    histDrop:  'crescimento de seguidores abaixo do histórico',
+    belowGoal: 'crescimento de seguidores abaixo da meta',
+    action:    'revisar estratégia de conteúdo e frequência de posts',
+  },
+  CPL: {
+    histDrop:  'CPL acima do histórico do cliente',
+    belowGoal: 'CPL acima da meta',
+    action:    'otimizar criativos de captação e testar novos públicos',
+  },
+  CPA: {
+    histDrop:  'CPA acima do histórico do cliente',
+    belowGoal: 'CPA acima da meta',
+    action:    'revisar campanhas de conversão — testar públicos diferentes',
+  },
+  CAC: {
+    histDrop:  'CAC acima do histórico do cliente',
+    belowGoal: 'CAC acima da meta',
+    action:    'rever estratégia de aquisição — incentivar recompras',
+  },
+  CTR: {
+    histDrop:  'CTR caiu vs. histórico do cliente',
+    belowGoal: 'CTR abaixo da meta',
+    action:    'testar novos criativos — audiência pode estar saturada com os atuais',
+  },
+  INVESTMENT: {
+    histDrop:  'investimento acima do padrão histórico',
+    belowGoal: 'investimento acima do orçamento',
+    action:    'ajustar limite de gastos das campanhas',
+  },
+  SPEND: {
+    histDrop:  'budget acima do padrão histórico',
+    belowGoal: 'budget acima do limite',
+    action:    'ajustar limite de gastos das campanhas',
+  },
+}
+
+type HealthScoreRow = {
+  status: string
+  period: string
+  periodStart: Date
+  metric: string
+  achievementPct: { toNumber: () => number } | number
+  actualValue: { toNumber: () => number } | number
+  targetValue: { toNumber: () => number } | number
+}
+
+function worstRuimScore(scores: HealthScoreRow[]): HealthScoreRow | null {
+  const ruim = scores.filter((s) => s.status === 'RUIM')
+  if (ruim.length === 0) return null
+  return ruim.sort((a, b) => toNum(a.achievementPct) - toNum(b.achievementPct))[0]
+}
+
+// Gera a linha de insight para um cliente RUIM.
+// histAvg: média histórica de achievementPct das últimas semanas (pode ser null se sem histórico)
+function buildInsightLine(
+  worstScore: HealthScoreRow,
+  histAvg: number | null,
+): string | null {
+  const ctx = METRIC_CONTEXT[worstScore.metric]
+  if (!ctx) return null
+
+  const currentPct = toNum(worstScore.achievementPct)
+
+  if (histAvg !== null && histAvg > 10) {
+    // Queda vs. histórico: se atual é 15%+ abaixo da média histórica
+    const drop = Math.round(((histAvg - currentPct) / histAvg) * 100)
+    if (drop >= 15) {
+      return `   ↳ ${ctx.histDrop} (${drop}% abaixo da média) — ${ctx.action}`
+    }
+  }
+
+  // Sem queda expressiva vs. histórico, mas ainda abaixo da meta
+  return `   ↳ ${ctx.belowGoal} (${Math.round(currentPct)}% da meta) — ${ctx.action}`
 }
 
 export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolean }> {
@@ -87,13 +170,11 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
   const now       = new Date()
   const { start: weekStart }  = getWeekRange()
   const { start: monthStart } = getMonthRange()
-  const fetchFrom = monthStart < weekStart ? monthStart : weekStart
-  const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1)
+  const fetchFrom  = monthStart < weekStart ? monthStart : weekStart
+  const yesterday  = new Date(now); yesterday.setDate(yesterday.getDate() - 1)
+  const sixWeeksAgo = new Date(now.getTime() - 42 * 86_400_000)
 
-  // Fetch all active clients with ALL health scores for the period + primary manager + streak
-  // IMPORTANT: fetch ALL scores (no take: 1) — status is derived using worst-case logic
-  // to match the dashboard. A single take:1 (most recent) would return OTIMO even if
-  // another metric for the same client is RUIM.
+  // ── Fetch clients ────────────────────────────────────────────────────────────
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
     select: {
@@ -103,13 +184,8 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
         where:   { periodStart: { gte: fetchFrom } },
         orderBy: { calculatedAt: 'desc' },
         select: {
-          status: true,
-          period: true,
-          periodStart: true,
-          metric: true,
-          achievementPct: true,
-          actualValue: true,
-          targetValue: true,
+          status: true, period: true, periodStart: true,
+          metric: true, achievementPct: true, actualValue: true, targetValue: true,
         },
       },
       assignments: {
@@ -122,7 +198,31 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     orderBy: { name: 'asc' },
   })
 
-  // Critical alerts from last 24h (unread)
+  // ── Historical HealthScores for context (last 6 weeks, WEEKLY, all clients) ──
+  const historicalRaw = await prisma.healthScore.findMany({
+    where: {
+      period:      'WEEKLY',
+      periodStart: { gte: sixWeeksAgo, lt: weekStart },
+    },
+    select: { clientId: true, metric: true, achievementPct: true },
+  })
+
+  // Build map: clientId → metric → achievementPct[]
+  const histMap = new Map<string, Map<string, number[]>>()
+  for (const h of historicalRaw) {
+    if (!histMap.has(h.clientId)) histMap.set(h.clientId, new Map())
+    const m = histMap.get(h.clientId)!
+    if (!m.has(h.metric)) m.set(h.metric, [])
+    m.get(h.metric)!.push(toNum(h.achievementPct))
+  }
+
+  function getHistAvg(clientId: string, metric: string): number | null {
+    const vals = histMap.get(clientId)?.get(metric)
+    if (!vals || vals.length < 2) return null
+    return vals.reduce((a, b) => a + b, 0) / vals.length
+  }
+
+  // ── Critical alerts (last 24h) ───────────────────────────────────────────────
   const criticalAlerts = await prisma.alert.findMany({
     where: {
       type:      { in: ['STATUS_DROPPED_TO_RUIM', 'BUDGET_EXHAUSTED', 'SYNC_FAILED'] },
@@ -133,52 +233,49 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     take: 10,
   })
 
-  // ── Aggregate totals ───────────────────────────────────────────────────────
+  // ── Build client rows ────────────────────────────────────────────────────────
   let otimo = 0, regular = 0, ruim = 0, semDados = 0
 
   type ClientRow = {
+    id: string
     name: string
     status: string | null
     managerName: string
     managerId: string
     streakDays: number
-    worstMetric: string | null
+    worstScore: HealthScoreRow | null
     activeScores: HealthScoreRow[]
   }
 
   const rows: ClientRow[] = clients.map((c) => {
-    // Mirror dashboard logic: prefer current-week WEEKLY scores, fall back to MONTHLY.
-    // Then derive overall status as worst-case (RUIM beats REGULAR beats OTIMO).
     const weeklyScores  = c.healthScores.filter((s) => s.period === 'WEEKLY'  && s.periodStart >= weekStart)
     const monthlyScores = c.healthScores.filter((s) => s.period === 'MONTHLY' && s.periodStart >= monthStart)
     const scores = weeklyScores.length > 0 ? weeklyScores : monthlyScores
 
     const status: string | null =
-      scores.length === 0
-        ? null
-        : scores.some((s) => s.status === 'RUIM')
-        ? 'RUIM'
-        : scores.some((s) => s.status === 'REGULAR')
-        ? 'REGULAR'
-        : 'OTIMO'
+      scores.length === 0  ? null :
+      scores.some((s) => s.status === 'RUIM')    ? 'RUIM'    :
+      scores.some((s) => s.status === 'REGULAR') ? 'REGULAR' : 'OTIMO'
 
-    const assignment = c.assignments[0]?.user
     if (status === 'OTIMO')        otimo++
     else if (status === 'REGULAR') regular++
     else if (status === 'RUIM')    ruim++
     else                           semDados++
+
+    const assignment = c.assignments[0]?.user
     return {
+      id:           c.id,
       name:         c.name,
       status,
       managerName:  assignment?.name ?? 'Sem Gestor',
       managerId:    assignment?.id   ?? '__none__',
       streakDays:   c.statusStreak?.days ?? 1,
-      worstMetric:  worstRuimMetric(scores as HealthScoreRow[]),
+      worstScore:   worstRuimScore(scores as HealthScoreRow[]),
       activeScores: scores as HealthScoreRow[],
     }
   })
 
-  // ── Group by manager ───────────────────────────────────────────────────────
+  // ── Group by manager ─────────────────────────────────────────────────────────
   const managerOrder: string[] = []
   const byManager = new Map<string, { name: string; clients: ClientRow[] }>()
 
@@ -190,137 +287,114 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     byManager.get(row.managerId)!.clients.push(row)
   }
 
-  // Sort each manager's clients: RUIM → REGULAR → OTIMO → sem dados
-  // Within same status, longer streaks first (most urgent on top)
+  // Sort each manager's clients: RUIM → REGULAR → OTIMO (worst streak first within status)
   for (const entry of byManager.values()) {
     entry.clients.sort((a, b) => {
-      const statusDiff = statusOrder(a.status) - statusOrder(b.status)
-      if (statusDiff !== 0) return statusDiff
-      return b.streakDays - a.streakDays
+      const d = statusOrder(a.status) - statusOrder(b.status)
+      return d !== 0 ? d : b.streakDays - a.streakDays
     })
   }
 
-  // Sort manager order: most critical clients first, then by total streak weight
+  // Sort managers: most RUIM clients first, then total RUIM streak weight
   managerOrder.sort((a, b) => {
-    const aClients = byManager.get(a)!.clients
-    const bClients = byManager.get(b)!.clients
-    const aRuim = aClients.filter((c) => c.status === 'RUIM').length
-    const bRuim = bClients.filter((c) => c.status === 'RUIM').length
-    if (aRuim !== bRuim) return bRuim - aRuim
-    const aRuimDays = aClients.filter((c) => c.status === 'RUIM').reduce((s, c) => s + c.streakDays, 0)
-    const bRuimDays = bClients.filter((c) => c.status === 'RUIM').reduce((s, c) => s + c.streakDays, 0)
-    return bRuimDays - aRuimDays
+    const aC = byManager.get(a)!.clients
+    const bC = byManager.get(b)!.clients
+    const aR = aC.filter((c) => c.status === 'RUIM').length
+    const bR = bC.filter((c) => c.status === 'RUIM').length
+    if (aR !== bR) return bR - aR
+    const aD = aC.filter((c) => c.status === 'RUIM').reduce((s, c) => s + c.streakDays, 0)
+    const bD = bC.filter((c) => c.status === 'RUIM').reduce((s, c) => s + c.streakDays, 0)
+    return bD - aD
   })
 
-  // ── Clients requiring attention (long streaks below target) ───────────────
-  // RUIM ≥ 3 days OR REGULAR ≥ 7 days
-  const atencao = rows
-    .filter((c) =>
-      (c.status === 'RUIM' && c.streakDays >= 3) ||
-      (c.status === 'REGULAR' && c.streakDays >= 7)
-    )
-    .sort((a, b) => {
-      // Critical (RUIM) before regular; within same status, longer streak first
-      const statusDiff = statusOrder(a.status) - statusOrder(b.status)
-      if (statusDiff !== 0) return statusDiff
-      return b.streakDays - a.streakDays
-    })
+  // ── Send messages ────────────────────────────────────────────────────────────
+  let totalSent = 0
 
-  // ── Managers with multiple stuck clients (gestores travados) ──────────────
-  const gestoresTravados = managerOrder
-    .map((id) => {
-      const { name, clients: mClients } = byManager.get(id)!
-      const ruimLongos    = mClients.filter((c) => c.status === 'RUIM'    && c.streakDays >= 3).length
-      const regularLongos = mClients.filter((c) => c.status === 'REGULAR' && c.streakDays >= 7).length
-      return { name, ruimLongos, regularLongos, total: ruimLongos + regularLongos }
-    })
-    .filter((g) => g.total >= 2)
-    .sort((a, b) => b.ruimLongos - a.ruimLongos || b.total - a.total)
-
-  // ── Build message ──────────────────────────────────────────────────────────
+  // Message 1: Summary header
   const dateStr = now.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' })
-  const lines: string[] = []
+  const summaryLines = [
+    `*📊 Performli — Resumo Diário*`,
+    `_${dateStr}_`,
+    ``,
+    `*Saúde Geral da Agência*`,
+    `✅ Ótimo: *${otimo}*  ⚠️ Regular: *${regular}*  🔴 Ruim: *${ruim}*  ⚪ Sem dados: *${semDados}*`,
+    `Total: *${clients.length}* clientes ativos`,
+    ``,
+    `_A seguir, detalhes por gestor — do mais crítico ao melhor._`,
+  ]
+  totalSent += await broadcastWhatsApp(summaryLines.join('\n'), true)
+  await sleep(1500)
 
-  lines.push(`*📊 Performli — Resumo Diário*`)
-  lines.push(`_${dateStr}_`)
-  lines.push('')
-  lines.push(`*Saúde Geral da Agência*`)
-  lines.push(`✅ Ótimo: *${otimo}*  ⚠️ Regular: *${regular}*  🔴 Ruim: *${ruim}*  ⚪ Sem dados: *${semDados}*`)
-  lines.push(`Total: *${clients.length}* clientes ativos`)
-
-  // ── Breakdown por gestor ───────────────────────────────────────────────────
-  lines.push('')
-  lines.push('─────────────────────')
-
+  // Messages 2..N: one per manager block
   for (const managerId of managerOrder) {
     const { name, clients: mClients } = byManager.get(managerId)!
     const mRuim    = mClients.filter((c) => c.status === 'RUIM').length
     const mRegular = mClients.filter((c) => c.status === 'REGULAR').length
     const mOtimo   = mClients.filter((c) => c.status === 'OTIMO').length
 
-    lines.push('')
+    const lines: string[] = []
     lines.push(`*👤 ${name}* — ${mClients.length} cliente${mClients.length !== 1 ? 's' : ''}  (✅${mOtimo} ⚠️${mRegular} 🔴${mRuim})`)
+    lines.push('')
 
     for (const c of mClients) {
-      let line = `${emoji(c.status)} ${c.name}`
+      // Client status line
+      let line = `${emoji(c.status)} *${c.name}*`
       if (c.status === 'RUIM' || c.status === 'REGULAR') {
         line += ` — _${streakLabel(c.status, c.streakDays)}_`
       } else if (c.status === 'OTIMO' && c.streakDays >= 5) {
         line += ` — _${streakLabel(c.status, c.streakDays)}_`
       }
       lines.push(line)
-      // Show insight for RUIM clients with streak ≥ 3 days
-      if (c.status === 'RUIM' && c.streakDays >= 3 && c.worstMetric) {
-        const insight = METRIC_INSIGHT[c.worstMetric]
-        if (insight) {
-          lines.push(`   ↳ _Motivo principal: ${insight.reason}_ — ${insight.action}`)
+
+      // Insight for RUIM clients (always, not just ≥3 days, to help from day 1)
+      if (c.status === 'RUIM' && c.worstScore) {
+        const histAvg = getHistAvg(c.id, c.worstScore.metric)
+        const insight = buildInsightLine(c.worstScore, histAvg)
+        if (insight) lines.push(insight)
+      }
+    }
+
+    totalSent += await broadcastWhatsApp(lines.join('\n'), false)
+    await sleep(1500)
+  }
+
+  // Last message: attention section + alerts (only if relevant)
+  const atencao = rows
+    .filter((c) => (c.status === 'RUIM' && c.streakDays >= 5) || (c.status === 'REGULAR' && c.streakDays >= 7))
+    .sort((a, b) => {
+      const d = statusOrder(a.status) - statusOrder(b.status)
+      return d !== 0 ? d : b.streakDays - a.streakDays
+    })
+
+  const hasExtra = atencao.length > 0 || criticalAlerts.length > 0
+
+  if (hasExtra) {
+    const extraLines: string[] = []
+
+    if (atencao.length > 0) {
+      extraLines.push(`*⚠️ Atenção — Contas travadas há mais de 5 dias*`)
+      for (const c of atencao) {
+        extraLines.push(`${emoji(c.status)} *${c.name}* — *${streakLabel(c.status, c.streakDays)}* — gestor ${c.managerName}`)
+        if (c.status === 'RUIM' && c.worstScore) {
+          const histAvg = getHistAvg(c.id, c.worstScore.metric)
+          const insight = buildInsightLine(c.worstScore, histAvg)
+          if (insight) extraLines.push(insight)
         }
       }
     }
-  }
 
-  // ── Seção de atenção: risco de churn ──────────────────────────────────────
-  if (atencao.length > 0) {
-    lines.push('')
-    lines.push('─────────────────────')
-    lines.push(`*⚠️ Em Atenção — Risco de Churn*`)
-    for (const c of atencao) {
-      lines.push(`${emoji(c.status)} ${c.name} — *${streakLabel(c.status, c.streakDays)}* — gestor ${c.managerName}`)
-      if (c.status === 'RUIM' && c.worstMetric) {
-        const insight = METRIC_INSIGHT[c.worstMetric]
-        if (insight) {
-          lines.push(`   ↳ _${insight.reason}_ — ${insight.action}`)
-        }
+    if (criticalAlerts.length > 0) {
+      if (extraLines.length > 0) extraLines.push('')
+      extraLines.push(`*🚨 Alertas Críticos (últimas 24h)*`)
+      for (const a of criticalAlerts) {
+        extraLines.push(`• ${a.title}`)
       }
     }
+
+    extraLines.push('')
+    extraLines.push(`_Acesse o painel para mais detalhes._`)
+    totalSent += await broadcastWhatsApp(extraLines.join('\n'), false)
   }
 
-  // ── Gestores travados ──────────────────────────────────────────────────────
-  if (gestoresTravados.length > 0) {
-    lines.push('')
-    lines.push(`*🔒 Gestores com contas travadas*`)
-    for (const g of gestoresTravados) {
-      const detalhes: string[] = []
-      if (g.ruimLongos > 0)    detalhes.push(`🔴${g.ruimLongos} crítico${g.ruimLongos > 1 ? 's' : ''} ≥3d`)
-      if (g.regularLongos > 0) detalhes.push(`⚠️${g.regularLongos} regular${g.regularLongos > 1 ? 's' : ''} ≥7d`)
-      lines.push(`👤 ${g.name} — ${detalhes.join('  ')}`)
-    }
-  }
-
-  // ── Alertas críticos ───────────────────────────────────────────────────────
-  if (criticalAlerts.length > 0) {
-    lines.push('')
-    lines.push('─────────────────────')
-    lines.push(`*🚨 Alertas Críticos (últimas 24h)*`)
-    for (const a of criticalAlerts) {
-      lines.push(`• ${a.title}`)
-    }
-  }
-
-  lines.push('')
-  lines.push(`_Acesse o painel para mais detalhes._`)
-
-  const message = lines.join('\n')
-  const sent = await broadcastWhatsApp(message, true)
-  return { sent, skipped: false }
+  return { sent: totalSent, skipped: false }
 }
