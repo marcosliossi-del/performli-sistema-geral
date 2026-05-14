@@ -2,7 +2,7 @@
  * Daily Digest WhatsApp
  *
  * Envia múltiplos blocos separados por gestor, ordenados do mais crítico ao melhor.
- * Cada bloco inclui insights baseados no histórico real do cliente (queda vs. média histórica).
+ * Cada bloco inclui insights cruzados baseados no histórico real do cliente.
  */
 
 import { prisma } from '@/lib/prisma'
@@ -38,80 +38,29 @@ function toNum(v: { toNumber: () => number } | number | null | undefined): numbe
   return typeof v === 'number' ? v : v.toNumber()
 }
 
-// Insight baseado no histórico real do cliente vs. meta
-// histDrop: quando caiu vs. histórico do próprio cliente (mais específico)
-// belowGoal: quando só está abaixo da meta (sem histórico suficiente)
-const METRIC_CONTEXT: Record<string, { histDrop: string; belowGoal: string; action: string }> = {
-  TICKET_MEDIO:  {
-    histDrop:  'ticket médio caiu vs. histórico do cliente',
-    belowGoal: 'ticket médio abaixo da meta',
-    action:    'reveja produtos anunciados — possível grade quebrada ou falta de estoque',
-  },
-  ROAS: {
-    histDrop:  'ROAS caiu vs. média histórica do cliente',
-    belowGoal: 'ROAS abaixo da meta',
-    action:    'revisar campanhas de menor retorno e criativos ativos',
-  },
-  FATURAMENTO: {
-    histDrop:  'faturamento abaixo do padrão histórico do cliente',
-    belowGoal: 'faturamento abaixo da meta do mês',
-    action:    'analisar produtos mais vendidos e promoções ativas',
-  },
-  TAXA_CONVERSAO: {
-    histDrop:  'taxa de conversão caiu vs. histórico do cliente',
-    belowGoal: 'taxa de conversão abaixo da meta',
-    action:    'revisar landing pages, checkout e anúncios de fundo de funil',
-  },
-  CONVERSIONS: {
-    histDrop:  'volume de conversões abaixo do padrão histórico',
-    belowGoal: 'conversões abaixo da meta',
-    action:    'verificar funil de vendas e campanhas de conversão',
-  },
-  LEADS: {
-    histDrop:  'geração de leads abaixo do histórico do cliente',
-    belowGoal: 'leads abaixo da meta',
-    action:    'revisar formulários, criativos e segmentação de captação',
-  },
-  MENSAGENS: {
-    histDrop:  'volume de mensagens abaixo do padrão histórico',
-    belowGoal: 'mensagens abaixo da meta',
-    action:    'revisar segmentação, criativos e botão de WhatsApp nos anúncios',
-  },
-  SEGUIDORES: {
-    histDrop:  'crescimento de seguidores abaixo do histórico',
-    belowGoal: 'crescimento de seguidores abaixo da meta',
-    action:    'revisar estratégia de conteúdo e frequência de posts',
-  },
-  CPL: {
-    histDrop:  'CPL acima do histórico do cliente',
-    belowGoal: 'CPL acima da meta',
-    action:    'otimizar criativos de captação e testar novos públicos',
-  },
-  CPA: {
-    histDrop:  'CPA acima do histórico do cliente',
-    belowGoal: 'CPA acima da meta',
-    action:    'revisar campanhas de conversão — testar públicos diferentes',
-  },
-  CAC: {
-    histDrop:  'CAC acima do histórico do cliente',
-    belowGoal: 'CAC acima da meta',
-    action:    'rever estratégia de aquisição — incentivar recompras',
-  },
-  CTR: {
-    histDrop:  'CTR caiu vs. histórico do cliente',
-    belowGoal: 'CTR abaixo da meta',
-    action:    'testar novos criativos — audiência pode estar saturada com os atuais',
-  },
-  INVESTMENT: {
-    histDrop:  'investimento acima do padrão histórico',
-    belowGoal: 'investimento acima do orçamento',
-    action:    'ajustar limite de gastos das campanhas',
-  },
-  SPEND: {
-    histDrop:  'budget acima do padrão histórico',
-    belowGoal: 'budget acima do limite',
-    action:    'ajustar limite de gastos das campanhas',
-  },
+// Compact formatting per metric type
+function formatVal(metric: string, value: number): string {
+  if (value === 0) return '—'
+  switch (metric) {
+    case 'ROAS':
+      return `${value.toFixed(1)}x`
+    case 'CTR':
+    case 'TAXA_CONVERSAO':
+      return `${value.toFixed(1)}%`
+    case 'CPL':
+    case 'CPA':
+    case 'CAC':
+    case 'TICKET_MEDIO':
+    case 'CPM':
+    case 'CPS':
+      return `R$${value.toFixed(0)}`
+    case 'FATURAMENTO':
+    case 'INVESTMENT':
+    case 'SPEND':
+      return value >= 1000 ? `R$${(value / 1000).toFixed(0)}k` : `R$${value.toFixed(0)}`
+    default:
+      return String(Math.round(value))
+  }
 }
 
 type HealthScoreRow = {
@@ -120,37 +69,161 @@ type HealthScoreRow = {
   periodStart: Date
   metric: string
   achievementPct: { toNumber: () => number } | number
-  actualValue: { toNumber: () => number } | number
-  targetValue: { toNumber: () => number } | number
+  actualValue:    { toNumber: () => number } | number
+  targetValue:    { toNumber: () => number } | number
 }
 
-function worstRuimScore(scores: HealthScoreRow[]): HealthScoreRow | null {
-  const ruim = scores.filter((s) => s.status === 'RUIM')
-  if (ruim.length === 0) return null
-  return ruim.sort((a, b) => toNum(a.achievementPct) - toNum(b.achievementPct))[0]
+// Single-metric fallback labels (used when no cross-pattern matches)
+const METRIC_FALLBACK: Record<string, { histDrop: string; action: string }> = {
+  TICKET_MEDIO:   { histDrop: 'ticket médio caiu vs. histórico',          action: 'verificar estoque dos produtos principais e mix de anúncios' },
+  ROAS:           { histDrop: 'ROAS caiu vs. média histórica',             action: 'pausar adsets de menor retorno e revisar criativos ativos' },
+  FATURAMENTO:    { histDrop: 'faturamento abaixo do padrão histórico',    action: 'revisar campanhas, criativos e estoque dos produtos mais vendidos' },
+  TAXA_CONVERSAO: { histDrop: 'taxa de conversão caiu vs. histórico',      action: 'revisar landing page, checkout e anúncios de fundo de funil' },
+  CONVERSIONS:    { histDrop: 'conversões abaixo do padrão histórico',     action: 'verificar funil de vendas e campanhas de conversão' },
+  LEADS:          { histDrop: 'geração de leads abaixo do histórico',      action: 'revisar formulários, criativos e segmentação de captação' },
+  MENSAGENS:      { histDrop: 'volume de mensagens abaixo do padrão',      action: 'revisar segmentação, criativos e botão de WhatsApp nos anúncios' },
+  SEGUIDORES:     { histDrop: 'crescimento de seguidores abaixo do padrão', action: 'revisar estratégia de conteúdo e frequência de posts' },
+  CPL:            { histDrop: 'CPL acima do histórico',                    action: 'otimizar criativos de captação e testar novos públicos' },
+  CPA:            { histDrop: 'CPA acima do histórico',                    action: 'revisar campanhas de conversão e testar públicos diferentes' },
+  CAC:            { histDrop: 'CAC acima do histórico',                    action: 'rever estratégia de aquisição e incentivar recompras' },
+  CTR:            { histDrop: 'CTR caiu vs. histórico',                    action: 'testar novos criativos — audiência pode estar saturada' },
+  CPM:            { histDrop: 'CPM acima do histórico',                    action: 'expandir públicos ou ajustar horários de veiculação' },
+  INVESTMENT:     { histDrop: 'investimento acima do padrão',              action: 'ajustar limite de gastos das campanhas' },
+  SPEND:          { histDrop: 'budget acima do padrão',                    action: 'ajustar limite de gastos das campanhas' },
 }
 
-// Gera a linha de insight para um cliente RUIM.
-// histAvg: média histórica de achievementPct das últimas semanas (pode ser null se sem histórico)
-function buildInsightLine(
-  worstScore: HealthScoreRow,
-  histAvg: number | null,
+/**
+ * Smart cross-metric insight.
+ * Looks at ALL failing metrics to find the most specific diagnostic pattern.
+ * Falls back to single-metric insight with actual vs. target values + historical drop.
+ */
+function buildSmartInsight(
+  clientId: string,
+  scores: HealthScoreRow[],
+  businessType: string,
+  getHistAvgFn: (cId: string, metric: string) => number | null,
 ): string | null {
-  const ctx = METRIC_CONTEXT[worstScore.metric]
-  if (!ctx) return null
+  const ruimSet = new Set(scores.filter(s => s.status === 'RUIM').map(s => s.metric))
+  const badSet  = new Set(scores.filter(s => s.status === 'RUIM' || s.status === 'REGULAR').map(s => s.metric))
+  const okSet   = new Set(scores.filter(s => s.status === 'OTIMO').map(s => s.metric))
 
-  const currentPct = toNum(worstScore.achievementPct)
+  if (badSet.size === 0) return null
 
-  if (histAvg !== null && histAvg > 10) {
-    // Queda vs. histórico: se atual é 15%+ abaixo da média histórica
-    const drop = Math.round(((histAvg - currentPct) / histAvg) * 100)
-    if (drop >= 15) {
-      return `   ↳ ${ctx.histDrop} (${drop}% abaixo da média) — ${ctx.action}`
+  const isRuim   = (m: string) => ruimSet.has(m)
+  const isBad    = (m: string) => badSet.has(m)
+  const isOk     = (m: string) => okSet.has(m)
+  const notRuim  = (m: string) => !ruimSet.has(m)
+  const exists   = (m: string) => scores.some(s => s.metric === m)
+
+  // Compact "X vs target Y (Z%)" label for a single metric
+  const label = (metric: string): string => {
+    const s = scores.find(s => s.metric === metric)
+    if (!s) return metric
+    const actual = toNum(s.actualValue)
+    const target = toNum(s.targetValue)
+    const pct    = Math.round(toNum(s.achievementPct))
+    return `${metric}: ${formatVal(metric, actual)} (meta ${formatVal(metric, target)}, ${pct}%)`
+  }
+
+  const isLocal = businessType === 'LOCAL'
+
+  if (!isLocal) {
+    // ── E-commerce patterns (most specific → least specific) ──────────────────
+
+    // Visitors arriving but not converting → checkout/product page issue
+    if (isRuim('TAXA_CONVERSAO') && notRuim('CTR')) {
+      return `   ↳ ${label('TAXA_CONVERSAO')} — visitantes chegando mas não convertendo, possível abandono no checkout ou página do produto com problema`
+    }
+
+    // CTR AND ROAS both down → creative/audience saturation
+    if (isRuim('CTR') && isRuim('ROAS')) {
+      return `   ↳ ${label('ROAS')} | ${label('CTR')} — CTR em queda junto com ROAS, criativos desgastados ou audiência saturada, testar novas peças e públicos`
+    }
+
+    // ROAS ok but faturamento low → traffic volume / budget constraint
+    if (isRuim('FATURAMENTO') && isOk('ROAS') && !isBad('TAXA_CONVERSAO')) {
+      return `   ↳ ${label('FATURAMENTO')} — ROAS saudável mas faturamento baixo, orçamento pode estar limitando o volume de vendas`
+    }
+
+    // Ticket médio down but conversions/volume ok → product mix or stock
+    if (isRuim('TICKET_MEDIO') && notRuim('CONVERSIONS') && notRuim('FATURAMENTO')) {
+      return `   ↳ ${label('TICKET_MEDIO')} — volume de conversões ok mas ticket caiu, produtos de menor valor priorizados ou grade quebrada nos itens principais`
+    }
+
+    // High CPM compressing ROAS
+    if (isRuim('ROAS') && isRuim('CPM')) {
+      return `   ↳ ${label('CPM')} | ${label('ROAS')} — CPM elevado comprimindo o ROAS, audiência saturada, expandir público ou testar novos formatos`
+    }
+
+    // Budget being spent but poor return, CTR not the issue
+    if (isRuim('ROAS') && exists('SPEND') && notRuim('SPEND') && notRuim('CTR')) {
+      return `   ↳ ${label('ROAS')} — investimento e tráfego ok mas ROAS abaixo, pausar adsets de menor retorno e consolidar budget nos melhores`
+    }
+
+    // CPA rising with ok conversions → cost efficiency issue
+    if (isRuim('CPA') && notRuim('CONVERSIONS')) {
+      return `   ↳ ${label('CPA')} — conversões acontecendo mas custo por aquisição alto, revisar lances e segmentações das campanhas`
+    }
+
+    // Conversion + ROAS + revenue all bad → full funnel issue
+    if (isRuim('ROAS') && isRuim('FATURAMENTO') && isRuim('TAXA_CONVERSAO')) {
+      return `   ↳ ${label('ROAS')} — cadeia completa comprometida (ROAS + faturamento + conversão), revisão urgente de criativos, público e checkout`
+    }
+
+  } else {
+    // ── Local business patterns ────────────────────────────────────────────────
+
+    // CTR ok but leads not arriving → landing page / form issue
+    if (isRuim('LEADS') && notRuim('CTR')) {
+      return `   ↳ ${label('LEADS')} — CTR ok mas leads não chegando, formulário ou landing page com problema, revisar CTA e fluxo de conversão`
+    }
+
+    // Both CTR and leads down → creative/audience problem
+    if (isRuim('LEADS') && isRuim('CTR')) {
+      return `   ↳ ${label('LEADS')} | ${label('CTR')} — poucos cliques e leads, criativos desgastados, testar novas peças e segmentação de público`
+    }
+
+    // Leads arriving but CPL too high → audience too broad or high bids
+    if (isRuim('CPL') && notRuim('LEADS')) {
+      return `   ↳ ${label('CPL')} — leads chegando mas CPL acima do esperado, segmentação muito ampla ou lances altos, apertar o público`
+    }
+
+    // Clicks happening but no WhatsApp messages → CTA / button issue
+    if (isRuim('MENSAGENS') && notRuim('CTR')) {
+      return `   ↳ ${label('MENSAGENS')} — cliques acontecendo mas sem mensagens, verificar botão de WhatsApp e CTA nos anúncios`
+    }
+
+    // Leads ok but no appointments → follow-up gap
+    if (isRuim('AGENDAMENTOS') && notRuim('LEADS')) {
+      return `   ↳ ${label('AGENDAMENTOS')} — leads entrando mas sem agendamentos, gap no follow-up ou processo de atendimento travado`
     }
   }
 
-  // Sem queda expressiva vs. histórico, mas ainda abaixo da meta
-  return `   ↳ ${ctx.belowGoal} (${Math.round(currentPct)}% da meta) — ${ctx.action}`
+  // ── Fallback: worst metric with historical context ─────────────────────────
+  const ruimScores = scores.filter(s => s.status === 'RUIM')
+  const worstScore = ruimScores.length > 0
+    ? ruimScores.sort((a, b) => toNum(a.achievementPct) - toNum(b.achievementPct))[0]
+    : scores.filter(s => s.status === 'REGULAR').sort((a, b) => toNum(a.achievementPct) - toNum(b.achievementPct))[0]
+
+  if (!worstScore) return null
+
+  const ctx        = METRIC_FALLBACK[worstScore.metric]
+  const currentPct = toNum(worstScore.achievementPct)
+  const histAvg    = getHistAvgFn(clientId, worstScore.metric)
+  const metricLabel = label(worstScore.metric)
+
+  if (ctx && histAvg !== null && histAvg > 10) {
+    const drop = Math.round(((histAvg - currentPct) / histAvg) * 100)
+    if (drop >= 15) {
+      return `   ↳ ${metricLabel} — ${ctx.histDrop} (queda de ${drop}% vs. média histórica), ${ctx.action}`
+    }
+  }
+
+  if (ctx) {
+    return `   ↳ ${metricLabel} — ${ctx.action}`
+  }
+
+  return `   ↳ ${metricLabel}`
 }
 
 export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolean }> {
@@ -167,19 +240,20 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     return { sent: 0, skipped: true }
   }
 
-  const now       = new Date()
+  const now          = new Date()
   const { start: weekStart }  = getWeekRange()
   const { start: monthStart } = getMonthRange()
-  const fetchFrom  = monthStart < weekStart ? monthStart : weekStart
-  const yesterday  = new Date(now); yesterday.setDate(yesterday.getDate() - 1)
-  const sixWeeksAgo = new Date(now.getTime() - 42 * 86_400_000)
+  const fetchFrom    = monthStart < weekStart ? monthStart : weekStart
+  const yesterday    = new Date(now); yesterday.setDate(yesterday.getDate() - 1)
+  const sixWeeksAgo  = new Date(now.getTime() - 42 * 86_400_000)
 
   // ── Fetch clients ────────────────────────────────────────────────────────────
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
     select: {
-      id: true,
-      name: true,
+      id:           true,
+      name:         true,
+      businessType: true,
       healthScores: {
         where:   { periodStart: { gte: fetchFrom } },
         orderBy: { calculatedAt: 'desc' },
@@ -198,7 +272,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     orderBy: { name: 'asc' },
   })
 
-  // ── Historical HealthScores for context (last 6 weeks, WEEKLY, all clients) ──
+  // ── Historical HealthScores (last 6 weeks, WEEKLY) for context ───────────────
   const historicalRaw = await prisma.healthScore.findMany({
     where: {
       period:      'WEEKLY',
@@ -207,7 +281,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     select: { clientId: true, metric: true, achievementPct: true },
   })
 
-  // Build map: clientId → metric → achievementPct[]
+  // clientId → metric → achievementPct[]
   const histMap = new Map<string, Map<string, number[]>>()
   for (const h of historicalRaw) {
     if (!histMap.has(h.clientId)) histMap.set(h.clientId, new Map())
@@ -237,13 +311,13 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
   let otimo = 0, regular = 0, ruim = 0, semDados = 0
 
   type ClientRow = {
-    id: string
-    name: string
-    status: string | null
-    managerName: string
-    managerId: string
-    streakDays: number
-    worstScore: HealthScoreRow | null
+    id:           string
+    name:         string
+    businessType: string
+    status:       string | null
+    managerName:  string
+    managerId:    string
+    streakDays:   number
     activeScores: HealthScoreRow[]
   }
 
@@ -266,11 +340,11 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     return {
       id:           c.id,
       name:         c.name,
+      businessType: c.businessType ?? 'ECOMMERCE',
       status,
       managerName:  assignment?.name ?? 'Sem Gestor',
       managerId:    assignment?.id   ?? '__none__',
       streakDays:   c.statusStreak?.days ?? 1,
-      worstScore:   worstRuimScore(scores as HealthScoreRow[]),
       activeScores: scores as HealthScoreRow[],
     }
   })
@@ -295,7 +369,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     })
   }
 
-  // Sort managers: most RUIM clients first, then total RUIM streak weight
+  // Sort managers: most RUIM clients first, then total streak weight
   managerOrder.sort((a, b) => {
     const aC = byManager.get(a)!.clients
     const bC = byManager.get(b)!.clients
@@ -337,7 +411,6 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     lines.push('')
 
     for (const c of mClients) {
-      // Client status line
       let line = `${emoji(c.status)} *${c.name}*`
       if (c.status === 'RUIM' || c.status === 'REGULAR') {
         line += ` — _${streakLabel(c.status, c.streakDays)}_`
@@ -346,10 +419,9 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
       }
       lines.push(line)
 
-      // Insight for RUIM clients (always, not just ≥3 days, to help from day 1)
-      if (c.status === 'RUIM' && c.worstScore) {
-        const histAvg = getHistAvg(c.id, c.worstScore.metric)
-        const insight = buildInsightLine(c.worstScore, histAvg)
+      // Smart cross-metric insight for RUIM clients
+      if (c.status === 'RUIM' && c.activeScores.length > 0) {
+        const insight = buildSmartInsight(c.id, c.activeScores, c.businessType, getHistAvg)
         if (insight) lines.push(insight)
       }
     }
@@ -375,9 +447,8 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
       extraLines.push(`*⚠️ Atenção — Contas travadas há mais de 5 dias*`)
       for (const c of atencao) {
         extraLines.push(`${emoji(c.status)} *${c.name}* — *${streakLabel(c.status, c.streakDays)}* — gestor ${c.managerName}`)
-        if (c.status === 'RUIM' && c.worstScore) {
-          const histAvg = getHistAvg(c.id, c.worstScore.metric)
-          const insight = buildInsightLine(c.worstScore, histAvg)
+        if (c.status === 'RUIM' && c.activeScores.length > 0) {
+          const insight = buildSmartInsight(c.id, c.activeScores, c.businessType, getHistAvg)
           if (insight) extraLines.push(insight)
         }
       }
