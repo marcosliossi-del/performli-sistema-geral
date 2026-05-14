@@ -396,10 +396,12 @@ async function updateStreak(clientId: string): Promise<void> {
     const days = Math.floor((today.getTime() - sinceDay.getTime()) / 86_400_000) + 1
     await prisma.clientStatusStreak.update({ where: { clientId }, data: { days } })
   } else {
+    // Status changed — save previous status so UI can show trend arrow
+    const prevStatus = existing?.status ?? null
     await prisma.clientStatusStreak.upsert({
       where:  { clientId },
-      update: { status, since: today, days: 1 },
-      create: { clientId, status, since: today, days: 1 },
+      update: { status, prevStatus, since: today, days: 1 },
+      create: { clientId, status, prevStatus: prevStatus ?? undefined, since: today, days: 1 },
     })
   }
 }

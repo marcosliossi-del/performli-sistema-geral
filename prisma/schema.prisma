@@ -270,12 +270,13 @@ enum HealthStatus {
 }
 
 model ClientStatusStreak {
-  id        String       @id @default(cuid())
-  clientId  String       @unique
-  status    HealthStatus
-  since     DateTime     @db.Date
-  days      Int          @default(1)
-  updatedAt DateTime     @updatedAt
+  id         String        @id @default(cuid())
+  clientId   String        @unique
+  status     HealthStatus
+  prevStatus HealthStatus? // status anterior ao streak atual (para mostrar seta de tendência)
+  since      DateTime      @db.Date
+  days       Int           @default(1)
+  updatedAt  DateTime      @updatedAt
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }

@@ -164,9 +164,17 @@ function ManagerCard({ manager }: { manager: ManagerStat }) {
                     <span className="text-xs text-[#EBEBEB] truncate max-w-[140px]">{c.name}</span>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {c.overallStatus ? (
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${healthBgClasses[c.overallStatus as HealthStatus]}`}>
-                          {healthLabels[c.overallStatus as HealthStatus]}
-                        </span>
+                        <div className="flex items-center gap-0.5">
+                          {c.statusTrend === 'up' && (
+                            <span className="text-[#22C55E] text-[10px] font-bold leading-none">↑</span>
+                          )}
+                          {c.statusTrend === 'down' && (
+                            <span className="text-[#EF4444] text-[10px] font-bold leading-none">↓</span>
+                          )}
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${healthBgClasses[c.overallStatus as HealthStatus]}`}>
+                            {healthLabels[c.overallStatus as HealthStatus]}
+                          </span>
+                        </div>
                       ) : (
                         <span className="text-[10px] text-[#87919E]">sem meta</span>
                       )}

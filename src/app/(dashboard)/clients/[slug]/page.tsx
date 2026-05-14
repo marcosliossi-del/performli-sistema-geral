@@ -143,6 +143,17 @@ export default async function ClientDetailPage({
       ? 'REGULAR'
       : 'OTIMO'
 
+  const STATUS_RANK_PAGE: Record<HealthStatus, number> = { RUIM: 0, REGULAR: 1, OTIMO: 2 }
+  const streakStatus = client.statusStreak?.status ?? null
+  const streakPrevStatus = client.statusStreak?.prevStatus ?? null
+  const headerStatusTrend: 'up' | 'down' | null = (() => {
+    if (!streakStatus || !streakPrevStatus) return null
+    const diff = STATUS_RANK_PAGE[streakStatus] - STATUS_RANK_PAGE[streakPrevStatus]
+    if (diff > 0) return 'up'
+    if (diff < 0) return 'down'
+    return null
+  })()
+
   const isLocal = client.businessType === 'LOCAL'
   const hasData = kpis.faturamento > 0 || kpis.investimento > 0 || kpis.sessoes > 0
 
@@ -164,9 +175,17 @@ export default async function ClientDetailPage({
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold text-[#EBEBEB]">{client.name}</h1>
                 {overallStatus && (
-                  <Badge variant={overallStatus.toLowerCase() as 'otimo' | 'regular' | 'ruim'}>
-                    {healthLabels[overallStatus]}
-                  </Badge>
+                  <div className="flex items-center gap-0.5">
+                    {headerStatusTrend === 'up' && (
+                      <span className="text-[#22C55E] text-sm font-bold leading-none">↑</span>
+                    )}
+                    {headerStatusTrend === 'down' && (
+                      <span className="text-[#EF4444] text-sm font-bold leading-none">↓</span>
+                    )}
+                    <Badge variant={overallStatus.toLowerCase() as 'otimo' | 'regular' | 'ruim'}>
+                      {healthLabels[overallStatus]}
+                    </Badge>
+                  </div>
                 )}
               </div>
               <p className="text-[#87919E] text-sm">

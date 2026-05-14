@@ -23,6 +23,7 @@ interface ClientHealth {
   trend: 'up' | 'down' | 'stable'
   streakDays?: number | null
   streakStatus?: HealthStatus | null
+  statusTrend?: 'up' | 'down' | null
 }
 
 interface ClientHealthGridProps {
@@ -103,9 +104,17 @@ function ClientCard({ client }: { client: ClientHealth }) {
             <div className="flex items-center gap-1.5">
               <TrendIcon size={14} className={trendColor} />
               {client.overallStatus ? (
-                <Badge variant={client.overallStatus.toLowerCase() as 'otimo' | 'regular' | 'ruim'}>
-                  {healthLabels[client.overallStatus]}
-                </Badge>
+                <div className="flex items-center gap-0.5">
+                  {client.statusTrend === 'up' && (
+                    <span className="text-[#22C55E] text-xs font-bold leading-none">↑</span>
+                  )}
+                  {client.statusTrend === 'down' && (
+                    <span className="text-[#EF4444] text-xs font-bold leading-none">↓</span>
+                  )}
+                  <Badge variant={client.overallStatus.toLowerCase() as 'otimo' | 'regular' | 'ruim'}>
+                    {healthLabels[client.overallStatus]}
+                  </Badge>
+                </div>
               ) : (
                 <span className="text-[10px] text-[#87919E] px-2 py-0.5 rounded-full bg-[#38435C]/50">Sem metas</span>
               )}

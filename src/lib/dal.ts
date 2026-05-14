@@ -24,6 +24,22 @@ function canViewAll(role: string): boolean {
   return role === 'ADMIN' || role === 'CS'
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const STATUS_RANK: Record<HealthStatus, number> = { RUIM: 0, REGULAR: 1, OTIMO: 2 }
+
+/** Compara status atual vs anterior e retorna 'up', 'down' ou null (sem mudança / sem histórico) */
+function deriveStatusTrend(
+  current: HealthStatus | null,
+  prev: HealthStatus | null,
+): 'up' | 'down' | null {
+  if (!current || !prev) return null
+  const diff = STATUS_RANK[current] - STATUS_RANK[prev]
+  if (diff > 0) return 'up'
+  if (diff < 0) return 'down'
+  return null
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export type ClientHealthSummary = {
@@ -38,6 +54,7 @@ export type ClientHealthSummary = {
   metrics: { name: string; status: HealthStatus; pct: number }[]
   streakDays: number | null
   streakStatus: HealthStatus | null
+  statusTrend: 'up' | 'down' | null  // tendência vs status anterior (para seta)
 }
 
 export const getDashboardData = cache(async (userId: string, role: string) => {
@@ -148,8 +165,12 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
         status: s.status,
         pct: Math.round(Number(s.achievementPct)),
       })),
-      streakDays: client.statusStreak?.days ?? null,
+      streakDays:   client.statusStreak?.days ?? null,
       streakStatus: client.statusStreak?.status ?? null,
+      statusTrend:  deriveStatusTrend(
+        client.statusStreak?.status ?? null,
+        client.statusStreak?.prevStatus ?? null,
+      ),
     }
   })
 
@@ -182,6 +203,7 @@ export type ClientOperationalRow = {
   taxaConversao: number | null  // conversion rate %
   // health
   overallStatus: HealthStatus | null
+  statusTrend: 'up' | 'down' | null
   // budget
   budgetConsumed: number | null  // actual spend this month
   budgetPlanned: number | null   // target spend from Goal (SPEND/MONTHLY)
@@ -233,6 +255,7 @@ export const getClientsOperationalTable = cache(async (
         select: { id: true, targetValue: true },
         take: 1,
       },
+      statusStreak: { select: { status: true, prevStatus: true } },
     },
     orderBy: { name: 'asc' },
   })
@@ -282,6 +305,10 @@ export const getClientsOperationalTable = cache(async (
       cps,
       taxaConversao,
       overallStatus,
+      statusTrend: deriveStatusTrend(
+        c.statusStreak?.status ?? null,
+        c.statusStreak?.prevStatus ?? null,
+      ),
       budgetConsumed: spend > 0 ? spend : null,
       budgetPlanned,
       goalId,
@@ -431,6 +458,7 @@ export const getClientDetail = cache(async (slug: string) => {
         take: 5,
         include: { user: { select: { name: true } } },
       },
+      statusStreak: { select: { status: true, prevStatus: true, days: true } },
     },
   })
 
@@ -1022,6 +1050,7 @@ export type ManagerClientRow = {
   goalsHit: number   // metas com status OTIMO
   streakDays: number | null
   streakStatus: HealthStatus | null
+  statusTrend: 'up' | 'down' | null
 }
 
 export type ManagerWithStats = {
@@ -1107,8 +1136,9 @@ export const getManagersOverview = cache(async (): Promise<ManagerWithStats[]> =
         platforms: [...new Set(c.platformAccounts.map((p) => p.platform))],
         goalsTotal: c.goals.length,
         goalsHit: scores.filter((s) => s.status === 'OTIMO').length,
-        streakDays: null,
+        streakDays:  null,
         streakStatus: null,
+        statusTrend: null,
       }
     })
 
@@ -1291,7 +1321,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
         where: { periodStart: { gte: monthStart } },
         select: { status: true, achievementPct: true },
       },
-      statusStreak: { select: { status: true, days: true } },
+      statusStreak: { select: { status: true, prevStatus: true, days: true } },
     },
   })
 
@@ -1327,6 +1357,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
       prevSales: number
       streakDays: number | null
       streakStatus: HealthStatus | null
+      statusTrend: 'up' | 'down' | null
     }>
   }>()
 
@@ -1351,8 +1382,12 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
       snaps: client.metricSnapshots,
       healthScores: client.healthScores,
       prevSales,
-      streakDays: client.statusStreak?.days ?? null,
+      streakDays:  client.statusStreak?.days ?? null,
       streakStatus: client.statusStreak?.status ?? null,
+      statusTrend: deriveStatusTrend(
+        client.statusStreak?.status ?? null,
+        client.statusStreak?.prevStatus ?? null,
+      ),
     })
   }
 
@@ -1418,7 +1453,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
         ? 100
         : null
 
-    const clientRows: ManagerClientRow[] = clientData.map(({ id, name, slug, healthScores, streakDays, streakStatus }) => {
+    const clientRows: ManagerClientRow[] = clientData.map(({ id, name, slug, healthScores, streakDays, streakStatus, statusTrend }) => {
       const overallStatus: HealthStatus | null =
         healthScores.length === 0 ? null
         : healthScores.some((s) => s.status === 'RUIM') ? 'RUIM'
@@ -1431,7 +1466,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
         id, name, slug, overallStatus, achievementPct: avgPct,
         platforms: [], goalsTotal: healthScores.length,
         goalsHit: healthScores.filter((s) => s.status === 'OTIMO').length,
-        streakDays, streakStatus,
+        streakDays, streakStatus, statusTrend,
       }
     })
 

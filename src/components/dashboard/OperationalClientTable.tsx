@@ -19,6 +19,7 @@ export type OperationalRow = {
   cps: number | null
   taxaConversao: number | null
   overallStatus: HealthStatus | null
+  statusTrend?: 'up' | 'down' | null
   budgetConsumed?: number | null
   budgetPlanned?: number | null
   goalId?: string | null
@@ -282,11 +283,19 @@ export function OperationalClientTable({ rows, syncingClientId }: Props) {
               {/* Status */}
               <td className="px-4 py-3.5">
                 {row.overallStatus ? (
-                  <Badge
-                    variant={row.overallStatus.toLowerCase() as 'otimo' | 'regular' | 'ruim'}
-                  >
-                    {healthLabels[row.overallStatus]}
-                  </Badge>
+                  <div className="flex items-center gap-0.5">
+                    {row.statusTrend === 'up' && (
+                      <span className="text-[#22C55E] text-xs font-bold leading-none">↑</span>
+                    )}
+                    {row.statusTrend === 'down' && (
+                      <span className="text-[#EF4444] text-xs font-bold leading-none">↓</span>
+                    )}
+                    <Badge
+                      variant={row.overallStatus.toLowerCase() as 'otimo' | 'regular' | 'ruim'}
+                    >
+                      {healthLabels[row.overallStatus]}
+                    </Badge>
+                  </div>
                 ) : (
                   <Badge variant="outline">Sem dados</Badge>
                 )}

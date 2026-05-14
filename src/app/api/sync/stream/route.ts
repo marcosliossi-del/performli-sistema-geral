@@ -129,7 +129,7 @@ async function getClientOperationalRow(
 ) {
   const today = new Date()
 
-  const [snaps, healthScores, goals] = await Promise.all([
+  const [snaps, healthScores, goals, streak] = await Promise.all([
     prisma.metricSnapshot.findMany({
       where: { clientId: client.id, date: { gte: monthStart, lte: today } },
       select: {
@@ -148,6 +148,10 @@ async function getClientOperationalRow(
       },
       select: { id: true, targetValue: true },
       take: 1,
+    }),
+    prisma.clientStatusStreak.findUnique({
+      where: { clientId: client.id },
+      select: { status: true, prevStatus: true },
     }),
   ])
 
@@ -177,6 +181,15 @@ async function getClientOperationalRow(
   const budgetPlanned = goals[0] ? Number(goals[0].targetValue) : null
   const goalId        = goals[0]?.id ?? null
 
+  const STATUS_RANK: Record<string, number> = { RUIM: 0, REGULAR: 1, OTIMO: 2 }
+  const statusTrend: 'up' | 'down' | null = (() => {
+    if (!streak?.status || !streak?.prevStatus) return null
+    const diff = STATUS_RANK[streak.status] - STATUS_RANK[streak.prevStatus]
+    if (diff > 0) return 'up'
+    if (diff < 0) return 'down'
+    return null
+  })()
+
   return {
     id: client.id,
     name: client.name,
@@ -189,6 +202,7 @@ async function getClientOperationalRow(
     cps,
     taxaConversao,
     overallStatus,
+    statusTrend,
     budgetConsumed:  spend > 0 ? spend : null,
     budgetPlanned,
     goalId,
