@@ -104,11 +104,14 @@ const METRIC_FALLBACK: Record<string, { histDrop: string; action: string }> = {
  * Looks at ALL failing metrics to find the most specific diagnostic pattern.
  * Falls back to single-metric insight with actual vs. target values + historical drop.
  */
+type FunnelRates = { visitToCart: number | null; cartToCheckout: number | null; checkoutToPurchase: number | null } | null
+
 function buildSmartInsight(
   clientId: string,
   scores: HealthScoreRow[],
   businessType: string,
   getHistAvgFn: (cId: string, metric: string) => number | null,
+  funnelRates: FunnelRates = null,
 ): string | null {
   const ruimSet = new Set(scores.filter(s => s.status === 'RUIM').map(s => s.metric))
   const badSet  = new Set(scores.filter(s => s.status === 'RUIM' || s.status === 'REGULAR').map(s => s.metric))
@@ -142,6 +145,19 @@ function buildSmartInsight(
 
     // Visitors arriving but not converting → checkout/product page issue
     if (isRuim('TAXA_CONVERSAO') && notRuim('CTR')) {
+      // Check if we have funnel data to be more specific
+      const atcRate  = funnelRates?.visitToCart
+      const chkRate  = funnelRates?.cartToCheckout
+      const purRate  = funnelRates?.checkoutToPurchase
+      if (atcRate !== undefined && atcRate !== null && atcRate < 4) {
+        return `   ↳ ${label('TAXA_CONVERSAO')} — taxa de adição ao carrinho baixa (${atcRate.toFixed(1)}%, ref 4–8%), produto sem apelo, preço alto ou falta de urgência na página`
+      }
+      if (chkRate !== undefined && chkRate !== null && chkRate < 38) {
+        return `   ↳ ${label('TAXA_CONVERSAO')} — excesso de abandono de carrinho (${chkRate.toFixed(1)}% chegam ao checkout, ref 38–56%), verificar frete, cupom ou fluxo do carrinho`
+      }
+      if (purRate !== undefined && purRate !== null && purRate < 55) {
+        return `   ↳ ${label('TAXA_CONVERSAO')} — abandono na finalização (${purRate.toFixed(1)}% completam a compra, ref 55–82%), verificar erros de pagamento ou atrito no checkout`
+      }
       return `   ↳ ${label('TAXA_CONVERSAO')} — visitantes chegando mas não convertendo, possível abandono no checkout ou página do produto com problema`
     }
 
@@ -306,6 +322,39 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     return vals.reduce((a, b) => a + b, 0) / vals.length
   }
 
+  // ── Funnel rates for ECOMMERCE clients (current month, GA4) ─────────────────
+  const ecommerceClientIds = clients
+    .filter((c) => (c.businessType ?? 'ECOMMERCE') === 'ECOMMERCE')
+    .map((c) => c.id)
+
+  const funnelSnaps = ecommerceClientIds.length > 0
+    ? await prisma.metricSnapshot.findMany({
+        where: {
+          clientId: { in: ecommerceClientIds },
+          date:     { gte: monthStart },
+          platformAccount: { platform: 'GA4' },
+        },
+        select: { clientId: true, clicks: true, addToCarts: true, checkoutsStarted: true, conversions: true },
+      })
+    : []
+
+  // clientId → funnel rates
+  const funnelMap = new Map<string, FunnelRates>()
+  for (const cid of ecommerceClientIds) {
+    const snaps = funnelSnaps.filter((s) => s.clientId === cid)
+    const sessions         = snaps.reduce((s, x) => s + (x.clicks           ?? 0), 0)
+    const addToCarts       = snaps.reduce((s, x) => s + (x.addToCarts       ?? 0), 0)
+    const checkoutsStarted = snaps.reduce((s, x) => s + (x.checkoutsStarted ?? 0), 0)
+    const purchases        = snaps.reduce((s, x) => s + (x.conversions      ?? 0), 0)
+    if (sessions > 0) {
+      funnelMap.set(cid, {
+        visitToCart:        sessions         > 0 ? (addToCarts       / sessions)         * 100 : null,
+        cartToCheckout:     addToCarts       > 0 ? (checkoutsStarted / addToCarts)       * 100 : null,
+        checkoutToPurchase: checkoutsStarted > 0 ? (purchases        / checkoutsStarted) * 100 : null,
+      })
+    }
+  }
+
   // ── Critical alerts (last 24h) ───────────────────────────────────────────────
   const criticalAlerts = await prisma.alert.findMany({
     where: {
@@ -431,7 +480,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
 
       // Smart cross-metric insight for RUIM clients
       if (c.status === 'RUIM' && c.activeScores.length > 0) {
-        const insight = buildSmartInsight(c.id, c.activeScores, c.businessType, getHistAvg)
+        const insight = buildSmartInsight(c.id, c.activeScores, c.businessType, getHistAvg, funnelMap.get(c.id) ?? null)
         if (insight) lines.push(insight)
       }
     }
@@ -458,7 +507,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
       for (const c of atencao) {
         extraLines.push(`${emoji(c.status)} *${c.name}* — *${streakLabel(c.status, c.streakDays)}* — gestor ${c.managerName}`)
         if (c.status === 'RUIM' && c.activeScores.length > 0) {
-          const insight = buildSmartInsight(c.id, c.activeScores, c.businessType, getHistAvg)
+          const insight = buildSmartInsight(c.id, c.activeScores, c.businessType, getHistAvg, funnelMap.get(c.id) ?? null)
           if (insight) extraLines.push(insight)
         }
       }

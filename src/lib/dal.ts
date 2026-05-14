@@ -2242,3 +2242,69 @@ export const getHealthScoreHistory = cache(async (clientId: string, weeks = 8): 
     }
   })
 })
+
+// ─── Sales Funnel (E-commerce, GA4 only) ─────────────────────────────────────
+
+export type SalesFunnelData = {
+  sessions:          number
+  addToCarts:        number
+  checkoutsStarted:  number
+  purchases:         number
+  // Conversion rates between each step
+  visitToCart:       number | null   // addToCarts / sessions * 100
+  cartToCheckout:    number | null   // checkoutsStarted / addToCarts * 100
+  checkoutToPurchase: number | null  // purchases / checkoutsStarted * 100
+  overallConversion: number | null   // purchases / sessions * 100
+  // Reference benchmarks (industry average ranges)
+  benchmarks: {
+    visitToCart:       { min: number; max: number }
+    cartToCheckout:    { min: number; max: number }
+    checkoutToPurchase: { min: number; max: number }
+    overallConversion: { min: number; max: number }
+  }
+  hasData: boolean
+}
+
+export const getClientSalesFunnel = cache(async (
+  clientId: string,
+  fromStr?: string,
+  toStr?: string,
+): Promise<SalesFunnelData> => {
+  const today   = new Date()
+  const from    = fromStr ? new Date(fromStr + 'T00:00:00') : new Date(today.getFullYear(), today.getMonth(), 1)
+  const to      = toStr   ? new Date(toStr   + 'T23:59:59') : today
+
+  const snapshots = await prisma.metricSnapshot.findMany({
+    where: {
+      clientId,
+      date: { gte: from, lte: to },
+      platformAccount: { platform: 'GA4' },
+    },
+    include: { platformAccount: { select: { platform: true } } },
+  })
+
+  const sessions         = snapshots.reduce((s, x) => s + (x.clicks          ?? 0), 0)
+  const addToCarts       = snapshots.reduce((s, x) => s + (x.addToCarts      ?? 0), 0)
+  const checkoutsStarted = snapshots.reduce((s, x) => s + (x.checkoutsStarted ?? 0), 0)
+  const purchases        = snapshots.reduce((s, x) => s + (x.conversions      ?? 0), 0)
+
+  const hasData = sessions > 0
+
+  return {
+    sessions,
+    addToCarts,
+    checkoutsStarted,
+    purchases,
+    visitToCart:        sessions         > 0 ? (addToCarts       / sessions)         * 100 : null,
+    cartToCheckout:     addToCarts       > 0 ? (checkoutsStarted / addToCarts)       * 100 : null,
+    checkoutToPurchase: checkoutsStarted > 0 ? (purchases        / checkoutsStarted) * 100 : null,
+    overallConversion:  sessions         > 0 ? (purchases        / sessions)         * 100 : null,
+    benchmarks: {
+      visitToCart:        { min: 4,  max: 8  },
+      cartToCheckout:     { min: 38, max: 56 },
+      checkoutToPurchase: { min: 55, max: 82 },
+      overallConversion:  { min: 1,  max: 2  },
+    },
+    hasData,
+  }
+})

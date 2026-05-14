@@ -5,7 +5,7 @@ import {
   getClientKPIs, getGoalPaceMetrics, getClientChat, getClientWeeklyReport,
   getClientCampaigns, getLatestCampaignInsight, metricLabels,
   getClientDailyRevenue, getClientMonthlyComparison, getClientInteractions,
-  getHealthScoreHistory, getWeekScoreComparison,
+  getHealthScoreHistory, getWeekScoreComparison, getClientSalesFunnel,
 } from '@/lib/dal'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardValue } from '@/components/ui/card'
@@ -39,6 +39,7 @@ import { HealthScoreHistoryChart } from '@/components/clients/HealthScoreHistory
 import { PillarBenchmarkPanel } from '@/components/clients/PillarBenchmarkPanel'
 import { WeekComparisonTable } from '@/components/clients/WeekComparisonTable'
 import { LocalBusinessKPISection } from '@/components/clients/LocalBusinessKPISection'
+import { SalesFunnelSection } from '@/components/clients/SalesFunnelSection'
 
 const platformColors: Record<string, string> = {
   META_ADS: '#1877F2',
@@ -114,7 +115,7 @@ export default async function ClientDetailPage({
   const activeFrom = from ?? defaultFrom
   const activeTo = to ?? defaultTo
 
-  const [metricHistory, kpis, paceGoals, chat, weeklyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison] = await Promise.all([
+  const [metricHistory, kpis, paceGoals, chat, weeklyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel] = await Promise.all([
     getClientMetricHistory(client.id, 14),
     getClientKPIs(client.id, activeFrom, activeTo),
     getGoalPaceMetrics(client.id),
@@ -127,6 +128,7 @@ export default async function ClientDetailPage({
     getClientInteractions(client.id),
     getHealthScoreHistory(client.id, 8),
     getWeekScoreComparison(client.id),
+    getClientSalesFunnel(client.id, activeFrom, activeTo),
   ])
 
   const weeklyGoals = client.goals.filter((g) => g.period === 'WEEKLY')
@@ -411,6 +413,9 @@ export default async function ClientDetailPage({
           <MonthlyComparisonChart data={monthlyComparison} />
         </div>
       )}
+
+      {/* ── Sales Funnel (E-commerce only) ─────────────────────────────────── */}
+      {!isLocal && <SalesFunnelSection data={salesFunnel} />}
 
       {/* ── Metas do Mês ────────────────────────────────────────────────────── */}
       {monthlyGoals.length > 0 && (
