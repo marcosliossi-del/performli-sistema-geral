@@ -51,6 +51,10 @@ export interface TransformedSnapshot {
   conversionValue: number | null
   roas: number | null
   cpl: number | null
+  mensagens: number | null
+  landingPageViews: number | null
+  thruplays: number | null
+  videoViews3s: number | null
   rawData: MetaInsightRecord
 }
 
@@ -128,6 +132,11 @@ export function transformMetaInsight(record: MetaInsightRecord): TransformedSnap
   const leads = findAction(record.actions, ['lead', 'complete_registration'])
   const cpl = leads > 0 ? spend / leads : null
 
+  const mensagens      = findAction(record.actions, ['onsite_conversion.messaging_conversation_started_7d']) || null
+  const landingPageViews = findAction(record.actions, ['landing_page_view']) || null
+  const thruplays      = findAction(record.actions, ['video_thruplay_watched']) || null
+  const videoViews3s   = findAction(record.actions, ['video_view']) || null
+
   return {
     date: new Date(record.date_start + 'T00:00:00Z'),
     spend,
@@ -141,6 +150,10 @@ export function transformMetaInsight(record: MetaInsightRecord): TransformedSnap
     conversionValue,
     roas: roas ? Math.round(roas * 10000) / 10000 : null,
     cpl:  cpl  ? Math.round(cpl  * 100)   / 100   : null,
+    mensagens,
+    landingPageViews,
+    thruplays,
+    videoViews3s,
     rawData: record,
   }
 }

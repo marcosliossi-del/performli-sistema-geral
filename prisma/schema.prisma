@@ -222,6 +222,10 @@ model MetricSnapshot {
   cpa             Decimal? @db.Decimal(10, 4)
   addToCarts      Int?     // GA4: eventos add_to_cart
   checkoutsStarted Int?    // GA4: eventos begin_checkout
+  mensagens       Int?     // Meta: conversas iniciadas por mensagem (messaging_conversation_started)
+  landingPageViews Int?    // Meta: visualizações da página de destino (landing_page_view)
+  thruplays       Int?     // Meta: reproduções completas de vídeo (video_thruplay_watched)
+  videoViews3s    Int?     // Meta: reproduções de vídeo ≥3s (video_view)
   rawData         Json?
 
   syncedAt  DateTime @default(now())

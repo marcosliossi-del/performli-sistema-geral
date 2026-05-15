@@ -298,13 +298,22 @@ export default async function ClientDetailPage({
       {isLocal ? (
         <LocalBusinessKPISection
           kpis={{
-            investimento:   kpis.investimento,
-            adLeads:        kpis.adLeads,
-            adAlcance:      kpis.adAlcance,
-            adImpressions:  kpis.adImpressions,
-            ctr:            kpis.ctr,
-            cpc:            kpis.cpc,
-            cpl:            kpis.cpl,
+            investimento:    kpis.investimento,
+            alcance:         kpis.adAlcance,
+            impressoes:      kpis.adImpressions,
+            frequencia:      kpis.adFrequencia,
+            cpm:             kpis.cpm,
+            cliques:         kpis.adCliques,
+            cpc:             kpis.cpc,
+            ctr:             kpis.ctr,
+            leads:           kpis.adLeads,
+            cpl:             kpis.cpl,
+            mensagens:       kpis.mensagens,
+            custoMensagem:   kpis.custoMensagem,
+            landingPageViews: kpis.landingPageViews,
+            taxaConexao:     kpis.taxaConexao,
+            thruplays:       kpis.thruplays,
+            videoViews3s:    kpis.videoViews3s,
           }}
         />
       ) : (

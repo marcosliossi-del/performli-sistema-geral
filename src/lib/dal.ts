@@ -509,11 +509,19 @@ export type ClientKPIs = {
   // Link CTR e CPC (calculados a partir de clicks/impressions dos ad platforms)
   ctr: number | null
   cpc: number | null
-  // Métricas de negócio local (ad platforms)
-  adLeads: number | null        // conversões de anúncio = leads/mensagens
+  // Métricas de negócio local (Meta Ads)
+  adLeads: number | null        // conversões de anúncio = leads/formulários
+  adCliques: number | null      // cliques no link (Meta Ads)
   adAlcance: number | null      // alcance total (reach)
   adImpressions: number | null  // impressões totais
+  adFrequencia: number | null   // frequência (impressões / alcance)
   cpl: number | null            // custo por lead = spend / adLeads
+  mensagens: number | null      // conversas iniciadas por mensagem
+  custoMensagem: number | null  // custo por conversa
+  landingPageViews: number | null // visualizações da página de destino
+  taxaConexao: number | null    // landing page views / cliques * 100
+  thruplays: number | null      // thruplays de vídeo
+  videoViews3s: number | null   // reproduções de vídeo ≥3s
 }
 
 export const getClientKPIs = cache(async (
@@ -587,21 +595,38 @@ export const getClientKPIs = cache(async (
     const roasGoogle = googleSpend > 0 && revenue > 0 ? revenue / googleSpend : null
     const roasTiktok = tiktokSpend > 0 && revenue > 0 ? revenue / tiktokSpend : null
 
+    // New Meta-specific fields for local business
+    const mensagens        = meta.reduce((s, x) => s + (x.mensagens        ?? 0), 0)
+    const landingPageViews = meta.reduce((s, x) => s + (x.landingPageViews ?? 0), 0)
+    const thruplays        = meta.reduce((s, x) => s + (x.thruplays        ?? 0), 0)
+    const videoViews3s     = meta.reduce((s, x) => s + (x.videoViews3s     ?? 0), 0)
+    const metaReach        = meta.reduce((s, x) => s + (x.reach            ?? 0), 0)
+    const metaImpressions  = meta.reduce((s, x) => s + (x.impressions      ?? 0), 0)
+    const adFrequencia     = metaReach > 0 ? metaImpressions / metaReach : null
+
     return {
       spend: totalSpend, metaSpend, googleSpend, tiktokSpend,
       sessions, purchases, revenue, adImpr, newUsers,
       roas, roasMeta, roasGoogle, roasTiktok,
       ctrLink, cpcLink,
-      adLeads:       adConversions > 0 ? adConversions : null,
-      adAlcance:     adReach > 0 ? adReach : null,
-      adImpressions: allImpr > 0 ? allImpr : null,
-      ticketMedio:   purchases > 0 && revenue > 0 ? revenue / purchases : null,
-      taxaConversao: sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null,
-      cps:           sessions > 0 && totalSpend > 0 ? totalSpend / sessions : null,
-      cpm:           adImpr > 0 && metaSpend > 0 ? (metaSpend / adImpr) * 1000 : null,
-      cpa:           purchases > 0 && totalSpend > 0 ? totalSpend / purchases : null,
-      cac:           purchases > 0 && totalSpend > 0 ? totalSpend / purchases : null,
-      cpl:           adConversions > 0 && totalSpend > 0 ? totalSpend / adConversions : null,
+      adLeads:          adConversions > 0 ? adConversions : null,
+      adCliques:        adClicks > 0 ? adClicks : null,
+      adAlcance:        adReach > 0 ? adReach : null,
+      adImpressions:    allImpr > 0 ? allImpr : null,
+      adFrequencia,
+      mensagens:        mensagens > 0 ? mensagens : null,
+      custoMensagem:    mensagens > 0 && metaSpend > 0 ? metaSpend / mensagens : null,
+      landingPageViews: landingPageViews > 0 ? landingPageViews : null,
+      taxaConexao:      adClicks > 0 && landingPageViews > 0 ? (landingPageViews / adClicks) * 100 : null,
+      thruplays:        thruplays > 0 ? thruplays : null,
+      videoViews3s:     videoViews3s > 0 ? videoViews3s : null,
+      ticketMedio:      purchases > 0 && revenue > 0 ? revenue / purchases : null,
+      taxaConversao:    sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null,
+      cps:              sessions > 0 && totalSpend > 0 ? totalSpend / sessions : null,
+      cpm:              adImpr > 0 && metaSpend > 0 ? (metaSpend / adImpr) * 1000 : null,
+      cpa:              purchases > 0 && totalSpend > 0 ? totalSpend / purchases : null,
+      cac:              purchases > 0 && totalSpend > 0 ? totalSpend / purchases : null,
+      cpl:              adConversions > 0 && totalSpend > 0 ? totalSpend / adConversions : null,
     }
   }
 
@@ -657,10 +682,18 @@ export const getClientKPIs = cache(async (
     cacTrend: pctChange(curr.cac, prev.cac),
     ctr: curr.ctrLink,
     cpc: curr.cpcLink,
-    adLeads:       curr.adLeads,
-    adAlcance:     curr.adAlcance,
-    adImpressions: curr.adImpressions,
-    cpl:           curr.cpl,
+    adLeads:          curr.adLeads,
+    adCliques:        curr.adCliques,
+    adAlcance:        curr.adAlcance,
+    adImpressions:    curr.adImpressions,
+    adFrequencia:     curr.adFrequencia,
+    cpl:              curr.cpl,
+    mensagens:        curr.mensagens,
+    custoMensagem:    curr.custoMensagem,
+    landingPageViews: curr.landingPageViews,
+    taxaConexao:      curr.taxaConexao,
+    thruplays:        curr.thruplays,
+    videoViews3s:     curr.videoViews3s,
   }
 })
 
