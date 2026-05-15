@@ -34,26 +34,30 @@ const ECOMMERCE_MONTHLY = [
 
 const LOCAL_WEEKLY = [
   { value: 'LEADS',         label: 'Leads Gerados',             hint: 'ex: 50'    },
-  { value: 'MENSAGENS',     label: 'Mensagens Recebidas',        hint: 'ex: 150'   },
-  { value: 'SEGUIDORES',    label: 'Seguidores Ganhos',          hint: 'ex: 200'   },
-  { value: 'VISITAS_PERFIL',label: 'Visitas ao Perfil',          hint: 'ex: 500'   },
-  { value: 'LIGACOES',      label: 'Ligações Recebidas',         hint: 'ex: 30'    },
-  { value: 'AGENDAMENTOS',  label: 'Agendamentos',               hint: 'ex: 20'    },
-  { value: 'CPL',           label: 'CPL (Custo por Lead)',        hint: 'ex: 25.00' },
-  { value: 'CTR',           label: 'CTR (%)',                    hint: 'ex: 2.5'   },
-  { value: 'CPC',           label: 'CPC (R$)',                   hint: 'ex: 1.50'  },
-  { value: 'INVESTMENT',    label: 'Investimento Semanal (R$)',  hint: 'ex: 2500'  },
+  { value: 'MENSAGENS',     label: 'Mensagens Recebidas',       hint: 'ex: 150'   },
+  { value: 'CONVERSIONS',   label: 'Compras (Meta Ads)',        hint: 'ex: 30'    },
+  { value: 'FATURAMENTO',   label: 'Faturamento (R$)',          hint: 'ex: 5000'  },
+  { value: 'SEGUIDORES',    label: 'Seguidores Ganhos',         hint: 'ex: 200'   },
+  { value: 'VISITAS_PERFIL',label: 'Visitas ao Perfil',         hint: 'ex: 500'   },
+  { value: 'LIGACOES',      label: 'Ligações Recebidas',        hint: 'ex: 30'    },
+  { value: 'AGENDAMENTOS',  label: 'Agendamentos',              hint: 'ex: 20'    },
+  { value: 'CPL',           label: 'CPL (Custo por Lead)',      hint: 'ex: 25.00' },
+  { value: 'CTR',           label: 'CTR (%)',                   hint: 'ex: 2.5'   },
+  { value: 'CPC',           label: 'CPC (R$)',                  hint: 'ex: 1.50'  },
+  { value: 'INVESTMENT',    label: 'Investimento Semanal (R$)', hint: 'ex: 2500'  },
 ]
 
 const LOCAL_MONTHLY = [
-  { value: 'LEADS',         label: 'Leads Gerados',             hint: 'ex: 200'    },
-  { value: 'MENSAGENS',     label: 'Mensagens Recebidas',       hint: 'ex: 500'    },
-  { value: 'SEGUIDORES',    label: 'Seguidores Ganhos',         hint: 'ex: 800'    },
-  { value: 'VISITAS_PERFIL',label: 'Visitas ao Perfil',         hint: 'ex: 2000'   },
-  { value: 'LIGACOES',      label: 'Ligações Recebidas',        hint: 'ex: 100'    },
-  { value: 'AGENDAMENTOS',  label: 'Agendamentos',              hint: 'ex: 60'     },
-  { value: 'CPL',           label: 'CPL (Custo por Lead)',       hint: 'ex: 20.00'  },
-  { value: 'SPEND',         label: 'Budget Mensal (R$)',        hint: 'ex: 5000'   },
+  { value: 'LEADS',         label: 'Leads Gerados',             hint: 'ex: 200'   },
+  { value: 'MENSAGENS',     label: 'Mensagens Recebidas',       hint: 'ex: 500'   },
+  { value: 'CONVERSIONS',   label: 'Compras (Meta Ads)',        hint: 'ex: 100'   },
+  { value: 'FATURAMENTO',   label: 'Faturamento (R$)',          hint: 'ex: 15000' },
+  { value: 'SEGUIDORES',    label: 'Seguidores Ganhos',         hint: 'ex: 800'   },
+  { value: 'VISITAS_PERFIL',label: 'Visitas ao Perfil',         hint: 'ex: 2000'  },
+  { value: 'LIGACOES',      label: 'Ligações Recebidas',        hint: 'ex: 100'   },
+  { value: 'AGENDAMENTOS',  label: 'Agendamentos',              hint: 'ex: 60'    },
+  { value: 'CPL',           label: 'CPL (Custo por Lead)',      hint: 'ex: 20.00' },
+  { value: 'SPEND',         label: 'Budget Mensal (R$)',        hint: 'ex: 5000'  },
 ]
 
 interface GoalFormModalProps {
