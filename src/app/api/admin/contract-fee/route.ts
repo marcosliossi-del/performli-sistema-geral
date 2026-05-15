@@ -15,9 +15,16 @@ export async function POST(req: NextRequest) {
   if (!id)       return NextResponse.json({ error: 'id required' }, { status: 400 })
   if (isNaN(fee))return NextResponse.json({ error: 'invalid fee' }, { status: 400 })
 
-  await prisma.contract.update({
-    where: { id },
-    data:  { feeValue: fee },
+  const updated = await prisma.contract.update({
+    where:  { id },
+    data:   { feeValue: fee },
+    select: { clientId: true },
+  })
+
+  // Keep Client.contractValue in sync so the clients list and summary card reflect the new fee
+  await prisma.client.update({
+    where: { id: updated.clientId },
+    data:  { contractValue: fee },
   })
 
   return NextResponse.json({ ok: true })

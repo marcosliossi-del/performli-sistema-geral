@@ -65,6 +65,13 @@ export async function createContract(
     },
   })
 
+  if (feeValue > 0) {
+    await prisma.client.update({
+      where: { id: clientId },
+      data:  { contractValue: feeValue },
+    })
+  }
+
   revalidatePath('/juridico')
   revalidatePath('/clients')
   return { ok: true }
@@ -99,8 +106,8 @@ export async function updateContract(
 
   const cancelledAt = status === 'CANCELADO' ? new Date() : undefined
 
-  await prisma.contract.update({
-    where: { id },
+  const updated = await prisma.contract.update({
+    where:  { id },
     data: {
       responsibleId,
       ...(type        && { type }),
@@ -117,7 +124,15 @@ export async function updateContract(
       ...(cancelledAt             && { cancelledAt }),
       ...(cancelReason            && { cancelReason }),
     },
+    select: { clientId: true },
   })
+
+  if (feeValueRaw) {
+    await prisma.client.update({
+      where: { id: updated.clientId },
+      data:  { contractValue: parseFloat(feeValueRaw) },
+    })
+  }
 
   revalidatePath('/juridico')
   revalidatePath('/clients')
