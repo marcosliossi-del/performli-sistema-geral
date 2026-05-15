@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { formatCurrency } from '@/lib/utils'
 import { ContractsTable } from '@/components/juridico/ContractsTable'
+import { ContractFeesBulkTable } from '@/components/juridico/ContractFeesBulkTable'
+import { JuridicoPageTabs } from '@/components/juridico/JuridicoPageTabs'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,25 +46,39 @@ async function getData() {
 
   const vigentes   = serialized.filter(c => c.status === 'VIGENTE')
   const renovacoes = serialized.filter(c => c.status === 'RENOVACAO')
-  const rascunhos  = serialized.filter(c => c.status === 'RASCUNHO')
   const expirando  = vigentes.filter(c => {
     const days = Math.ceil((new Date(c.endDate).getTime() - today.getTime()) / 86_400_000)
     return days >= 0 && days <= 30
   })
 
+  // Contracts with fee = 0 (need to be filled)
+  const semFee = serialized.filter(c => c.feeValue === 0 && c.status !== 'CANCELADO')
+
   const mrr = vigentes.reduce((s, c) => s + c.feeValue, 0)
 
-  return { serialized, clients, users, vigentes, renovacoes, rascunhos, expirando, mrr }
+  // Bulk fee data (all non-cancelled contracts)
+  const feesData = serialized
+    .filter(c => c.status !== 'CANCELADO')
+    .map(c => ({
+      contractId: c.id,
+      clientName: c.client.name,
+      status:     c.status,
+      startDate:  c.startDate,
+      endDate:    c.endDate,
+      feeValue:   c.feeValue,
+    }))
+
+  return { serialized, clients, users, vigentes, renovacoes, expirando, mrr, semFee, feesData }
 }
 
 export default async function JuridicoPage() {
   await requireSession()
-  const { serialized, clients, users, vigentes, renovacoes, rascunhos, expirando, mrr } = await getData()
+  const { serialized, clients, users, vigentes, renovacoes, expirando, mrr, semFee, feesData } = await getData()
 
   const stats = [
     {
       label:   'MRR Contratos',
-      value:   formatCurrency(mrr),
+      value:   mrr > 0 ? formatCurrency(mrr) : '—',
       sub:     `${vigentes.length} contratos ativos`,
       icon:    CheckCircle2,
       color:   'text-[#22C55E]',
@@ -128,7 +144,7 @@ export default async function JuridicoPage() {
         })}
       </div>
 
-      {/* Aviso de vencimentos próximos */}
+      {/* Alert: expiring soon */}
       {expirando.length > 0 && (
         <div className="bg-[#F59E0B]/10 border border-[#F59E0B]/30 rounded-xl px-4 py-3 flex items-start gap-3">
           <AlertTriangle size={16} className="text-[#F59E0B] flex-shrink-0 mt-0.5" />
@@ -143,8 +159,28 @@ export default async function JuridicoPage() {
         </div>
       )}
 
-      {/* Contracts table */}
-      <ContractsTable contracts={serialized} clients={clients} users={users} />
+      {/* Alert: contracts missing fee */}
+      {semFee.length > 0 && (
+        <div className="bg-[#95BBE2]/10 border border-[#95BBE2]/30 rounded-xl px-4 py-3 flex items-start gap-3">
+          <FileText size={16} className="text-[#95BBE2] flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-[#95BBE2]">
+              {semFee.length} contrato{semFee.length > 1 ? 's' : ''} sem fee preenchido
+            </p>
+            <p className="text-xs text-[#95BBE2]/70 mt-0.5">
+              Use a aba &quot;Fees em Massa&quot; para preencher os valores de uma vez.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs: Contratos | Fees em Massa */}
+      <JuridicoPageTabs
+        contracts={serialized}
+        clients={clients}
+        users={users}
+        feesData={feesData}
+      />
     </div>
   )
 }
