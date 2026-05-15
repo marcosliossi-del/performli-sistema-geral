@@ -17,16 +17,20 @@ export function DashboardShell({ children, session, unreadAlerts }: DashboardShe
   )
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#05141C]">
-      <Sidebar role={session.role} />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <TopNav
-          session={session}
-          viewMode={viewMode}
-          onViewModeChange={session.role === 'ADMIN' ? setViewMode : undefined}
-          unreadAlerts={unreadAlerts}
-        />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+    <div className="flex h-screen overflow-hidden bg-[#05141C] print:block print:h-auto print:bg-white">
+      <div className="print:hidden">
+        <Sidebar role={session.role} />
+      </div>
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden print:block print:overflow-visible">
+        <div className="print:hidden">
+          <TopNav
+            session={session}
+            viewMode={viewMode}
+            onViewModeChange={session.role === 'ADMIN' ? setViewMode : undefined}
+            unreadAlerts={unreadAlerts}
+          />
+        </div>
+        <main className="flex-1 overflow-y-auto p-6 print:overflow-visible print:p-4">{children}</main>
       </div>
     </div>
   )

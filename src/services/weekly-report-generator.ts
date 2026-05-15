@@ -496,6 +496,297 @@ ${lw.taxaConversao !== null && lw.taxaConversao < 1 && !hasFunnelBottleneck ? `�
   return reportContent
 }
 
+export async function generateMonthlyReportForClient(
+  clientId: string,
+  year?: number,
+  month?: number, // 0-indexed
+): Promise<string | null> {
+  const today = new Date()
+  // Default: last completed month
+  const targetYear  = year  ?? (today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear())
+  const targetMonth = month ?? (today.getMonth() === 0 ? 11 : today.getMonth() - 1)
+
+  const monthStart = new Date(targetYear, targetMonth, 1)
+  const monthEnd   = new Date(targetYear, targetMonth + 1, 0)
+
+  // Previous month for comparison
+  const prevMonthStart = new Date(targetYear, targetMonth - 1, 1)
+  const prevMonthEnd   = new Date(targetYear, targetMonth, 0)
+
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: {
+      name: true,
+      industry: true,
+      businessType: true,
+      platformAccounts: {
+        where: { platform: 'GA4', active: true },
+        select: { externalId: true },
+        take: 1,
+      },
+    },
+  })
+  if (!client) return null
+
+  const snapInclude = { platformAccount: { select: { platform: true } } } as const
+
+  const [currSnaps, prevSnaps, goals] = await Promise.all([
+    prisma.metricSnapshot.findMany({
+      where: { clientId, date: { gte: monthStart, lte: monthEnd } },
+      include: snapInclude,
+    }),
+    prisma.metricSnapshot.findMany({
+      where: { clientId, date: { gte: prevMonthStart, lte: prevMonthEnd } },
+      include: snapInclude,
+    }),
+    prisma.goal.findMany({
+      where: { clientId, period: 'MONTHLY', startDate: { lte: monthEnd }, endDate: { gte: monthStart } },
+    }),
+  ])
+
+  const monthLabel = monthStart.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+
+  const pctChange = (curr: number, prev: number) =>
+    prev > 0 ? ((curr - prev) / prev) * 100 : null
+
+  // ── LOCAL ─────────────────────────────────────────────────────────────────
+  if (client.businessType === 'LOCAL') {
+    function computeLocal(snaps: typeof currSnaps) {
+      const meta = snaps.filter((x) => x.platformAccount.platform === 'META_ADS')
+      const spend       = meta.reduce((s, x) => s + Number(x.spend ?? 0), 0)
+      const reach       = meta.reduce((s, x) => s + (x.reach ?? 0), 0)
+      const mensagens   = meta.reduce((s, x) => s + (x.mensagens ?? 0), 0)
+      const landingViews= meta.reduce((s, x) => s + (x.landingPageViews ?? 0), 0)
+      const leads       = meta.reduce((s, x) => s + (x.conversions ?? 0), 0)
+      const adRevenue   = meta.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+      const cpl         = leads > 0 && spend > 0 ? spend / leads : null
+      return { spend, reach, mensagens, landingViews, leads, adRevenue, cpl }
+    }
+
+    const curr = computeLocal(currSnaps)
+    const prev = computeLocal(prevSnaps)
+
+    const leadsGoal    = goals.find((g) => g.metric === 'LEADS')
+    const mensagensGoal= goals.find((g) => g.metric === 'MENSAGENS')
+    const spendGoal    = goals.find((g) => g.metric === 'SPEND' || g.metric === 'INVESTMENT')
+    const cplGoal      = goals.find((g) => g.metric === 'CPL')
+
+    const leadsAchieved    = leadsGoal    ? Math.round((curr.leads    / Number(leadsGoal.targetValue))    * 100) : null
+    const mensagensAchieved= mensagensGoal? Math.round((curr.mensagens/ Number(mensagensGoal.targetValue)) * 100) : null
+
+    const msgChange   = pctChange(curr.mensagens,   prev.mensagens)
+    const reachChange = pctChange(curr.reach,        prev.reach)
+    const landingChange=pctChange(curr.landingViews, prev.landingViews)
+
+    const foiBomMes = (msgChange ?? 0) >= 0 || (leadsAchieved ?? 0) >= 90 || (mensagensAchieved ?? 0) >= 90
+
+    const localMonthlyPrompt = `Você é o gestor de tráfego pago da Arkza enviando o relatório mensal para o cliente via WhatsApp.
+Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrolação, sem cara de relatório corporativo.
+
+🗓️ DADOS DO MÊS:
+- Cliente: ${client.name}
+- Mês: ${monthLabel}
+- Pessoas alcançadas: ${curr.reach > 0 ? curr.reach.toLocaleString('pt-BR') : 'sem dados'}${reachChange !== null ? ` (${reachChange > 0 ? '+' : ''}${reachChange.toFixed(0)}% vs mês anterior)` : ''}
+- Mensagens recebidas: ${curr.mensagens > 0 ? curr.mensagens.toLocaleString('pt-BR') : 'sem dados'}${msgChange !== null ? ` (${msgChange > 0 ? '+' : ''}${msgChange.toFixed(0)}% vs mês anterior)` : ''}
+- Visitas ao perfil: ${curr.landingViews > 0 ? curr.landingViews.toLocaleString('pt-BR') : 'sem dados'}${landingChange !== null ? ` (${landingChange > 0 ? '+' : ''}${landingChange.toFixed(0)}% vs mês anterior)` : ''}
+- Investimento total: ${curr.spend > 0 ? formatCurrency(curr.spend) : 'sem dados'}
+${curr.leads > 0 ? `- Leads gerados: ${curr.leads.toLocaleString('pt-BR')}${curr.cpl !== null ? ` (custo por lead: ${formatCurrency(curr.cpl)})` : ''}` : ''}
+${curr.adRevenue > 0 ? `- Faturamento via Meta Ads: ${formatCurrency(curr.adRevenue)}` : ''}
+
+MÊS ANTERIOR (comparativo):
+- Mensagens: ${prev.mensagens > 0 ? prev.mensagens.toLocaleString('pt-BR') : 'sem dados'}
+- Alcance: ${prev.reach > 0 ? prev.reach.toLocaleString('pt-BR') : 'sem dados'}
+- Investimento: ${prev.spend > 0 ? formatCurrency(prev.spend) : 'sem dados'}
+
+METAS DO MÊS:
+- Budget: ${spendGoal ? formatCurrency(Number(spendGoal.targetValue)) : 'não definida'}
+- Meta de leads: ${leadsGoal ? `${leadsGoal.targetValue} (atingido: ${leadsAchieved ?? '—'}%)` : 'não definida'}
+- Meta de mensagens: ${mensagensGoal ? `${mensagensGoal.targetValue} (atingido: ${mensagensAchieved ?? '—'}%)` : 'não definida'}
+- CPL meta: ${cplGoal ? formatCurrency(Number(cplGoal.targetValue)) : 'não definida'}
+- Foi bom mês: ${foiBomMes ? 'SIM' : 'NÃO'}
+
+📊 ESTRUTURA DO RELATÓRIO (siga exatamente):
+
+📊 Fechamento de ${monthLabel}
+
+[1 frase de abertura:
+→ Bom mês: simples e honesta, ex: "Fechamos bem o mês!"
+→ Mês fraco: direto e tranquilo, ex: "Mês mais desafiador, mas já temos ajustes em andamento."]
+
+📈 O que aconteceu em ${monthLabel}
+[Máximo 5 linhas. Alcance, mensagens, visitas ao perfil, investimento. Número + o que significa. Compare com mês anterior quando relevante.
+${foiBomMes ? 'BOM MÊS: pode celebrar os resultados e mencionar metas atingidas.' : 'MÊS FRACO: foco nos números da semana, sem expor negatividade. Mostre o que foi feito e o que ajustará.'}]
+
+${curr.leads > 0 || curr.adRevenue > 0 ? `💬 Resultados diretos
+[Máximo 3 linhas. Leads ou vendas gerados pelo anúncio. Ex: "Recebemos X contatos diretos." ou "X pessoas compraram pelo cardápio digital." Mostre o impacto concreto.]` : 'NÃO inclua o bloco de resultados diretos.'}
+
+📌 O que vem aí no próximo mês
+[3 frases curtas sobre as ações do próximo mês. Primeira pessoa do plural.
+${foiBomMes ? 'Ações de escala e manutenção do que funcionou.' : 'Mostre movimento e plano claro. Transmita que a equipe está agindo.'}]
+
+⚙️ REGRAS:
+- Linguagem de conversa, não de relatório
+- Frases curtas, máximo 12 palavras cada
+- Zero termos técnicos (sem CPC, CTR, impressões, frequência, funil)
+- Não mencionar seguidores
+- Nunca use travessão ( — )
+- Nunca culpe fatores externos
+- Tom calibrado: animado se foi bom mês, firme e ativo se foi fraco
+- Sem markdown (sem *, #, -)
+- Emojis só nos títulos, nunca no meio das frases
+- Linha em branco entre cada bloco
+- Gere apenas o texto final, pronto para enviar no WhatsApp`
+
+    const localMonthlyResponse = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 700,
+      messages: [{ role: 'user', content: localMonthlyPrompt }],
+    })
+
+    const localMonthlyContent = localMonthlyResponse.content[0]
+    if (localMonthlyContent.type !== 'text') throw new Error('Resposta da IA inválida.')
+
+    const reportContent = localMonthlyContent.text
+
+    await prisma.monthlyReport.upsert({
+      where: { clientId_monthStart: { clientId, monthStart } },
+      create: { clientId, monthStart, content: reportContent },
+      update: { content: reportContent, generatedAt: new Date() },
+    })
+
+    return reportContent
+  }
+
+  // ── ECOMMERCE ─────────────────────────────────────────────────────────────
+  function computeEcom(snaps: typeof currSnaps) {
+    const ga4  = snaps.filter((x) => x.platformAccount.platform === 'GA4')
+    const ads  = snaps.filter((x) => x.platformAccount.platform !== 'GA4')
+    const spend    = ads.reduce((s, x) => s + Number(x.spend ?? 0), 0)
+    const revenue  = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+    const purchases= ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const sessions = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
+    return {
+      spend, revenue, purchases, sessions,
+      roas:        spend > 0 && revenue   > 0 ? revenue / spend        : null,
+      cpa:         spend > 0 && purchases > 0 ? spend / purchases      : null,
+      ticketMedio: purchases > 0 && revenue > 0 ? revenue / purchases  : null,
+      taxaConversao: sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null,
+    }
+  }
+
+  const curr = computeEcom(currSnaps)
+  const prev = computeEcom(prevSnaps)
+
+  const faturamentoGoal = goals.find((g) => g.metric === 'FATURAMENTO')
+  const roasGoal        = goals.find((g) => g.metric === 'ROAS')
+  const spendGoal       = goals.find((g) => g.metric === 'SPEND' || g.metric === 'INVESTMENT')
+
+  const fatAchieved  = faturamentoGoal && curr.revenue > 0
+    ? Math.round((curr.revenue / Number(faturamentoGoal.targetValue)) * 100) : null
+  const roasAchieved = roasGoal && curr.roas !== null
+    ? curr.roas >= Number(roasGoal.targetValue) : null
+
+  const revChange  = pctChange(curr.revenue,   prev.revenue)
+  const purcChange = pctChange(curr.purchases, prev.purchases)
+
+  const foiBomMes = (fatAchieved ?? 0) >= 90 || roasAchieved === true || (revChange ?? 0) >= 0
+
+  const ga4PropertyId = client.platformAccounts[0]?.externalId ?? null
+  let topProductsStr = 'dados de produto não disponíveis'
+  if (ga4PropertyId) {
+    try {
+      const ga4Client = new GA4Client()
+      const since = toLocalDateStr(monthStart)
+      const until = toLocalDateStr(monthEnd)
+      const items = await ga4Client.getItemReport(ga4PropertyId, since, until, 5)
+      if (items.length > 0) {
+        topProductsStr = items.map((item, i) => {
+          const rev = parseFloat(item.itemRevenue)
+          const qty = parseInt(item.itemsPurchased)
+          const name = item.itemName === '(not set)' ? 'Produto sem nome' : item.itemName
+          return `${i + 1}. ${name} — ${formatCurrency(rev)} (${qty} un.)`
+        }).join('\n')
+      } else {
+        topProductsStr = 'nenhuma venda de produto registrada no mês'
+      }
+    } catch {
+      topProductsStr = 'dados de produto indisponíveis no momento'
+    }
+  }
+
+  const ecomMonthlyPrompt = `Você é o gestor de tráfego pago da Arkza enviando o relatório mensal para o cliente via WhatsApp.
+Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrolação, sem cara de relatório corporativo.
+
+🗓️ DADOS DO MÊS:
+- Cliente: ${client.name}
+- Mês: ${monthLabel}
+- Investimento: ${curr.spend > 0 ? formatCurrency(curr.spend) : 'sem dados'}
+- Faturamento (GA4): ${curr.revenue > 0 ? formatCurrency(curr.revenue) : 'sem dados'}${revChange !== null ? ` (${revChange > 0 ? '+' : ''}${revChange.toFixed(1)}% vs mês anterior)` : ''}
+- Compras: ${curr.purchases > 0 ? curr.purchases.toLocaleString('pt-BR') : 'sem dados'}${purcChange !== null ? ` (${purcChange > 0 ? '+' : ''}${purcChange.toFixed(0)}% vs mês anterior)` : ''}
+- Sessões (GA4): ${curr.sessions > 0 ? curr.sessions.toLocaleString('pt-BR') : 'sem dados'}
+- ROAS: ${curr.roas !== null ? `${curr.roas.toFixed(2)}x` : 'sem dados'}
+- Ticket médio: ${curr.ticketMedio !== null ? formatCurrency(curr.ticketMedio) : 'sem dados'}
+- Meta faturamento: ${faturamentoGoal ? `${formatCurrency(Number(faturamentoGoal.targetValue))} (atingido: ${fatAchieved ?? '—'}%)` : 'não definida'}
+- Meta ROAS: ${roasGoal ? `${Number(roasGoal.targetValue).toFixed(2)}x (${roasAchieved === true ? 'ATINGIDA' : 'não atingida'})` : 'não definida'}
+- Budget: ${spendGoal ? formatCurrency(Number(spendGoal.targetValue)) : 'não definido'}
+- Foi bom mês: ${foiBomMes ? 'SIM' : 'NÃO'}
+
+TOP PRODUTOS DO MÊS:
+${topProductsStr}
+
+📊 ESTRUTURA DO RELATÓRIO (siga exatamente):
+
+📊 Fechamento de ${monthLabel}
+
+[1 frase de abertura honesta:
+→ Bom mês: comemore de forma simples, ex: "Fechamos bem o mês!"
+→ Mês fraco: direto e tranquilo, ex: "Mês mais desafiador, mas já ajustamos a rota."]
+
+📈 O que aconteceu em ${monthLabel}
+[Máximo 5 linhas. Faturamento, compras, sessões e ROAS com os números reais. Número + o que significa.
+${foiBomMes ? 'BOM MÊS: celebre e mencione metas atingidas.' : 'MÊS FRACO: foco nos números, sem expor negatividade. Transmita que a equipe já está agindo.'}]
+
+🛍️ O que mais vendeu no mês
+[Máximo 4 linhas. Produtos ou categorias que lideraram. Direto ao nome, sem adjetivos.]
+
+📌 O que vem aí no próximo mês
+[3 frases curtas. Primeira pessoa do plural.
+${foiBomMes ? 'Escala e manutenção do que funcionou.' : 'Mostre movimento e plano. Transmita ação da equipe.'}]
+
+⚙️ REGRAS:
+- Linguagem de conversa, não de relatório
+- Frases curtas, máximo 12 palavras cada
+- Zero termos técnicos sem explicação
+- Nunca use: estratégico, robusto, potencializar, insights, jornada, pilares, desbloquear, transformação
+- Nunca use frases vagas sobre produtos — nome real ou categoria real
+- Nunca use travessão ( — )
+- Nunca culpe o tráfego pelos resultados
+- Tom calibrado: animado se foi bom mês, firme e ativo se foi fraco
+- Sem markdown (sem *, #, -)
+- Emojis só nos títulos dos blocos
+- Linha em branco entre cada bloco
+- Gere apenas o texto final, pronto para enviar no WhatsApp`
+
+  const ecomResponse = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 800,
+    messages: [{ role: 'user', content: ecomMonthlyPrompt }],
+  })
+
+  const ecomContent = ecomResponse.content[0]
+  if (ecomContent.type !== 'text') throw new Error('Resposta da IA inválida.')
+
+  const reportContent = ecomContent.text
+
+  await prisma.monthlyReport.upsert({
+    where: { clientId_monthStart: { clientId, monthStart } },
+    create: { clientId, monthStart, content: reportContent },
+    update: { content: reportContent, generatedAt: new Date() },
+  })
+
+  return reportContent
+}
+
 export async function generateAllWeeklyReports(): Promise<{
   clientsProcessed: number
   reportsGenerated: number

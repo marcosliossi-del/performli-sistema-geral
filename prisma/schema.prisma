@@ -103,6 +103,7 @@ model Client {
   chat              ClientChat?
   churnRiskScores   ChurnRiskScore[]
   weeklyReports     WeeklyReport[]
+  monthlyReports    MonthlyReport[]
   interactions      ClientInteraction[]
   asaasCustomer       AsaasCustomer?
   statusStreak        ClientStatusStreak?
@@ -527,6 +528,19 @@ model WeeklyReport {
 
   @@unique([clientId, weekStart])
   @@index([clientId, weekStart])
+}
+
+model MonthlyReport {
+  id          String   @id @default(cuid())
+  clientId    String
+  monthStart  DateTime @db.Date
+  content     String   @db.Text
+  generatedAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, monthStart])
+  @@index([clientId, monthStart])
 }
 
 // ─── CAMPAIGN SNAPSHOTS ───────────────────────────────────────────────────────

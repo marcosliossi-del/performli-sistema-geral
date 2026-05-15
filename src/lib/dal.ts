@@ -1673,6 +1673,13 @@ export const getClientWeeklyReport = cache(async (clientId: string) => {
   return report
 })
 
+export const getClientMonthlyReport = cache(async (clientId: string) => {
+  return prisma.monthlyReport.findFirst({
+    where: { clientId },
+    orderBy: { monthStart: 'desc' },
+  })
+})
+
 // ─── Client chat ──────────────────────────────────────────────────────────────
 
 export const getClientChat = cache(async (clientId: string) => {

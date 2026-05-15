@@ -3,6 +3,7 @@ import Link from 'next/link'
 import {
   requireSession, getClientDetail, getClientMetricHistory,
   getClientKPIs, getGoalPaceMetrics, getClientChat, getClientWeeklyReport,
+  getClientMonthlyReport,
   getClientCampaigns, getLatestCampaignInsight, metricLabels,
   getClientDailyRevenue, getClientMonthlyComparison, getClientInteractions,
   getHealthScoreHistory, getWeekScoreComparison, getClientSalesFunnel,
@@ -26,6 +27,8 @@ import { MetricsChartsGrid } from '@/components/clients/MetricsChartsGrid'
 import { DateRangePicker } from '@/components/clients/DateRangePicker'
 import { ClientChatPanel } from '@/components/clients/ClientChatPanel'
 import { WeeklyReportCard } from '@/components/clients/WeeklyReportCard'
+import { MonthlyReportCard } from '@/components/clients/MonthlyReportCard'
+import { ExportPdfButton } from '@/components/clients/ExportPdfButton'
 import { GoalPaceCard } from '@/components/clients/GoalPaceCard'
 import { KPIDiagnosticCard } from '@/components/clients/KPIDiagnosticCard'
 import { CampaignBreakdownTable } from '@/components/clients/CampaignBreakdownTable'
@@ -115,12 +118,13 @@ export default async function ClientDetailPage({
   const activeFrom = from ?? defaultFrom
   const activeTo = to ?? defaultTo
 
-  const [metricHistory, kpis, paceGoals, chat, weeklyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel] = await Promise.all([
+  const [metricHistory, kpis, paceGoals, chat, weeklyReport, monthlyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel] = await Promise.all([
     getClientMetricHistory(client.id, 14),
     getClientKPIs(client.id, activeFrom, activeTo),
     getGoalPaceMetrics(client.id),
     getClientChat(client.id),
     getClientWeeklyReport(client.id),
+    getClientMonthlyReport(client.id),
     getClientCampaigns(client.id, 7),
     getLatestCampaignInsight(client.id),
     getClientDailyRevenue(client.id, activeFrom, activeTo),
@@ -196,6 +200,7 @@ export default async function ClientDetailPage({
           </div>
         </div>
         <div className="flex gap-2">
+          <ExportPdfButton />
           <EditClientButton
             client={{
               id: client.id,
@@ -639,16 +644,23 @@ export default async function ClientDetailPage({
         </div>
       )}
 
-      {/* ── Relatório Semanal ─────────────────────────────────────────────── */}
-      <WeeklyReportCard
-        clientId={client.id}
-        clientSlug={slug}
-        existingReport={weeklyReport ? { content: weeklyReport.content, generatedAt: weeklyReport.generatedAt } : null}
-      />
+      {/* ── Relatórios ───────────────────────────────────────────────────── */}
+      <div className="print:hidden space-y-4">
+        <WeeklyReportCard
+          clientId={client.id}
+          clientSlug={slug}
+          existingReport={weeklyReport ? { content: weeklyReport.content, generatedAt: weeklyReport.generatedAt } : null}
+        />
+        <MonthlyReportCard
+          clientId={client.id}
+          clientSlug={slug}
+          existingReport={monthlyReport ? { content: monthlyReport.content, generatedAt: monthlyReport.generatedAt, monthStart: monthlyReport.monthStart } : null}
+        />
+      </div>
 
       {/* ── Chat do Cliente ───────────────────────────────────────────────── */}
       {chat && (
-        <div>
+        <div className="print:hidden">
           <h2 className="text-sm font-semibold text-[#EBEBEB] mb-3">Chat Interno</h2>
           <ClientChatPanel
             chatId={chat.id}
