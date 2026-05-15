@@ -522,6 +522,11 @@ export type ClientKPIs = {
   taxaConexao: number | null    // landing page views / cliques * 100
   thruplays: number | null      // thruplays de vídeo
   videoViews3s: number | null   // reproduções de vídeo ≥3s
+  // Vendas via Meta Ads (restaurantes / e-com com pixel de compra)
+  adVendas: number | null       // compras registradas pelo pixel Meta
+  adRevenueMeta: number | null  // receita registrada pelo pixel Meta
+  custoVenda: number | null     // spend / adVendas
+  ticketMedioMeta: number | null // adRevenueMeta / adVendas
 }
 
 export const getClientKPIs = cache(async (
@@ -595,6 +600,12 @@ export const getClientKPIs = cache(async (
     const roasGoogle = googleSpend > 0 && revenue > 0 ? revenue / googleSpend : null
     const roasTiktok = tiktokSpend > 0 && revenue > 0 ? revenue / tiktokSpend : null
 
+    // Meta purchase conversions (restaurantes com pixel de compra)
+    const adRevenueMeta = meta.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+    // adVendas = Meta purchases (conversions stored when purchase actions fired)
+    // conversionValue > 0 signals a purchase campaign, not a lead campaign
+    const adVendas      = adRevenueMeta > 0 ? adConversions : 0
+
     // New Meta-specific fields for local business
     const mensagens        = meta.reduce((s, x) => s + (x.mensagens        ?? 0), 0)
     const landingPageViews = meta.reduce((s, x) => s + (x.landingPageViews ?? 0), 0)
@@ -620,6 +631,10 @@ export const getClientKPIs = cache(async (
       taxaConexao:      adClicks > 0 && landingPageViews > 0 ? (landingPageViews / adClicks) * 100 : null,
       thruplays:        thruplays > 0 ? thruplays : null,
       videoViews3s:     videoViews3s > 0 ? videoViews3s : null,
+      adVendas:         adVendas > 0 ? adVendas : null,
+      adRevenueMeta:    adRevenueMeta > 0 ? adRevenueMeta : null,
+      custoVenda:       adVendas > 0 && metaSpend > 0 ? metaSpend / adVendas : null,
+      ticketMedioMeta:  adVendas > 0 && adRevenueMeta > 0 ? adRevenueMeta / adVendas : null,
       ticketMedio:      purchases > 0 && revenue > 0 ? revenue / purchases : null,
       taxaConversao:    sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null,
       cps:              sessions > 0 && totalSpend > 0 ? totalSpend / sessions : null,
@@ -694,6 +709,10 @@ export const getClientKPIs = cache(async (
     taxaConexao:      curr.taxaConexao,
     thruplays:        curr.thruplays,
     videoViews3s:     curr.videoViews3s,
+    adVendas:         curr.adVendas,
+    adRevenueMeta:    curr.adRevenueMeta,
+    custoVenda:       curr.custoVenda,
+    ticketMedioMeta:  curr.ticketMedioMeta,
   }
 })
 

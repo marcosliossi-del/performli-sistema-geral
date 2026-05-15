@@ -314,6 +314,10 @@ export default async function ClientDetailPage({
             taxaConexao:     kpis.taxaConexao,
             thruplays:       kpis.thruplays,
             videoViews3s:    kpis.videoViews3s,
+            adVendas:        kpis.adVendas,
+            adRevenueMeta:   kpis.adRevenueMeta,
+            custoVenda:      kpis.custoVenda,
+            ticketMedioMeta: kpis.ticketMedioMeta,
           }}
         />
       ) : (

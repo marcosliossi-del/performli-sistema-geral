@@ -26,6 +26,11 @@ export interface LocalKPIs {
   // Vídeo (opcional — só mostra se > 0)
   thruplays: number | null
   videoViews3s: number | null
+  // Vendas via pixel Meta (restaurantes / e-com local)
+  adVendas: number | null
+  adRevenueMeta: number | null
+  custoVenda: number | null
+  ticketMedioMeta: number | null
 }
 
 function Tile({
@@ -151,6 +156,39 @@ export function LocalBusinessKPISection({ kpis }: { kpis: LocalKPIs }) {
               <Tile
                 label="Custo por Conversa"
                 value={formatCurrency(kpis.custoMensagem)}
+              />
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── Vendas via pixel (restaurantes / e-com local) ──────────────────── */}
+      {kpis.adVendas != null && kpis.adVendas > 0 && (
+        <>
+          <SectionTitle>Vendas</SectionTitle>
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+            <Tile
+              label="Vendas"
+              value={formatNumber(kpis.adVendas, 0)}
+              sub="compras via pixel Meta"
+            />
+            <Tile
+              label="Custo por Venda"
+              value={kpis.custoVenda != null ? formatCurrency(kpis.custoVenda) : '—'}
+              sub="invest / vendas"
+            />
+            {kpis.adRevenueMeta != null && kpis.adRevenueMeta > 0 && (
+              <Tile
+                label="Receita (Meta pixel)"
+                value={formatCurrency(kpis.adRevenueMeta)}
+                sub="valor das compras"
+              />
+            )}
+            {kpis.ticketMedioMeta != null && (
+              <Tile
+                label="Ticket Médio"
+                value={formatCurrency(kpis.ticketMedioMeta)}
+                sub="receita / vendas"
               />
             )}
           </div>
