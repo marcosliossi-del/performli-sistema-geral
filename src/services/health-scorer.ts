@@ -81,13 +81,11 @@ function aggregateSnapshots(snapshots: Snapshot[], metric: MetricType): number |
   const adPurchases  = snapshots.filter(isAd).reduce((s, x) => s + toNum(x.conversions), 0)
   const totalSpend   = snapshots.filter(isAd).reduce((s, x) => s + toNum(x.spend), 0)
 
-  // Revenue = GA4 only (source of truth). No fallback to ad platform data —
-  // using pixel revenue (Meta/Google) would produce different numbers than
-  // the weekly report and KPI panel, which are GA4-exclusive.
-  const revenue   = ga4Revenue
-  // GA4 purchases for revenue-derived metrics (TICKET_MEDIO, TAXA_CONVERSAO, CONVERSIONS).
-  // Ad-platform conversions used only as fallback for cost-per-event metrics (CPA, CPL, CAC)
-  // where the goal is tracking campaign events, not monetary transactions.
+  // Revenue = GA4 when available (e-commerce source of truth).
+  // For LOCAL business clients (Meta Ads only, no GA4), fall back to Meta pixel revenue
+  // so that FATURAMENTO / SALES / ROAS goals work correctly.
+  const revenue   = ga4Revenue > 0 ? ga4Revenue : adRevenue
+  // Purchases: GA4 preferred; fall back to Meta Ads pixel for LOCAL clients
   const purchases = ga4Purchases > 0 ? ga4Purchases : adPurchases
 
   if (metric === 'TAXA_CONVERSAO') {
@@ -95,7 +93,7 @@ function aggregateSnapshots(snapshots: Snapshot[], metric: MetricType): number |
   }
 
   if (metric === 'TICKET_MEDIO') {
-    return ga4Purchases > 0 && revenue > 0 ? revenue / ga4Purchases : null
+    return purchases > 0 && revenue > 0 ? revenue / purchases : null
   }
 
   if (metric === 'CPS') {
