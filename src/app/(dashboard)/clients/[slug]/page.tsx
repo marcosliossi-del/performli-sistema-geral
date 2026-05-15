@@ -116,7 +116,7 @@ export default async function ClientDetailPage({
   // Default: 1st of current month → yesterday
   const today = new Date()
   const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]
-  const defaultTo = new Date(today.setDate(today.getDate() - 1)).toISOString().split('T')[0]
+  const defaultTo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1).toISOString().split('T')[0]
   const activeFrom = from ?? defaultFrom
   const activeTo = to ?? defaultTo
 

@@ -590,8 +590,9 @@ export const getClientKPIs = cache(async (
     const adClicks       = ads.reduce((s, x) => s + (x.clicks ?? 0), 0)
     const allImpr        = ads.reduce((s, x) => s + (x.impressions ?? 0), 0)
     const adReach        = ads.reduce((s, x) => s + (x.reach ?? 0), 0)
-    // Ad conversions = event-based leads/messages from Meta Ads (used for local business CPL)
     const adConversions  = ads.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    // Meta-only conversions — used for adVendas so purchase count stays platform-specific
+    const metaConversions = meta.reduce((s, x) => s + (x.conversions ?? 0), 0)
     const ctrLink        = allImpr > 0 && adClicks > 0 ? (adClicks / allImpr) * 100 : null
     const cpcLink        = totalSpend > 0 && adClicks > 0 ? totalSpend / adClicks : null
 
@@ -602,9 +603,11 @@ export const getClientKPIs = cache(async (
 
     // Meta purchase conversions (restaurantes com pixel de compra)
     const adRevenueMeta = meta.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
-    // adVendas = Meta purchases (conversions stored when purchase actions fired)
-    // conversionValue > 0 signals a purchase campaign, not a lead campaign
-    const adVendas      = adRevenueMeta > 0 ? adConversions : 0
+    const isPurchaseCampaign = adRevenueMeta > 0
+    // adVendas = Meta pixel purchases only (not cross-platform)
+    const adVendas = isPurchaseCampaign ? metaConversions : 0
+    // For purchase campaigns, adLeads excludes Meta purchases (avoid double-counting same events)
+    const leadConversions = isPurchaseCampaign ? adConversions - metaConversions : adConversions
 
     // New Meta-specific fields for local business
     const mensagens        = meta.reduce((s, x) => s + (x.mensagens        ?? 0), 0)
@@ -620,7 +623,7 @@ export const getClientKPIs = cache(async (
       sessions, purchases, revenue, adImpr, newUsers,
       roas, roasMeta, roasGoogle, roasTiktok,
       ctrLink, cpcLink,
-      adLeads:          adConversions > 0 ? adConversions : null,
+      adLeads:          leadConversions > 0 ? leadConversions : null,
       adCliques:        adClicks > 0 ? adClicks : null,
       adAlcance:        adReach > 0 ? adReach : null,
       adImpressions:    allImpr > 0 ? allImpr : null,
@@ -641,7 +644,7 @@ export const getClientKPIs = cache(async (
       cpm:              adImpr > 0 && metaSpend > 0 ? (metaSpend / adImpr) * 1000 : null,
       cpa:              purchases > 0 && totalSpend > 0 ? totalSpend / purchases : null,
       cac:              purchases > 0 && totalSpend > 0 ? totalSpend / purchases : null,
-      cpl:              adConversions > 0 && totalSpend > 0 ? totalSpend / adConversions : null,
+      cpl:              leadConversions > 0 && totalSpend > 0 ? totalSpend / leadConversions : null,
     }
   }
 
