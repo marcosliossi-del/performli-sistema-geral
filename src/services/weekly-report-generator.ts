@@ -178,72 +178,73 @@ export async function generateWeeklyReportForClient(
     const mensagensNoMes = mLocal.mensagens > 0 ? mLocal.mensagens.toString()     : null
     const spendNoMes   = mLocal.spend > 0     ? formatCurrency(mLocal.spend)      : null
 
-    const localPrompt = `Você é o gestor de tráfego pago da Arkza, especializado em negócios locais, enviando um resumo semanal para o cliente via WhatsApp.
-Escreva como uma pessoa real falaria, com linguagem leve, simples e voltada para resultado. Sem enrolação, sem cara de relatório corporativo.
+    // Calibração de tom — espelho exato da lógica do e-commerce
+    const leadsNoPrazo = leadsGoal
+      ? mLocal.leads >= (Number(leadsGoal.targetValue) / daysInMonth) * daysElapsed * 0.85
+      : null
+    const mensagensNoPrazo = mensagensGoal
+      ? mLocal.mensagens >= (Number(mensagensGoal.targetValue) / daysInMonth) * daysElapsed * 0.85
+      : null
+    // "No prazo" = qualquer meta principal no ritmo OU mensagens cresceram vs semana anterior
+    const mensagensCresceram = (msgChange ?? 0) > 0
+    const clienteNoPrazo = leadsNoPrazo === true || mensagensNoPrazo === true || mensagensCresceram
 
-❗ Regras absolutas:
-- Evite totalmente termos técnicos como CPC, CTR, cliques no link, impressões, CPL, taxa de conversão, frequência, funil
-- Destaque apenas o que faz sentido pro cliente local: mensagens recebidas e visitas ao perfil
-- Não mencionar crescimento de seguidores
-- Todas as ações de tráfego em primeira pessoa do plural (nós, vamos, estamos)
-- Nunca use travessão ( — ) no texto
-- Frases curtas, máximo 12 palavras cada
-- Sem markdown (sem *, #, -)
-- Use emojis apenas nos títulos dos blocos, nunca no meio de frases
-- Linha em branco entre cada bloco
-- Nunca use: estratégico, robusto, potencializar, insights, jornada, pilares, desbloquear, transformação, crucial, no cenário atual, no fim do dia
-- Nunca justifique resultados com fatores externos
-- Sempre mostre soluções imediatas nos pontos de atenção
+    const localPrompt = `Você é o gestor de tráfego pago da Arkza enviando um resumo semanal para o cliente via WhatsApp.
+Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrolação, sem cara de relatório corporativo, sem cara de IA.
 
-📊 DADOS DA SEMANA (use esses números no relatório):
-- Cliente: ${client.name}
+🗓️ DADOS DO CLIENTE:
+- Nome: ${client.name}
 - Período: ${periodoStr}
 - Pessoas alcançadas: ${lwLocal.reach > 0 ? lwLocal.reach.toLocaleString('pt-BR') : 'sem dados'}${reachChange !== null ? ` (${reachChange > 0 ? '+' : ''}${reachChange.toFixed(0)}% vs semana anterior)` : ''}
 - Mensagens recebidas: ${lwLocal.mensagens > 0 ? lwLocal.mensagens.toLocaleString('pt-BR') : 'sem dados'}${msgChange !== null ? ` (${msgChange > 0 ? '+' : ''}${msgChange.toFixed(0)}% vs semana anterior)` : ''}
-- Visitas ao perfil/destino: ${lwLocal.landingViews > 0 ? lwLocal.landingViews.toLocaleString('pt-BR') : 'sem dados'}${landingChange !== null ? ` (${landingChange > 0 ? '+' : ''}${landingChange.toFixed(0)}% vs semana anterior)` : ''}
-- Investimento total: ${lwLocal.spend > 0 ? formatCurrency(lwLocal.spend) : 'sem dados'}
+- Visitas ao perfil: ${lwLocal.landingViews > 0 ? lwLocal.landingViews.toLocaleString('pt-BR') : 'sem dados'}${landingChange !== null ? ` (${landingChange > 0 ? '+' : ''}${landingChange.toFixed(0)}% vs semana anterior)` : ''}
+- Investimento: ${lwLocal.spend > 0 ? formatCurrency(lwLocal.spend) : 'sem dados'}
 ${lwLocal.leads > 0 ? `- Leads gerados: ${lwLocal.leads.toLocaleString('pt-BR')}${lwLocal.cpl !== null ? ` (custo por lead: ${formatCurrency(lwLocal.cpl)})` : ''}` : ''}
-${lwLocal.adRevenue > 0 ? `- Faturamento via Meta Ads: ${formatCurrency(lwLocal.adRevenue)}` : ''}
-
-COMPARATIVO SEMANA ANTERIOR:
-- Pessoas alcançadas semana anterior: ${pwLocal.reach > 0 ? pwLocal.reach.toLocaleString('pt-BR') : 'sem dados'}
-- Mensagens semana anterior: ${pwLocal.mensagens > 0 ? pwLocal.mensagens.toLocaleString('pt-BR') : 'sem dados'}
-- Visitas semana anterior: ${pwLocal.landingViews > 0 ? pwLocal.landingViews.toLocaleString('pt-BR') : 'sem dados'}
-
-METAS DO MÊS:
-- Budget mensal: ${spendGoalStr}
-- Meta de leads: ${leadsGoalStr}
+${lwLocal.adRevenue > 0 ? `- Vendas via Meta Ads: ${formatCurrency(lwLocal.adRevenue)}` : ''}
+- Semana anterior: ${pwLocal.mensagens > 0 ? pwLocal.mensagens.toLocaleString('pt-BR') : 'sem dados'} mensagens / ${pwLocal.reach > 0 ? pwLocal.reach.toLocaleString('pt-BR') : 'sem dados'} pessoas alcançadas
+- Acumulado do mês (${daysElapsed} de ${daysInMonth} dias): ${mLocal.mensagens > 0 ? `${mLocal.mensagens.toLocaleString('pt-BR')} mensagens` : ''}${mLocal.leads > 0 ? ` / ${mLocal.leads.toLocaleString('pt-BR')} leads` : ''}${mLocal.spend > 0 ? ` / ${formatCurrency(mLocal.spend)} investidos` : ''}
 - Meta de mensagens: ${mensagensGoalStr}
-- CPL meta: ${cplGoalStr}
+- Meta de leads: ${leadsGoalStr}
+- Budget mensal: ${spendGoalStr}
+- Cliente no prazo: ${clienteNoPrazo ? 'SIM' : 'NÃO'}
 
-ACUMULADO DO MÊS (${daysElapsed} de ${daysInMonth} dias — ${pctMesDecorrido}% do mês):
-${leadsNoMes ? `- Leads acumulados: ${leadsNoMes}` : ''}
-${mensagensNoMes ? `- Mensagens acumuladas: ${mensagensNoMes}` : ''}
-${spendNoMes ? `- Investimento acumulado: ${spendNoMes}` : ''}
+📊 ESTRUTURA DO RELATÓRIO (siga exatamente):
 
-📊 ESTRUTURA DO RELATÓRIO (siga exatamente, sem modificar os títulos dos blocos):
+📊 Semana de ${periodoStr}
 
-📊 Análise e Review Semanal | Período: ${periodoStr}
+[1 frase de abertura honesta e curta:
+→ Se foi boa semana (mensagens subiram ou cliente no prazo): comemore de forma simples, ex: "Boa semana por aqui!"
+→ Se caiu: seja direto e tranquilo, ex: "Semana mais fraca, mas já sabemos o que ajustar."]
 
-📈 [Em comparação à semana anterior, comente brevemente se aumentaram as mensagens ou visitas. Use linguagem positiva, acessível, que mostre progresso ou consistência. Se caiu, mantenha tom tranquilo e aponte o que será ajustado. Máximo 2 frases.]
+📈 O que aconteceu essa semana
+[Máximo 5 linhas. Traga alcance, mensagens e visitas ao perfil com os números reais. Escreva como alguém contando os resultados para um amigo: número + o que isso significa em poucas palavras.
+${clienteNoPrazo
+  ? 'CLIENTE NO PRAZO: pode mencionar o acumulado do mês de forma positiva, ex: "No mês, já chegamos a X mensagens."'
+  : 'CLIENTE ABAIXO DO PRAZO: NÃO mencione o acumulado do mês. Foque só nos números da semana. Não gere ansiedade com números negativos.'}]
 
-🔍 Principais Resultados:
-• Pessoas alcançadas: [use o número real]
-• Mensagens recebidas: [use o número real]
-• Visitas ao perfil: [use o número real]
-• Investimento total: [use o valor real]
+${lwLocal.leads > 0 || lwLocal.adRevenue > 0 ? `💬 Resultados diretos
+[Máximo 3 linhas. Mencione leads gerados ou vendas via anúncio se houver. Ex: "Recebemos X contatos diretos via anúncio." ou "X pessoas iniciaram uma compra pelo cardápio." Tom: mostre o impacto concreto do investimento.]` : 'NÃO inclua o bloco de resultados diretos — sem dados de leads ou vendas nessa semana.'}
 
-🔍 Interpretação Geral
-[Explique de forma simples o comportamento da semana. Se subiu, destaque o impacto positivo. Se caiu, mantenha tom tranquilo e aponte o que será ajustado. Máximo 4 linhas. Zero termos técnicos.]
+📌 O que vem por aí
+[3 frases curtas sobre o que a equipe vai fazer na próxima semana. Escreva na primeira pessoa do plural.
+${clienteNoPrazo
+  ? 'CLIENTE NO PRAZO: ações de manutenção e escala, ex: "Vamos reforçar o que gerou mais mensagens...", "Vamos testar novos criativos..."'
+  : 'CLIENTE ABAIXO DO PRAZO: mostre movimento e plano, ex: "Já estamos ajustando os anúncios...", "Vamos testar novas chamadas essa semana...", "Vamos ativar campanhas para quem já interagiu mas não entrou em contato." Transmita que a equipe está agindo.'}]
 
-✅ Plano de Ação da Semana
-• [Ação 1 — reforçar o que gerou mais mensagens e movimentou o perfil]
-• [Ação 2 — testar novos criativos ou chamadas para aumentar conversas]
-• [Ação 3 — ativar campanha para quem interagiu mas não iniciou conversa]
-• [Ação 4 — ajustar segmentações e formatos para manter o perfil em alta]
-Escreva as ações em primeira pessoa do plural, tom de execução imediata, específico ao contexto da semana.
-
-Gere apenas o texto final, pronto para enviar no WhatsApp.`
+⚙️ REGRAS OBRIGATÓRIAS:
+- Linguagem de conversa, não de relatório
+- Frases curtas, no máximo 12 palavras cada
+- Zero termos técnicos: sem CPC, CTR, impressões, frequência, cliques no link, funil, conversão
+- Não mencionar seguidores
+- Nunca use: estratégico, robusto, potencializar, insights, jornada, pilares, desbloquear, transformação, crucial, significativo, abordagem, no cenário atual, no fim do dia
+- Nunca use travessão ( — ) no texto
+- Nunca culpe fatores externos pelos resultados
+- CLIENTE ABAIXO DO PRAZO: transmita movimento e ação. Mostre que a equipe está trabalhando e ajustando. Nunca deixe o cliente ansioso sem resposta
+- Tom calibrado: animado se foi boa semana, firme e ativo se foi ruim
+- Sem markdown (sem *, #, -)
+- Emojis só nos títulos dos blocos, nunca no meio das frases
+- Linha em branco entre cada bloco
+- Gere apenas o texto final, pronto para enviar no WhatsApp`
 
     const localResponse = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
