@@ -130,11 +130,12 @@ export async function generateWeeklyReportForClient(
 
   // Metas mensais
   const faturamentoGoal = goals.find((g) => g.metric === 'FATURAMENTO')
-  const roasGoal   = goals.find((g) => g.metric === 'ROAS')
-  const spendGoal  = goals.find((g) => g.metric === 'SPEND' || g.metric === 'INVESTMENT')
-  const leadsGoal  = goals.find((g) => g.metric === 'LEADS')
-  const cplGoal    = goals.find((g) => g.metric === 'CPL')
-  const mensagensGoal = goals.find((g) => g.metric === 'MENSAGENS')
+  const roasGoal        = goals.find((g) => g.metric === 'ROAS')
+  const spendGoal       = goals.find((g) => g.metric === 'SPEND' || g.metric === 'INVESTMENT')
+  const leadsGoal       = goals.find((g) => g.metric === 'LEADS')
+  const cplGoal         = goals.find((g) => g.metric === 'CPL')
+  const mensagensGoal   = goals.find((g) => g.metric === 'MENSAGENS')
+  const conversionsGoal = goals.find((g) => g.metric === 'CONVERSIONS')
 
   const pctChange = (curr: number, prev: number) =>
     prev > 0 ? ((curr - prev) / prev) * 100 : null
@@ -160,52 +161,125 @@ export async function generateWeeklyReportForClient(
     const pwLocal = computeLocalMetrics(prevWeekSnaps)
     const mLocal  = computeLocalMetrics(monthSnaps)
 
-    const periodoStr = `${lastWeekStart.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} a ${lastWeekEnd.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`
+    const periodoStr  = `${lastWeekStart.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} a ${lastWeekEnd.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`
     const daysElapsed = today.getDate()
     const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
 
-    const msgChange   = pctChange(lwLocal.mensagens,   pwLocal.mensagens)
-    const reachChange = pctChange(lwLocal.reach,        pwLocal.reach)
+    const msgChange     = pctChange(lwLocal.mensagens,   pwLocal.mensagens)
+    const reachChange   = pctChange(lwLocal.reach,        pwLocal.reach)
     const landingChange = pctChange(lwLocal.landingViews, pwLocal.landingViews)
+    const leadsChange   = pctChange(lwLocal.leads,        pwLocal.leads)
+    const revenueChange = pctChange(lwLocal.adRevenue,    pwLocal.adRevenue)
 
-    const spendGoalStr   = spendGoal   ? formatCurrency(Number(spendGoal.targetValue))  : 'não definida'
-    const leadsGoalStr   = leadsGoal   ? leadsGoal.targetValue.toString()               : 'não definida'
-    const cplGoalStr     = cplGoal     ? formatCurrency(Number(cplGoal.targetValue))    : 'não definida'
-    const mensagensGoalStr = mensagensGoal ? mensagensGoal.targetValue.toString()       : 'não definida'
+    // ── Detect goal profile (what this client actually cares about) ──────────
+    const isRestaurantMode = !!(conversionsGoal || faturamentoGoal)
+    const hasLeadsGoal     = !!leadsGoal
+    const hasMensagensGoal = !!mensagensGoal
 
-    const pctMesDecorrido = Math.round((daysElapsed / daysInMonth) * 100)
-    const leadsNoMes   = mLocal.leads > 0     ? mLocal.leads.toString()           : null
-    const mensagensNoMes = mLocal.mensagens > 0 ? mLocal.mensagens.toString()     : null
-    const spendNoMes   = mLocal.spend > 0     ? formatCurrency(mLocal.spend)      : null
+    let objetivoPrincipal: string
+    if (isRestaurantMode)      objetivoPrincipal = 'vendas e pedidos via anúncio (tipo restaurante/delivery)'
+    else if (hasLeadsGoal)     objetivoPrincipal = 'geração de leads e cadastros'
+    else if (hasMensagensGoal) objetivoPrincipal = 'geração de mensagens e contatos'
+    else                        objetivoPrincipal = 'alcance e engajamento geral'
 
-    // Calibração de tom — espelho exato da lógica do e-commerce
+    // ── Calibração de tom ────────────────────────────────────────────────────
     const leadsNoPrazo = leadsGoal
       ? mLocal.leads >= (Number(leadsGoal.targetValue) / daysInMonth) * daysElapsed * 0.85
       : null
     const mensagensNoPrazo = mensagensGoal
       ? mLocal.mensagens >= (Number(mensagensGoal.targetValue) / daysInMonth) * daysElapsed * 0.85
       : null
-    // "No prazo" = qualquer meta principal no ritmo OU mensagens cresceram vs semana anterior
+    const conversionsNoPrazo = conversionsGoal
+      ? mLocal.leads >= (Number(conversionsGoal.targetValue) / daysInMonth) * daysElapsed * 0.85
+      : null
+    const faturamentoNoPrazo = faturamentoGoal && isRestaurantMode
+      ? mLocal.adRevenue >= (Number(faturamentoGoal.targetValue) / daysInMonth) * daysElapsed * 0.85
+      : null
     const mensagensCresceram = (msgChange ?? 0) > 0
-    const clienteNoPrazo = leadsNoPrazo === true || mensagensNoPrazo === true || mensagensCresceram
+    const clienteNoPrazo = conversionsNoPrazo === true || faturamentoNoPrazo === true ||
+                           leadsNoPrazo === true || mensagensNoPrazo === true || mensagensCresceram
+
+    // ── Goal strings ─────────────────────────────────────────────────────────
+    const spendGoalStr     = spendGoal       ? formatCurrency(Number(spendGoal.targetValue))       : 'não definido'
+    const leadsGoalStr     = leadsGoal       ? leadsGoal.targetValue.toString()                    : null
+    const cplGoalStr       = cplGoal         ? formatCurrency(Number(cplGoal.targetValue))         : null
+    const mensagensGoalStr = mensagensGoal   ? mensagensGoal.targetValue.toString()                : null
+    const convGoalStr      = conversionsGoal ? conversionsGoal.targetValue.toString()              : null
+    const fatGoalStr       = faturamentoGoal && isRestaurantMode
+                             ? formatCurrency(Number(faturamentoGoal.targetValue))                 : null
+
+    // ── Dynamic data block (highlight what the client measures first) ────────
+    let dadosPrimarios: string
+    if (isRestaurantMode) {
+      dadosPrimarios = [
+        `- Pedidos via anúncio: ${lwLocal.leads > 0 ? lwLocal.leads.toLocaleString('pt-BR') : 'sem dados'}${leadsChange !== null ? ` (${leadsChange > 0 ? '+' : ''}${leadsChange.toFixed(0)}% vs semana anterior)` : ''}`,
+        lwLocal.adRevenue > 0 ? `- Faturamento via anúncio: ${formatCurrency(lwLocal.adRevenue)}${revenueChange !== null ? ` (${revenueChange > 0 ? '+' : ''}${revenueChange.toFixed(0)}% vs semana anterior)` : ''}` : '',
+        `- Pessoas alcançadas: ${lwLocal.reach > 0 ? lwLocal.reach.toLocaleString('pt-BR') : 'sem dados'}${reachChange !== null ? ` (${reachChange > 0 ? '+' : ''}${reachChange.toFixed(0)}% vs semana anterior)` : ''}`,
+        `- Investimento: ${lwLocal.spend > 0 ? formatCurrency(lwLocal.spend) : 'sem dados'}`,
+        convGoalStr ? `- Meta de pedidos: ${convGoalStr}/mês` : '',
+        fatGoalStr  ? `- Meta de faturamento: ${fatGoalStr}/mês` : '',
+        `- Budget mensal: ${spendGoalStr}`,
+      ].filter(Boolean).join('\n')
+    } else if (hasLeadsGoal) {
+      dadosPrimarios = [
+        `- Leads gerados: ${lwLocal.leads > 0 ? `${lwLocal.leads.toLocaleString('pt-BR')}${lwLocal.cpl !== null ? ` (custo por lead: ${formatCurrency(lwLocal.cpl)})` : ''}` : 'sem dados'}${leadsChange !== null ? ` (${leadsChange > 0 ? '+' : ''}${leadsChange.toFixed(0)}% vs semana anterior)` : ''}`,
+        `- Pessoas alcançadas: ${lwLocal.reach > 0 ? lwLocal.reach.toLocaleString('pt-BR') : 'sem dados'}${reachChange !== null ? ` (${reachChange > 0 ? '+' : ''}${reachChange.toFixed(0)}% vs semana anterior)` : ''}`,
+        `- Visitas ao perfil: ${lwLocal.landingViews > 0 ? lwLocal.landingViews.toLocaleString('pt-BR') : 'sem dados'}`,
+        `- Investimento: ${lwLocal.spend > 0 ? formatCurrency(lwLocal.spend) : 'sem dados'}`,
+        leadsGoalStr ? `- Meta de leads: ${leadsGoalStr}/mês` : '',
+        cplGoalStr   ? `- Meta de CPL: ${cplGoalStr}` : '',
+        `- Budget mensal: ${spendGoalStr}`,
+      ].filter(Boolean).join('\n')
+    } else {
+      dadosPrimarios = [
+        `- Mensagens recebidas: ${lwLocal.mensagens > 0 ? lwLocal.mensagens.toLocaleString('pt-BR') : 'sem dados'}${msgChange !== null ? ` (${msgChange > 0 ? '+' : ''}${msgChange.toFixed(0)}% vs semana anterior)` : ''}`,
+        `- Pessoas alcançadas: ${lwLocal.reach > 0 ? lwLocal.reach.toLocaleString('pt-BR') : 'sem dados'}${reachChange !== null ? ` (${reachChange > 0 ? '+' : ''}${reachChange.toFixed(0)}% vs semana anterior)` : ''}`,
+        `- Visitas ao perfil: ${lwLocal.landingViews > 0 ? lwLocal.landingViews.toLocaleString('pt-BR') : 'sem dados'}${landingChange !== null ? ` (${landingChange > 0 ? '+' : ''}${landingChange.toFixed(0)}% vs semana anterior)` : ''}`,
+        `- Investimento: ${lwLocal.spend > 0 ? formatCurrency(lwLocal.spend) : 'sem dados'}`,
+        mensagensGoalStr ? `- Meta de mensagens: ${mensagensGoalStr}/mês` : '',
+        `- Budget mensal: ${spendGoalStr}`,
+      ].filter(Boolean).join('\n')
+    }
+
+    const semanaAnteriorStr = isRestaurantMode
+      ? `${pwLocal.leads > 0 ? pwLocal.leads.toLocaleString('pt-BR') + ' pedidos' : 'sem dados'} / ${pwLocal.reach > 0 ? pwLocal.reach.toLocaleString('pt-BR') : 'sem dados'} alcançadas`
+      : hasLeadsGoal
+        ? `${pwLocal.leads > 0 ? pwLocal.leads.toLocaleString('pt-BR') : 'sem dados'} leads / ${pwLocal.reach > 0 ? pwLocal.reach.toLocaleString('pt-BR') : 'sem dados'} alcançadas`
+        : `${pwLocal.mensagens > 0 ? pwLocal.mensagens.toLocaleString('pt-BR') : 'sem dados'} mensagens / ${pwLocal.reach > 0 ? pwLocal.reach.toLocaleString('pt-BR') : 'sem dados'} alcançadas`
+
+    const acumuladoMesStr = isRestaurantMode
+      ? [mLocal.leads > 0 ? `${mLocal.leads.toLocaleString('pt-BR')} pedidos` : '', mLocal.adRevenue > 0 ? formatCurrency(mLocal.adRevenue) + ' faturados' : '', mLocal.spend > 0 ? formatCurrency(mLocal.spend) + ' investidos' : ''].filter(Boolean).join(' / ')
+      : hasLeadsGoal
+        ? [mLocal.leads > 0 ? `${mLocal.leads.toLocaleString('pt-BR')} leads` : '', mLocal.spend > 0 ? formatCurrency(mLocal.spend) + ' investidos' : ''].filter(Boolean).join(' / ')
+        : [mLocal.mensagens > 0 ? `${mLocal.mensagens.toLocaleString('pt-BR')} mensagens` : '', mLocal.leads > 0 ? `${mLocal.leads.toLocaleString('pt-BR')} leads` : '', mLocal.spend > 0 ? formatCurrency(mLocal.spend) + ' investidos' : ''].filter(Boolean).join(' / ')
+
+    // ── Dynamic prompt blocks ────────────────────────────────────────────────
+    const focoSemana = isRestaurantMode
+      ? 'Foco PRINCIPAL: pedidos e faturamento via anúncio. Mencione alcance como contexto, mas os pedidos e o faturamento são as métricas de destaque.'
+      : hasLeadsGoal
+        ? 'Foco PRINCIPAL: leads gerados e custo por lead. Mencione alcance e visitas como contexto, mas o número de leads é a métrica mais importante.'
+        : 'Foco PRINCIPAL: mensagens recebidas e pessoas alcançadas. Esses são os indicadores centrais para este cliente.'
+
+    const blocoResultados = isRestaurantMode
+      ? `💬 Resultados diretos
+[Máximo 3 linhas. Este cliente mede vendas/pedidos. Traga quantos pedidos vieram via anúncio. Se tiver faturamento, mencione. Ex: "Vieram X pedidos direto pelo anúncio." Tom: impacto concreto do investimento.]`
+      : hasLeadsGoal && lwLocal.leads > 0
+        ? `💬 Resultados diretos
+[Máximo 3 linhas. Este cliente mede geração de leads. Traga quantos leads vieram essa semana e o custo por lead. Ex: "Recebemos X novos cadastros essa semana." Tom: impacto concreto do investimento.]`
+        : `NÃO inclua o bloco de resultados diretos — ${hasLeadsGoal ? 'sem leads registrados essa semana' : 'cliente foca em alcance e mensagens, não em conversões diretas'}.`
 
     const localPrompt = `Você é o gestor de tráfego pago da Arkza enviando um resumo semanal para o cliente via WhatsApp.
 Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrolação, sem cara de relatório corporativo, sem cara de IA.
 
+OBJETIVO PRINCIPAL DESTE CLIENTE: ${objetivoPrincipal}
+Este relatório deve ser construído em torno desse objetivo. Não fale de métricas que o cliente não está medindo.
+
 🗓️ DADOS DO CLIENTE:
 - Nome: ${client.name}
 - Período: ${periodoStr}
-- Pessoas alcançadas: ${lwLocal.reach > 0 ? lwLocal.reach.toLocaleString('pt-BR') : 'sem dados'}${reachChange !== null ? ` (${reachChange > 0 ? '+' : ''}${reachChange.toFixed(0)}% vs semana anterior)` : ''}
-- Mensagens recebidas: ${lwLocal.mensagens > 0 ? lwLocal.mensagens.toLocaleString('pt-BR') : 'sem dados'}${msgChange !== null ? ` (${msgChange > 0 ? '+' : ''}${msgChange.toFixed(0)}% vs semana anterior)` : ''}
-- Visitas ao perfil: ${lwLocal.landingViews > 0 ? lwLocal.landingViews.toLocaleString('pt-BR') : 'sem dados'}${landingChange !== null ? ` (${landingChange > 0 ? '+' : ''}${landingChange.toFixed(0)}% vs semana anterior)` : ''}
-- Investimento: ${lwLocal.spend > 0 ? formatCurrency(lwLocal.spend) : 'sem dados'}
-${lwLocal.leads > 0 ? `- Leads gerados: ${lwLocal.leads.toLocaleString('pt-BR')}${lwLocal.cpl !== null ? ` (custo por lead: ${formatCurrency(lwLocal.cpl)})` : ''}` : ''}
-${lwLocal.adRevenue > 0 ? `- Vendas via Meta Ads: ${formatCurrency(lwLocal.adRevenue)}` : ''}
-- Semana anterior: ${pwLocal.mensagens > 0 ? pwLocal.mensagens.toLocaleString('pt-BR') : 'sem dados'} mensagens / ${pwLocal.reach > 0 ? pwLocal.reach.toLocaleString('pt-BR') : 'sem dados'} pessoas alcançadas
-- Acumulado do mês (${daysElapsed} de ${daysInMonth} dias): ${mLocal.mensagens > 0 ? `${mLocal.mensagens.toLocaleString('pt-BR')} mensagens` : ''}${mLocal.leads > 0 ? ` / ${mLocal.leads.toLocaleString('pt-BR')} leads` : ''}${mLocal.spend > 0 ? ` / ${formatCurrency(mLocal.spend)} investidos` : ''}
-- Meta de mensagens: ${mensagensGoalStr}
-- Meta de leads: ${leadsGoalStr}
-- Budget mensal: ${spendGoalStr}
+${dadosPrimarios}
+- Semana anterior: ${semanaAnteriorStr}
+- Acumulado do mês (${daysElapsed} de ${daysInMonth} dias): ${acumuladoMesStr || 'sem dados'}
 - Cliente no prazo: ${clienteNoPrazo ? 'SIM' : 'NÃO'}
 
 📊 ESTRUTURA DO RELATÓRIO (siga exatamente):
@@ -213,22 +287,21 @@ ${lwLocal.adRevenue > 0 ? `- Vendas via Meta Ads: ${formatCurrency(lwLocal.adRev
 📊 Semana de ${periodoStr}
 
 [1 frase de abertura honesta e curta:
-→ Se foi boa semana (mensagens subiram ou cliente no prazo): comemore de forma simples, ex: "Boa semana por aqui!"
+→ Se foi boa semana (cliente no prazo): comemore de forma simples, ex: "Boa semana por aqui!"
 → Se caiu: seja direto e tranquilo, ex: "Semana mais fraca, mas já sabemos o que ajustar."]
 
 📈 O que aconteceu essa semana
-[Máximo 5 linhas. Traga alcance, mensagens e visitas ao perfil com os números reais. Escreva como alguém contando os resultados para um amigo: número + o que isso significa em poucas palavras.
+[Máximo 5 linhas. ${focoSemana} Escreva como alguém contando os resultados para um amigo: número + o que isso significa em poucas palavras.
 ${clienteNoPrazo
-  ? 'CLIENTE NO PRAZO: pode mencionar o acumulado do mês de forma positiva, ex: "No mês, já chegamos a X mensagens."'
+  ? 'CLIENTE NO PRAZO: pode mencionar o acumulado do mês de forma positiva.'
   : 'CLIENTE ABAIXO DO PRAZO: NÃO mencione o acumulado do mês. Foque só nos números da semana. Não gere ansiedade com números negativos.'}]
 
-${lwLocal.leads > 0 || lwLocal.adRevenue > 0 ? `💬 Resultados diretos
-[Máximo 3 linhas. Mencione leads gerados ou vendas via anúncio se houver. Ex: "Recebemos X contatos diretos via anúncio." ou "X pessoas iniciaram uma compra pelo cardápio." Tom: mostre o impacto concreto do investimento.]` : 'NÃO inclua o bloco de resultados diretos — sem dados de leads ou vendas nessa semana.'}
+${blocoResultados}
 
 📌 O que vem por aí
 [3 frases curtas sobre o que a equipe vai fazer na próxima semana. Escreva na primeira pessoa do plural.
 ${clienteNoPrazo
-  ? 'CLIENTE NO PRAZO: ações de manutenção e escala, ex: "Vamos reforçar o que gerou mais mensagens...", "Vamos testar novos criativos..."'
+  ? 'CLIENTE NO PRAZO: ações de manutenção e escala, ex: "Vamos reforçar o que gerou mais resultados...", "Vamos testar novos criativos..."'
   : 'CLIENTE ABAIXO DO PRAZO: mostre movimento e plano, ex: "Já estamos ajustando os anúncios...", "Vamos testar novas chamadas essa semana...", "Vamos ativar campanhas para quem já interagiu mas não entrou em contato." Transmita que a equipe está agindo.'}]
 
 ⚙️ REGRAS OBRIGATÓRIAS:
@@ -566,43 +639,112 @@ export async function generateMonthlyReportForClient(
     const curr = computeLocal(currSnaps)
     const prev = computeLocal(prevSnaps)
 
-    const leadsGoal    = goals.find((g) => g.metric === 'LEADS')
-    const mensagensGoal= goals.find((g) => g.metric === 'MENSAGENS')
-    const spendGoal    = goals.find((g) => g.metric === 'SPEND' || g.metric === 'INVESTMENT')
-    const cplGoal      = goals.find((g) => g.metric === 'CPL')
+    const leadsGoalM      = goals.find((g) => g.metric === 'LEADS')
+    const mensagensGoalM  = goals.find((g) => g.metric === 'MENSAGENS')
+    const spendGoalM      = goals.find((g) => g.metric === 'SPEND' || g.metric === 'INVESTMENT')
+    const cplGoalM        = goals.find((g) => g.metric === 'CPL')
+    const conversionsGoalM= goals.find((g) => g.metric === 'CONVERSIONS')
+    const faturamentoGoalM= goals.find((g) => g.metric === 'FATURAMENTO')
 
-    const leadsAchieved    = leadsGoal    ? Math.round((curr.leads    / Number(leadsGoal.targetValue))    * 100) : null
-    const mensagensAchieved= mensagensGoal? Math.round((curr.mensagens/ Number(mensagensGoal.targetValue)) * 100) : null
+    // ── Detect client goal profile ───────────────────────────────────────────
+    const isRestaurantMode = !!(conversionsGoalM || faturamentoGoalM)
+    const hasLeadsGoalM    = !!leadsGoalM
+    const hasMensagensGoalM= !!mensagensGoalM
 
-    const msgChange   = pctChange(curr.mensagens,   prev.mensagens)
-    const reachChange = pctChange(curr.reach,        prev.reach)
-    const landingChange=pctChange(curr.landingViews, prev.landingViews)
+    let objetivoPrincipal: string
+    if (isRestaurantMode)       objetivoPrincipal = 'vendas e pedidos via anúncio (tipo restaurante/delivery)'
+    else if (hasLeadsGoalM)     objetivoPrincipal = 'geração de leads e cadastros'
+    else if (hasMensagensGoalM) objetivoPrincipal = 'geração de mensagens e contatos'
+    else                         objetivoPrincipal = 'alcance e engajamento geral'
 
-    const foiBomMes = (msgChange ?? 0) >= 0 || (leadsAchieved ?? 0) >= 90 || (mensagensAchieved ?? 0) >= 90
+    // ── Achievement percentages (only for metrics with goals) ────────────────
+    const leadsAchieved     = leadsGoalM     ? Math.round((curr.leads     / Number(leadsGoalM.targetValue))     * 100) : null
+    const mensagensAchieved = mensagensGoalM ? Math.round((curr.mensagens / Number(mensagensGoalM.targetValue)) * 100) : null
+    const convAchieved      = conversionsGoalM ? Math.round((curr.leads   / Number(conversionsGoalM.targetValue)) * 100) : null
+    const fatAchieved       = faturamentoGoalM && curr.adRevenue > 0
+                              ? Math.round((curr.adRevenue / Number(faturamentoGoalM.targetValue)) * 100) : null
+
+    const msgChange    = pctChange(curr.mensagens,   prev.mensagens)
+    const reachChange  = pctChange(curr.reach,        prev.reach)
+    const landingChange= pctChange(curr.landingViews, prev.landingViews)
+    const leadsChgM    = pctChange(curr.leads,        prev.leads)
+    const revenueChgM  = pctChange(curr.adRevenue,    prev.adRevenue)
+
+    // ── Tom do mês ───────────────────────────────────────────────────────────
+    const foiBomMes = isRestaurantMode
+      ? (convAchieved ?? 0) >= 90 || (fatAchieved ?? 0) >= 90 || (revenueChgM ?? 0) >= 0
+      : hasLeadsGoalM
+        ? (leadsAchieved ?? 0) >= 90 || (leadsChgM ?? 0) >= 0
+        : (msgChange ?? 0) >= 0 || (mensagensAchieved ?? 0) >= 90
+
+    // ── Dynamic data block ───────────────────────────────────────────────────
+    let dadosPrimarios: string
+    if (isRestaurantMode) {
+      dadosPrimarios = [
+        `- Pedidos via anúncio: ${curr.leads > 0 ? curr.leads.toLocaleString('pt-BR') : 'sem dados'}${leadsChgM !== null ? ` (${leadsChgM > 0 ? '+' : ''}${leadsChgM.toFixed(0)}% vs mês anterior)` : ''}`,
+        curr.adRevenue > 0 ? `- Faturamento via anúncio: ${formatCurrency(curr.adRevenue)}${revenueChgM !== null ? ` (${revenueChgM > 0 ? '+' : ''}${revenueChgM.toFixed(0)}% vs mês anterior)` : ''}` : '',
+        `- Pessoas alcançadas: ${curr.reach > 0 ? curr.reach.toLocaleString('pt-BR') : 'sem dados'}${reachChange !== null ? ` (${reachChange > 0 ? '+' : ''}${reachChange.toFixed(0)}% vs mês anterior)` : ''}`,
+        `- Investimento total: ${curr.spend > 0 ? formatCurrency(curr.spend) : 'sem dados'}`,
+        conversionsGoalM ? `- Meta de pedidos: ${conversionsGoalM.targetValue} (atingido: ${convAchieved ?? '—'}%)` : '',
+        faturamentoGoalM ? `- Meta de faturamento: ${formatCurrency(Number(faturamentoGoalM.targetValue))} (atingido: ${fatAchieved ?? '—'}%)` : '',
+        spendGoalM ? `- Budget: ${formatCurrency(Number(spendGoalM.targetValue))}` : '',
+      ].filter(Boolean).join('\n')
+    } else if (hasLeadsGoalM) {
+      dadosPrimarios = [
+        `- Leads gerados: ${curr.leads > 0 ? `${curr.leads.toLocaleString('pt-BR')}${curr.cpl !== null ? ` (custo por lead: ${formatCurrency(curr.cpl)})` : ''}` : 'sem dados'}${leadsChgM !== null ? ` (${leadsChgM > 0 ? '+' : ''}${leadsChgM.toFixed(0)}% vs mês anterior)` : ''}`,
+        `- Pessoas alcançadas: ${curr.reach > 0 ? curr.reach.toLocaleString('pt-BR') : 'sem dados'}${reachChange !== null ? ` (${reachChange > 0 ? '+' : ''}${reachChange.toFixed(0)}% vs mês anterior)` : ''}`,
+        `- Visitas ao perfil: ${curr.landingViews > 0 ? curr.landingViews.toLocaleString('pt-BR') : 'sem dados'}`,
+        `- Investimento total: ${curr.spend > 0 ? formatCurrency(curr.spend) : 'sem dados'}`,
+        leadsGoalM ? `- Meta de leads: ${leadsGoalM.targetValue} (atingido: ${leadsAchieved ?? '—'}%)` : '',
+        cplGoalM   ? `- Meta de CPL: ${formatCurrency(Number(cplGoalM.targetValue))}` : '',
+        spendGoalM ? `- Budget: ${formatCurrency(Number(spendGoalM.targetValue))}` : '',
+      ].filter(Boolean).join('\n')
+    } else {
+      dadosPrimarios = [
+        `- Mensagens recebidas: ${curr.mensagens > 0 ? curr.mensagens.toLocaleString('pt-BR') : 'sem dados'}${msgChange !== null ? ` (${msgChange > 0 ? '+' : ''}${msgChange.toFixed(0)}% vs mês anterior)` : ''}`,
+        `- Pessoas alcançadas: ${curr.reach > 0 ? curr.reach.toLocaleString('pt-BR') : 'sem dados'}${reachChange !== null ? ` (${reachChange > 0 ? '+' : ''}${reachChange.toFixed(0)}% vs mês anterior)` : ''}`,
+        `- Visitas ao perfil: ${curr.landingViews > 0 ? curr.landingViews.toLocaleString('pt-BR') : 'sem dados'}${landingChange !== null ? ` (${landingChange > 0 ? '+' : ''}${landingChange.toFixed(0)}% vs mês anterior)` : ''}`,
+        `- Investimento total: ${curr.spend > 0 ? formatCurrency(curr.spend) : 'sem dados'}`,
+        mensagensGoalM ? `- Meta de mensagens: ${mensagensGoalM.targetValue} (atingido: ${mensagensAchieved ?? '—'}%)` : '',
+        curr.leads > 0 ? `- Leads gerados: ${curr.leads.toLocaleString('pt-BR')}${curr.cpl !== null ? ` (CPL: ${formatCurrency(curr.cpl)})` : ''}` : '',
+        spendGoalM ? `- Budget: ${formatCurrency(Number(spendGoalM.targetValue))}` : '',
+      ].filter(Boolean).join('\n')
+    }
+
+    const prevComparativo = isRestaurantMode
+      ? `- Pedidos: ${prev.leads > 0 ? prev.leads.toLocaleString('pt-BR') : 'sem dados'}\n- Alcance: ${prev.reach > 0 ? prev.reach.toLocaleString('pt-BR') : 'sem dados'}\n- Investimento: ${prev.spend > 0 ? formatCurrency(prev.spend) : 'sem dados'}`
+      : hasLeadsGoalM
+        ? `- Leads: ${prev.leads > 0 ? prev.leads.toLocaleString('pt-BR') : 'sem dados'}\n- Alcance: ${prev.reach > 0 ? prev.reach.toLocaleString('pt-BR') : 'sem dados'}\n- Investimento: ${prev.spend > 0 ? formatCurrency(prev.spend) : 'sem dados'}`
+        : `- Mensagens: ${prev.mensagens > 0 ? prev.mensagens.toLocaleString('pt-BR') : 'sem dados'}\n- Alcance: ${prev.reach > 0 ? prev.reach.toLocaleString('pt-BR') : 'sem dados'}\n- Investimento: ${prev.spend > 0 ? formatCurrency(prev.spend) : 'sem dados'}`
+
+    const focoMesInstrucao = isRestaurantMode
+      ? 'Foco PRINCIPAL: pedidos e faturamento via anúncio. Mencione alcance como contexto. Os pedidos e o faturamento são as métricas de destaque para este cliente.'
+      : hasLeadsGoalM
+        ? 'Foco PRINCIPAL: leads gerados e custo por lead. Mencione alcance como contexto. O número de leads e o CPL são as métricas de destaque.'
+        : 'Foco PRINCIPAL: mensagens recebidas e pessoas alcançadas. Esses são os indicadores centrais para este cliente.'
+
+    const blocoResultadosMes = isRestaurantMode
+      ? `💬 Resultados diretos
+[Máximo 3 linhas. Este cliente mede vendas/pedidos. Traga o total de pedidos do mês via anúncio e o faturamento se disponível. Ex: "No mês, vieram X pedidos direto pelos anúncios." Mostre o impacto concreto.]`
+      : hasLeadsGoalM && curr.leads > 0
+        ? `💬 Resultados diretos
+[Máximo 3 linhas. Este cliente mede geração de leads. Traga o total de leads do mês e o CPL. Ex: "Ao longo do mês, recebemos X novos cadastros." Mostre o impacto concreto.]`
+        : `NÃO inclua o bloco de resultados diretos.`
 
     const localMonthlyPrompt = `Você é o gestor de tráfego pago da Arkza enviando o relatório mensal para o cliente via WhatsApp.
 Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrolação, sem cara de relatório corporativo.
 
+OBJETIVO PRINCIPAL DESTE CLIENTE: ${objetivoPrincipal}
+Este relatório deve ser construído em torno desse objetivo. Não fale de métricas que o cliente não está medindo.
+
 🗓️ DADOS DO MÊS:
 - Cliente: ${client.name}
 - Mês: ${monthLabel}
-- Pessoas alcançadas: ${curr.reach > 0 ? curr.reach.toLocaleString('pt-BR') : 'sem dados'}${reachChange !== null ? ` (${reachChange > 0 ? '+' : ''}${reachChange.toFixed(0)}% vs mês anterior)` : ''}
-- Mensagens recebidas: ${curr.mensagens > 0 ? curr.mensagens.toLocaleString('pt-BR') : 'sem dados'}${msgChange !== null ? ` (${msgChange > 0 ? '+' : ''}${msgChange.toFixed(0)}% vs mês anterior)` : ''}
-- Visitas ao perfil: ${curr.landingViews > 0 ? curr.landingViews.toLocaleString('pt-BR') : 'sem dados'}${landingChange !== null ? ` (${landingChange > 0 ? '+' : ''}${landingChange.toFixed(0)}% vs mês anterior)` : ''}
-- Investimento total: ${curr.spend > 0 ? formatCurrency(curr.spend) : 'sem dados'}
-${curr.leads > 0 ? `- Leads gerados: ${curr.leads.toLocaleString('pt-BR')}${curr.cpl !== null ? ` (custo por lead: ${formatCurrency(curr.cpl)})` : ''}` : ''}
-${curr.adRevenue > 0 ? `- Faturamento via Meta Ads: ${formatCurrency(curr.adRevenue)}` : ''}
+${dadosPrimarios}
 
 MÊS ANTERIOR (comparativo):
-- Mensagens: ${prev.mensagens > 0 ? prev.mensagens.toLocaleString('pt-BR') : 'sem dados'}
-- Alcance: ${prev.reach > 0 ? prev.reach.toLocaleString('pt-BR') : 'sem dados'}
-- Investimento: ${prev.spend > 0 ? formatCurrency(prev.spend) : 'sem dados'}
+${prevComparativo}
 
-METAS DO MÊS:
-- Budget: ${spendGoal ? formatCurrency(Number(spendGoal.targetValue)) : 'não definida'}
-- Meta de leads: ${leadsGoal ? `${leadsGoal.targetValue} (atingido: ${leadsAchieved ?? '—'}%)` : 'não definida'}
-- Meta de mensagens: ${mensagensGoal ? `${mensagensGoal.targetValue} (atingido: ${mensagensAchieved ?? '—'}%)` : 'não definida'}
-- CPL meta: ${cplGoal ? formatCurrency(Number(cplGoal.targetValue)) : 'não definida'}
 - Foi bom mês: ${foiBomMes ? 'SIM' : 'NÃO'}
 
 📊 ESTRUTURA DO RELATÓRIO (siga exatamente):
@@ -614,11 +756,10 @@ METAS DO MÊS:
 → Mês fraco: direto e tranquilo, ex: "Mês mais desafiador, mas já temos ajustes em andamento."]
 
 📈 O que aconteceu em ${monthLabel}
-[Máximo 5 linhas. Alcance, mensagens, visitas ao perfil, investimento. Número + o que significa. Compare com mês anterior quando relevante.
-${foiBomMes ? 'BOM MÊS: pode celebrar os resultados e mencionar metas atingidas.' : 'MÊS FRACO: foco nos números da semana, sem expor negatividade. Mostre o que foi feito e o que ajustará.'}]
+[Máximo 5 linhas. ${focoMesInstrucao} Compare com mês anterior quando relevante. Número + o que significa.
+${foiBomMes ? 'BOM MÊS: celebre os resultados e mencione metas atingidas.' : 'MÊS FRACO: foco nos números, sem expor negatividade. Mostre o que foi feito e o que será ajustado.'}]
 
-${curr.leads > 0 || curr.adRevenue > 0 ? `💬 Resultados diretos
-[Máximo 3 linhas. Leads ou vendas gerados pelo anúncio. Ex: "Recebemos X contatos diretos." ou "X pessoas compraram pelo cardápio digital." Mostre o impacto concreto.]` : 'NÃO inclua o bloco de resultados diretos.'}
+${blocoResultadosMes}
 
 📌 O que vem aí no próximo mês
 [3 frases curtas sobre as ações do próximo mês. Primeira pessoa do plural.
