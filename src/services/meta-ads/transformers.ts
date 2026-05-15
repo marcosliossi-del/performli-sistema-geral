@@ -78,14 +78,18 @@ export interface TransformedCampaignSnapshot {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Tipos de compra que o Meta pode retornar dependendo do pixel configurado
+// Priority order: Meta can return the same purchase under multiple action_type keys.
+// Use the FIRST match to avoid summing overlapping events.
+// - 'purchase'                          → canonical pixel+app metric (preferred)
+// - 'offsite_conversion.fb_pixel_purchase' → pixel-only (subset of 'purchase')
+// - 'omni_purchase'                     → cross-channel (superset, can overlap)
 const PURCHASE_ACTIONS = [
   'purchase',
   'offsite_conversion.fb_pixel_purchase',
   'omni_purchase',
 ]
 
-// Tipos de conversão genérica (fallback para clientes sem pixel de compra)
+// For lead-gen clients: same dedup logic (stop at first matching type)
 const CONVERSION_ACTIONS = [
   'purchase',
   'lead',
@@ -96,14 +100,19 @@ const CONVERSION_ACTIONS = [
   'omni_purchase',
 ]
 
+// Returns the value of the FIRST matching action type (not the sum of all matches).
+// Meta often reports the same conversion under several action_type names; summing them
+// inflates the count (e.g. 10 real orders → purchase=10 + fb_pixel_purchase=10 + omni=10 = 30).
 function findAction(
   actions: { action_type: string; value: string }[] | undefined,
   types: string[]
 ): number {
   if (!actions) return 0
-  return actions
-    .filter((a) => types.includes(a.action_type))
-    .reduce((sum, a) => sum + parseFloat(a.value || '0'), 0)
+  for (const type of types) {
+    const found = actions.find((a) => a.action_type === type)
+    if (found) return parseFloat(found.value || '0')
+  }
+  return 0
 }
 
 // ── Transformadores ───────────────────────────────────────────────────────────
