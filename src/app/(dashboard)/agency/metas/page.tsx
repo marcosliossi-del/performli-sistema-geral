@@ -31,6 +31,7 @@ export default async function MetasPage() {
         id: true,
         name: true,
         slug: true,
+        businessType: true,
         assignments: {
           where: { isPrimary: true },
           select: { user: { select: { name: true } } },
@@ -41,7 +42,7 @@ export default async function MetasPage() {
             period: 'MONTHLY',
             startDate: { lte: monthEnd },
             endDate:   { gte: monthStart },
-            metric:    { in: ['FATURAMENTO', 'ROAS', 'SPEND'] },
+            metric:    { in: ['FATURAMENTO', 'ROAS', 'SPEND', 'LEADS', 'CPL'] },
           },
           select: { metric: true, targetValue: true },
         },
@@ -66,16 +67,21 @@ export default async function MetasPage() {
     const fat   = c.goals.find((g) => g.metric === 'FATURAMENTO')
     const roas  = c.goals.find((g) => g.metric === 'ROAS')
     const spend = c.goals.find((g) => g.metric === 'SPEND')
+    const leads = c.goals.find((g) => g.metric === 'LEADS')
+    const cpl   = c.goals.find((g) => g.metric === 'CPL')
     const tm    = prevTicket.get(c.id) ?? null
     return {
       id: c.id,
       name: c.name,
       slug: c.slug,
+      businessType: c.businessType,
       managerName: c.assignments[0]?.user?.name ?? '—',
       goals: {
         FATURAMENTO: fat   ? Number(fat.targetValue)   : null,
         ROAS:        roas  ? Number(roas.targetValue)  : null,
         SPEND:       spend ? Number(spend.targetValue) : null,
+        LEADS:       leads ? Number(leads.targetValue) : null,
+        CPL:         cpl   ? Number(cpl.targetValue)   : null,
       },
       suggestedCpa:    tm != null ? Math.round(tm * 0.10 * 100) / 100 : null,
       prevTicketMedio: tm,

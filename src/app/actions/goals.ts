@@ -150,11 +150,19 @@ export async function upsertMonthlyGoals(goals: GoalUpsert[]): Promise<{ ok: boo
   return { ok: true }
 }
 
+export type MonthlyGoalsRow = {
+  FATURAMENTO: number | null
+  ROAS:        number | null
+  SPEND:       number | null
+  LEADS:       number | null
+  CPL:         number | null
+}
+
 export async function fetchMonthlyGoals(
   clientIds: string[],
   year: number,
   month: number,
-): Promise<Record<string, { FATURAMENTO: number | null; ROAS: number | null; SPEND: number | null }>> {
+): Promise<Record<string, MonthlyGoalsRow>> {
   await requireSession()
 
   const monthStart = new Date(year, month, 1)
@@ -166,22 +174,24 @@ export async function fetchMonthlyGoals(
       period: 'MONTHLY',
       startDate: { lte: monthEnd },
       endDate:   { gte: monthStart },
-      metric:    { in: ['FATURAMENTO', 'ROAS', 'SPEND'] },
+      metric:    { in: ['FATURAMENTO', 'ROAS', 'SPEND', 'LEADS', 'CPL'] },
     },
     select: { clientId: true, metric: true, targetValue: true },
   })
 
-  const result: Record<string, { FATURAMENTO: number | null; ROAS: number | null; SPEND: number | null }> = {}
+  const result: Record<string, MonthlyGoalsRow> = {}
   for (const id of clientIds) {
-    result[id] = { FATURAMENTO: null, ROAS: null, SPEND: null }
+    result[id] = { FATURAMENTO: null, ROAS: null, SPEND: null, LEADS: null, CPL: null }
   }
   for (const g of goals) {
     const row = result[g.clientId]
     if (!row) continue
     const val = Number(g.targetValue)
-    if (g.metric === 'FATURAMENTO') row.FATURAMENTO = val
-    else if (g.metric === 'ROAS')   row.ROAS = val
-    else if (g.metric === 'SPEND')  row.SPEND = val
+    if      (g.metric === 'FATURAMENTO') row.FATURAMENTO = val
+    else if (g.metric === 'ROAS')        row.ROAS = val
+    else if (g.metric === 'SPEND')       row.SPEND = val
+    else if (g.metric === 'LEADS')       row.LEADS = val
+    else if (g.metric === 'CPL')         row.CPL = val
   }
   return result
 }

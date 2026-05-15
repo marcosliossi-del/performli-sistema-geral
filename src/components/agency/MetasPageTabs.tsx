@@ -6,16 +6,16 @@ import { MetasBulkTable } from './MetasBulkTable'
 import { MetasDashboard } from './MetasDashboard'
 import type { ClientProgress } from '@/app/actions/progress'
 
+import { BusinessType } from '@prisma/client'
+import type { MonthlyGoalsRow } from '@/app/actions/goals'
+
 type ClientData = {
   id: string
   name: string
   slug: string
+  businessType: BusinessType
   managerName: string
-  goals: {
-    FATURAMENTO: number | null
-    ROAS: number | null
-    SPEND: number | null
-  }
+  goals: MonthlyGoalsRow
   suggestedCpa: number | null
   prevTicketMedio: number | null
 }
