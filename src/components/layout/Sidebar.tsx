@@ -22,6 +22,7 @@ import {
   BookMarked,
   TrendingUp,
   Target,
+  Scale,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -78,6 +79,7 @@ const navigation: NavSection[] = [
     items: [
       { name: 'DRE',              href: '/financeiro',  icon: TrendingUp },
       { name: 'CRM Comercial',    href: '/comercial',   icon: Target },
+      { name: 'Jurídico',         href: '/juridico',    icon: Scale, roles: ['ADMIN' as Role] },
     ],
   },
   {

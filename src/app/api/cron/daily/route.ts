@@ -13,6 +13,7 @@ import { sendDailyDigest } from '@/services/notifications/daily-digest'
 import { syncAsaasData } from '@/services/asaas/sync'
 import { detectCriticalAccounts } from '@/services/critical-account-detector'
 import { syncWeeklyGoalsFromMonthly } from '@/app/actions/goals'
+import { checkContractExpiry } from '@/services/contract-expiry-checker'
 
 /**
  * GET /api/cron/daily  ← Vercel Cron triggers GET requests
@@ -48,6 +49,7 @@ async function runDailySync() {
     criticalAccounts: { ok: false },
     weeklyReports: isSunday ? { ok: false } : { ok: true, skipped: true },
     weeklyChecklists: isSunday ? { ok: false } : { ok: true, skipped: true },
+    contractExpiry:   { ok: false },
   }
 
   // ── Step 1: Sync Meta Ads ──────────────────────────────────────────────────
@@ -219,6 +221,14 @@ async function runDailySync() {
         error: err instanceof Error ? err.message : String(err),
       }
     }
+  }
+
+  // ── Step 7b: Contract expiry check ───────────────────────────────────────
+  try {
+    const expiryResult = await checkContractExpiry()
+    summary.contractExpiry = { ok: true, alertsFired: expiryResult.alertsFired }
+  } catch (err) {
+    summary.contractExpiry = { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 
   // WhatsApp digest is sent by /api/cron/digest (runs at 08:30 BRT/São Paulo),

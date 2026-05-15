@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import { prisma } from '@/lib/prisma'
 import {
   requireSession, getClientDetail, getClientMetricHistory,
   getClientKPIs, getGoalPaceMetrics, getClientChat, getClientWeeklyReport,
@@ -15,6 +16,7 @@ import { healthLabels, healthBgClasses } from '@/lib/health'
 import { HealthStatus } from '@prisma/client'
 import { formatCurrency, formatNumber, timeAgo } from '@/lib/utils'
 import { ArrowLeft, Target, BookOpen, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { ClientContractCard } from '@/components/clients/ClientContractCard'
 import { GoalFormModal } from '@/components/clients/GoalFormModal'
 import { SyncButton } from '@/components/clients/SyncButton'
 import { LinkAccountModal } from '@/components/clients/LinkAccountModal'
@@ -118,7 +120,7 @@ export default async function ClientDetailPage({
   const activeFrom = from ?? defaultFrom
   const activeTo = to ?? defaultTo
 
-  const [metricHistory, kpis, paceGoals, chat, weeklyReport, monthlyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel] = await Promise.all([
+  const [metricHistory, kpis, paceGoals, chat, weeklyReport, monthlyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel, activeContract] = await Promise.all([
     getClientMetricHistory(client.id, 14),
     getClientKPIs(client.id, activeFrom, activeTo),
     getGoalPaceMetrics(client.id),
@@ -133,7 +135,27 @@ export default async function ClientDetailPage({
     getHealthScoreHistory(client.id, 8),
     getWeekScoreComparison(client.id),
     getClientSalesFunnel(client.id, activeFrom, activeTo),
+    prisma.contract.findFirst({
+      where:   { clientId: client.id, status: { in: ['VIGENTE', 'RENOVACAO', 'RASCUNHO'] } },
+      orderBy: [{ status: 'asc' }, { endDate: 'asc' }],
+      select: {
+        id: true, status: true, type: true,
+        feeValue: true, setupFee: true,
+        startDate: true, endDate: true, signedAt: true,
+        documentUrl: true, autoRenew: true,
+        responsible: { select: { name: true } },
+      },
+    }),
   ])
+
+  const contractData = activeContract ? {
+    ...activeContract,
+    feeValue:  Number(activeContract.feeValue),
+    setupFee:  activeContract.setupFee ? Number(activeContract.setupFee) : null,
+    startDate: activeContract.startDate.toISOString(),
+    endDate:   activeContract.endDate.toISOString(),
+    signedAt:  activeContract.signedAt ? activeContract.signedAt.toISOString() : null,
+  } : null
 
   const weeklyGoals = client.goals.filter((g) => g.period === 'WEEKLY')
   const monthlyGoals = client.goals.filter((g) => g.period === 'MONTHLY')
@@ -223,7 +245,7 @@ export default async function ClientDetailPage({
       </div>
 
       {/* Info cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <Card>
           <CardTitle>Gestores</CardTitle>
           <div className="mt-2 space-y-1">
@@ -297,6 +319,8 @@ export default async function ClientDetailPage({
             <p className="text-xs text-[#87919E] mt-1 truncate">{client.alerts[0].title}</p>
           )}
         </Card>
+
+        <ClientContractCard contract={contractData} clientId={client.id} />
       </div>
 
       {/* ── KPIs ─────────────────────────────────────────────────────── */}

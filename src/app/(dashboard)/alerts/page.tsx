@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { markAlertRead, markAllAlertsRead } from '@/app/actions/alerts'
 import { timeAgo } from '@/lib/utils'
-import { AlertTriangle, CheckCircle2, TrendingDown, Bell, BellOff, ArrowDownRight, ArrowUpRight, ShieldAlert } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, TrendingDown, Bell, BellOff, ArrowDownRight, ArrowUpRight, ShieldAlert, Scale } from 'lucide-react'
 import { AlertType } from '@prisma/client'
 
 const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string; label: string }> = {
@@ -18,6 +18,7 @@ const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string
   KPI_SPIKE_24H:                  { icon: ArrowUpRight,   color: 'text-[#22C55E]', label: 'Alta 24h' },
   ROAS_BELOW_TARGET_2W:           { icon: ShieldAlert,    color: 'text-[#EF4444]', label: '🚨 Conta Crítica — ROAS' },
   FATURAMENTO_BELOW_70PCT_WEEK2:  { icon: ShieldAlert,    color: 'text-[#EF4444]', label: '🚨 Conta Crítica — Faturamento' },
+  CONTRACT_EXPIRING_SOON:         { icon: Scale,          color: 'text-[#F59E0B]', label: 'Contrato Vencendo' },
 }
 
 export default async function AlertsPage() {

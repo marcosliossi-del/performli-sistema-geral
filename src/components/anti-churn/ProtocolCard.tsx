@@ -53,6 +53,7 @@ const TRIGGER_LABELS: Record<AlertType, string> = {
   BUDGET_WARNING:                'Budget quase esgotado',
   KPI_DROP_24H:                  'Queda de KPI 24h',
   KPI_SPIKE_24H:                 'Alta de KPI 24h',
+  CONTRACT_EXPIRING_SOON:        'Contrato vencendo',
 }
 
 const NEXT_STATUS: Partial<Record<CriticalProtocolStatus, { to: CriticalProtocolStatus; label: string }>> = {

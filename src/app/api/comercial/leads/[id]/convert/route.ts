@@ -10,9 +10,9 @@ const schema = z.object({
   email:         z.string().email().optional().or(z.literal('')),
   industry:      z.string().optional(),
   // Contract
-  contractStart: z.string().min(1),        // ISO date string
-  contractMonths:z.number().int().min(1).optional(),
-  contractValue: z.number().positive().optional(),
+  contractStart:  z.string().min(1),        // ISO date string
+  contractMonths: z.number().int().min(1).optional(),
+  contractValue:  z.number().positive().optional(),
   // Assignment
   managerId:     z.string().optional(),
   // Goal
@@ -92,6 +92,24 @@ export async function POST(
         targetValue: d.monthlyGoal,
         startDate:   start,
         endDate,
+      },
+    })
+  }
+
+  // Auto-create contract in RASCUNHO so the team fills in the details
+  if (d.contractValue && d.contractValue > 0) {
+    const months  = d.contractMonths ?? 12
+    const endDate = new Date(start.getFullYear(), start.getMonth() + months, start.getDate())
+    await prisma.contract.create({
+      data: {
+        clientId:     client.id,
+        responsibleId: d.managerId ?? null,
+        status:       'RASCUNHO',
+        type:         'FEE_MENSAL',
+        feeValue:     d.contractValue,
+        startDate:    start,
+        endDate,
+        noticeDays:   30,
       },
     })
   }
