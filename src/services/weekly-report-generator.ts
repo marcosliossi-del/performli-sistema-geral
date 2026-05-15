@@ -43,6 +43,7 @@ export async function generateWeeklyReportForClient(
     select: {
       name: true,
       industry: true,
+      businessType: true,
       platformAccounts: {
         where: { platform: 'GA4', active: true },
         select: { externalId: true },
@@ -129,11 +130,141 @@ export async function generateWeeklyReportForClient(
 
   // Metas mensais
   const faturamentoGoal = goals.find((g) => g.metric === 'FATURAMENTO')
-  const roasGoal = goals.find((g) => g.metric === 'ROAS')
-  const spendGoal = goals.find((g) => g.metric === 'SPEND' || g.metric === 'INVESTMENT')
+  const roasGoal   = goals.find((g) => g.metric === 'ROAS')
+  const spendGoal  = goals.find((g) => g.metric === 'SPEND' || g.metric === 'INVESTMENT')
+  const leadsGoal  = goals.find((g) => g.metric === 'LEADS')
+  const cplGoal    = goals.find((g) => g.metric === 'CPL')
+  const mensagensGoal = goals.find((g) => g.metric === 'MENSAGENS')
 
   const pctChange = (curr: number, prev: number) =>
     prev > 0 ? ((curr - prev) / prev) * 100 : null
+
+  // ── LOCAL BUSINESS REPORT ──────────────────────────────────────────────────
+  if (client.businessType === 'LOCAL') {
+    function computeLocalMetrics(snaps: typeof lastWeekSnaps) {
+      const meta = snaps.filter((x) => x.platformAccount.platform === 'META_ADS')
+      const spend       = meta.reduce((s, x) => s + Number(x.spend ?? 0), 0)
+      const reach       = meta.reduce((s, x) => s + (x.reach ?? 0), 0)
+      const impressions = meta.reduce((s, x) => s + (x.impressions ?? 0), 0)
+      const mensagens   = meta.reduce((s, x) => s + (x.mensagens ?? 0), 0)
+      const landingViews= meta.reduce((s, x) => s + (x.landingPageViews ?? 0), 0)
+      const leads       = meta.reduce((s, x) => s + (x.conversions ?? 0), 0)
+      const adRevenue   = meta.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+      const thruplays   = meta.reduce((s, x) => s + (x.thruplays ?? 0), 0)
+      const frequencia  = reach > 0 ? impressions / reach : null
+      const cpl         = leads > 0 && spend > 0 ? spend / leads : null
+      return { spend, reach, impressions, mensagens, landingViews, leads, adRevenue, thruplays, frequencia, cpl }
+    }
+
+    const lwLocal = computeLocalMetrics(lastWeekSnaps)
+    const pwLocal = computeLocalMetrics(prevWeekSnaps)
+    const mLocal  = computeLocalMetrics(monthSnaps)
+
+    const periodoStr = `${lastWeekStart.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} a ${lastWeekEnd.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`
+    const daysElapsed = today.getDate()
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+
+    const msgChange   = pctChange(lwLocal.mensagens,   pwLocal.mensagens)
+    const reachChange = pctChange(lwLocal.reach,        pwLocal.reach)
+    const landingChange = pctChange(lwLocal.landingViews, pwLocal.landingViews)
+
+    const spendGoalStr   = spendGoal   ? formatCurrency(Number(spendGoal.targetValue))  : 'não definida'
+    const leadsGoalStr   = leadsGoal   ? leadsGoal.targetValue.toString()               : 'não definida'
+    const cplGoalStr     = cplGoal     ? formatCurrency(Number(cplGoal.targetValue))    : 'não definida'
+    const mensagensGoalStr = mensagensGoal ? mensagensGoal.targetValue.toString()       : 'não definida'
+
+    const pctMesDecorrido = Math.round((daysElapsed / daysInMonth) * 100)
+    const leadsNoMes   = mLocal.leads > 0     ? mLocal.leads.toString()           : null
+    const mensagensNoMes = mLocal.mensagens > 0 ? mLocal.mensagens.toString()     : null
+    const spendNoMes   = mLocal.spend > 0     ? formatCurrency(mLocal.spend)      : null
+
+    const localPrompt = `Você é o gestor de tráfego pago da Arkza, especializado em negócios locais, enviando um resumo semanal para o cliente via WhatsApp.
+Escreva como uma pessoa real falaria, com linguagem leve, simples e voltada para resultado. Sem enrolação, sem cara de relatório corporativo.
+
+❗ Regras absolutas:
+- Evite totalmente termos técnicos como CPC, CTR, cliques no link, impressões, CPL, taxa de conversão, frequência, funil
+- Destaque apenas o que faz sentido pro cliente local: mensagens recebidas e visitas ao perfil
+- Não mencionar crescimento de seguidores
+- Todas as ações de tráfego em primeira pessoa do plural (nós, vamos, estamos)
+- Nunca use travessão ( — ) no texto
+- Frases curtas, máximo 12 palavras cada
+- Sem markdown (sem *, #, -)
+- Use emojis apenas nos títulos dos blocos, nunca no meio de frases
+- Linha em branco entre cada bloco
+- Nunca use: estratégico, robusto, potencializar, insights, jornada, pilares, desbloquear, transformação, crucial, no cenário atual, no fim do dia
+- Nunca justifique resultados com fatores externos
+- Sempre mostre soluções imediatas nos pontos de atenção
+
+📊 DADOS DA SEMANA (use esses números no relatório):
+- Cliente: ${client.name}
+- Período: ${periodoStr}
+- Pessoas alcançadas: ${lwLocal.reach > 0 ? lwLocal.reach.toLocaleString('pt-BR') : 'sem dados'}${reachChange !== null ? ` (${reachChange > 0 ? '+' : ''}${reachChange.toFixed(0)}% vs semana anterior)` : ''}
+- Mensagens recebidas: ${lwLocal.mensagens > 0 ? lwLocal.mensagens.toLocaleString('pt-BR') : 'sem dados'}${msgChange !== null ? ` (${msgChange > 0 ? '+' : ''}${msgChange.toFixed(0)}% vs semana anterior)` : ''}
+- Visitas ao perfil/destino: ${lwLocal.landingViews > 0 ? lwLocal.landingViews.toLocaleString('pt-BR') : 'sem dados'}${landingChange !== null ? ` (${landingChange > 0 ? '+' : ''}${landingChange.toFixed(0)}% vs semana anterior)` : ''}
+- Investimento total: ${lwLocal.spend > 0 ? formatCurrency(lwLocal.spend) : 'sem dados'}
+${lwLocal.leads > 0 ? `- Leads gerados: ${lwLocal.leads.toLocaleString('pt-BR')}${lwLocal.cpl !== null ? ` (custo por lead: ${formatCurrency(lwLocal.cpl)})` : ''}` : ''}
+${lwLocal.adRevenue > 0 ? `- Faturamento via Meta Ads: ${formatCurrency(lwLocal.adRevenue)}` : ''}
+
+COMPARATIVO SEMANA ANTERIOR:
+- Pessoas alcançadas semana anterior: ${pwLocal.reach > 0 ? pwLocal.reach.toLocaleString('pt-BR') : 'sem dados'}
+- Mensagens semana anterior: ${pwLocal.mensagens > 0 ? pwLocal.mensagens.toLocaleString('pt-BR') : 'sem dados'}
+- Visitas semana anterior: ${pwLocal.landingViews > 0 ? pwLocal.landingViews.toLocaleString('pt-BR') : 'sem dados'}
+
+METAS DO MÊS:
+- Budget mensal: ${spendGoalStr}
+- Meta de leads: ${leadsGoalStr}
+- Meta de mensagens: ${mensagensGoalStr}
+- CPL meta: ${cplGoalStr}
+
+ACUMULADO DO MÊS (${daysElapsed} de ${daysInMonth} dias — ${pctMesDecorrido}% do mês):
+${leadsNoMes ? `- Leads acumulados: ${leadsNoMes}` : ''}
+${mensagensNoMes ? `- Mensagens acumuladas: ${mensagensNoMes}` : ''}
+${spendNoMes ? `- Investimento acumulado: ${spendNoMes}` : ''}
+
+📊 ESTRUTURA DO RELATÓRIO (siga exatamente, sem modificar os títulos dos blocos):
+
+📊 Análise e Review Semanal | Período: ${periodoStr}
+
+📈 [Em comparação à semana anterior, comente brevemente se aumentaram as mensagens ou visitas. Use linguagem positiva, acessível, que mostre progresso ou consistência. Se caiu, mantenha tom tranquilo e aponte o que será ajustado. Máximo 2 frases.]
+
+🔍 Principais Resultados:
+• Pessoas alcançadas: [use o número real]
+• Mensagens recebidas: [use o número real]
+• Visitas ao perfil: [use o número real]
+• Investimento total: [use o valor real]
+
+🔍 Interpretação Geral
+[Explique de forma simples o comportamento da semana. Se subiu, destaque o impacto positivo. Se caiu, mantenha tom tranquilo e aponte o que será ajustado. Máximo 4 linhas. Zero termos técnicos.]
+
+✅ Plano de Ação da Semana
+• [Ação 1 — reforçar o que gerou mais mensagens e movimentou o perfil]
+• [Ação 2 — testar novos criativos ou chamadas para aumentar conversas]
+• [Ação 3 — ativar campanha para quem interagiu mas não iniciou conversa]
+• [Ação 4 — ajustar segmentações e formatos para manter o perfil em alta]
+Escreva as ações em primeira pessoa do plural, tom de execução imediata, específico ao contexto da semana.
+
+Gere apenas o texto final, pronto para enviar no WhatsApp.`
+
+    const localResponse = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 700,
+      messages: [{ role: 'user', content: localPrompt }],
+    })
+
+    const localContent = localResponse.content[0]
+    if (localContent.type !== 'text') throw new Error('Resposta da IA inválida.')
+
+    const localReportContent = localContent.text
+
+    await prisma.weeklyReport.upsert({
+      where: { clientId_weekStart: { clientId, weekStart: lastWeekStart } },
+      create: { clientId, weekStart: lastWeekStart, content: localReportContent },
+      update: { content: localReportContent, generatedAt: new Date() },
+    })
+
+    return localReportContent
+  }
+  // ── END LOCAL BUSINESS REPORT ──────────────────────────────────────────────
 
   // Busca top produtos da semana via GA4 Data API direta
   let topProductsStr = 'dados de produto não disponíveis (GA4 não configurado ou sem dados)'
