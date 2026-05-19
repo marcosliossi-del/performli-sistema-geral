@@ -300,6 +300,7 @@ model HealthScore {
   actualValue    Decimal      @db.Decimal(12, 4)
   achievementPct Decimal      @db.Decimal(8, 4)
   status         HealthStatus
+  trendPct       Decimal?     @db.Decimal(8, 4)  // % change last 7d vs prior 7d (null = insufficient data)
   calculatedAt   DateTime     @default(now())
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
