@@ -39,19 +39,20 @@ const PRORATE_METRICS: Set<MetricType> = new Set([
 const TREND_THRESHOLD_PCT = 20
 
 type Snapshot = {
-  spend:           unknown
-  roas:            unknown
-  cpl:             unknown
-  cpa:             unknown
-  ctr:             unknown
-  cpc:             unknown
-  conversions:     unknown
-  conversionValue: unknown
-  impressions:     unknown
-  reach:           unknown
-  clicks:          unknown
-  frequency:       unknown
-  mensagens:       unknown
+  spend:            unknown
+  roas:             unknown
+  cpl:              unknown
+  cpa:              unknown
+  ctr:              unknown
+  cpc:              unknown
+  conversions:      unknown
+  conversionValue:  unknown
+  impressions:      unknown
+  reach:            unknown
+  clicks:           unknown
+  frequency:        unknown
+  mensagens:        unknown
+  landingPageViews: unknown
   platformAccount: { platform: string }
 }
 
@@ -80,10 +81,11 @@ function aggregateSnapshots(
   const ga4Purchases  = ga4.reduce((s, x) => s + toNum(x.conversions), 0)
   const ga4Sessions   = ga4.reduce((s, x) => s + toNum(x.clicks), 0)
 
-  const metaRevenue   = meta.reduce((s, x) => s + toNum(x.conversionValue), 0)
-  const metaConv      = meta.reduce((s, x) => s + toNum(x.conversions), 0)
-  const metaMensagens = meta.reduce((s, x) => s + toNum(x.mensagens), 0)
-  const metaSpend     = meta.reduce((s, x) => s + toNum(x.spend), 0)
+  const metaRevenue    = meta.reduce((s, x) => s + toNum(x.conversionValue), 0)
+  const metaConv       = meta.reduce((s, x) => s + toNum(x.conversions), 0)
+  const metaMensagens  = meta.reduce((s, x) => s + toNum(x.mensagens), 0)
+  const metaLandViews  = meta.reduce((s, x) => s + toNum(x.landingPageViews), 0)
+  const metaSpend      = meta.reduce((s, x) => s + toNum(x.spend), 0)
 
   const totalSpend    = ads.reduce((s, x) => s + toNum(x.spend), 0)
   const adImpressions = ads.reduce((s, x) => s + toNum(x.impressions), 0)
@@ -115,8 +117,10 @@ function aggregateSnapshots(
   }
 
   if (metric === 'LEADS') {
-    // Leads always come from Meta Ads (GA4 tracks purchases, not lead forms)
-    return metaConv > 0 ? metaConv : null
+    // Lead form campaigns → conversions field; WhatsApp campaigns → mensagens field
+    if (metaConv > 0) return metaConv
+    if (businessType === 'LOCAL' && metaMensagens > 0) return metaMensagens
+    return null
   }
 
   if (metric === 'TAXA_CONVERSAO') {
@@ -136,11 +140,16 @@ function aggregateSnapshots(
   }
 
   if (metric === 'CPA' || metric === 'CPL' || metric === 'CAC') {
-    return totalSpend > 0 && purchases > 0 ? totalSpend / purchases : null
+    // For LOCAL WhatsApp campaigns, mensagens serve as the conversion denominator
+    const denom = purchases > 0
+      ? purchases
+      : (businessType === 'LOCAL' && metaMensagens > 0 ? metaMensagens : 0)
+    return totalSpend > 0 && denom > 0 ? totalSpend / denom : null
   }
 
   if (metric === 'VISITAS_PERFIL' || metric === 'LIGACOES' || metric === 'AGENDAMENTOS') {
     if (businessType === 'LOCAL') {
+      if (metric === 'VISITAS_PERFIL') return metaLandViews > 0 ? metaLandViews : null
       return metaConv > 0 ? metaConv : null
     }
     return null

@@ -149,10 +149,12 @@ export async function generateWeeklyReportForClient(
       const impressions = meta.reduce((s, x) => s + (x.impressions ?? 0), 0)
       const mensagens   = meta.reduce((s, x) => s + (x.mensagens ?? 0), 0)
       const landingViews= meta.reduce((s, x) => s + (x.landingPageViews ?? 0), 0)
-      const leads       = meta.reduce((s, x) => s + (x.conversions ?? 0), 0)
       const adRevenue   = meta.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
       const thruplays   = meta.reduce((s, x) => s + (x.thruplays ?? 0), 0)
       const frequencia  = reach > 0 ? impressions / reach : null
+      // WhatsApp campaigns store results in mensagens, not conversions — use as fallback
+      const metaConvRaw = meta.reduce((s, x) => s + (x.conversions ?? 0), 0)
+      const leads       = metaConvRaw > 0 ? metaConvRaw : mensagens
       const cpl         = leads > 0 && spend > 0 ? spend / leads : null
       return { spend, reach, impressions, mensagens, landingViews, leads, adRevenue, thruplays, frequencia, cpl }
     }
@@ -630,8 +632,10 @@ export async function generateMonthlyReportForClient(
       const reach       = meta.reduce((s, x) => s + (x.reach ?? 0), 0)
       const mensagens   = meta.reduce((s, x) => s + (x.mensagens ?? 0), 0)
       const landingViews= meta.reduce((s, x) => s + (x.landingPageViews ?? 0), 0)
-      const leads       = meta.reduce((s, x) => s + (x.conversions ?? 0), 0)
       const adRevenue   = meta.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+      // WhatsApp campaigns store results in mensagens, not conversions — use as fallback
+      const metaConvRaw = meta.reduce((s, x) => s + (x.conversions ?? 0), 0)
+      const leads       = metaConvRaw > 0 ? metaConvRaw : mensagens
       const cpl         = leads > 0 && spend > 0 ? spend / leads : null
       return { spend, reach, mensagens, landingViews, leads, adRevenue, cpl }
     }

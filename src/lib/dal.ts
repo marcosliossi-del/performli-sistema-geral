@@ -611,6 +611,8 @@ export const getClientKPIs = cache(async (
 
     // New Meta-specific fields for local business
     const mensagens        = meta.reduce((s, x) => s + (x.mensagens        ?? 0), 0)
+    // Effective leads: WhatsApp campaigns store conversions in mensagens, not conversions field
+    const effectiveLeads   = leadConversions > 0 ? leadConversions : mensagens
     const landingPageViews = meta.reduce((s, x) => s + (x.landingPageViews ?? 0), 0)
     const thruplays        = meta.reduce((s, x) => s + (x.thruplays        ?? 0), 0)
     const videoViews3s     = meta.reduce((s, x) => s + (x.videoViews3s     ?? 0), 0)
@@ -623,7 +625,7 @@ export const getClientKPIs = cache(async (
       sessions, purchases, revenue, adImpr, newUsers,
       roas, roasMeta, roasGoogle, roasTiktok,
       ctrLink, cpcLink,
-      adLeads:          leadConversions > 0 ? leadConversions : null,
+      adLeads:          effectiveLeads > 0 ? effectiveLeads : null,
       adCliques:        adClicks > 0 ? adClicks : null,
       adAlcance:        adReach > 0 ? adReach : null,
       adImpressions:    allImpr > 0 ? allImpr : null,
@@ -644,7 +646,7 @@ export const getClientKPIs = cache(async (
       cpm:              adImpr > 0 && metaSpend > 0 ? (metaSpend / adImpr) * 1000 : null,
       cpa:              purchases > 0 && totalSpend > 0 ? totalSpend / purchases : null,
       cac:              purchases > 0 && totalSpend > 0 ? totalSpend / purchases : null,
-      cpl:              leadConversions > 0 && totalSpend > 0 ? totalSpend / leadConversions : null,
+      cpl:              effectiveLeads > 0 && totalSpend > 0 ? totalSpend / effectiveLeads : null,
     }
   }
 
