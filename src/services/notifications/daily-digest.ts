@@ -78,6 +78,7 @@ type HealthScoreRow = {
   achievementPct: { toNumber: () => number } | number
   actualValue:    { toNumber: () => number } | number
   targetValue:    { toNumber: () => number } | number
+  trendPct:       { toNumber: () => number } | number | null
 }
 
 // Single-metric fallback labels (used when no cross-pattern matches)
@@ -132,10 +133,15 @@ function buildSmartInsight(
     const actual = toNum(s.actualValue)
     const target = toNum(s.targetValue)
     const pct    = Math.round(toNum(s.achievementPct))
-    // For volume metrics the achievementPct is pace-adjusted (vs prorated target),
-    // so clarify with "ritmo" to avoid confusion (e.g. R$50k of R$100k = ritmo 110%)
     const pctLabel = PACE_METRICS.has(metric) ? `ritmo ${pct}%` : `${pct}%`
-    return `${metric}: ${formatVal(metric, actual)} (meta ${formatVal(metric, target)}, ${pctLabel})`
+    let base = `${metric}: ${formatVal(metric, actual)} (meta ${formatVal(metric, target)}, ${pctLabel})`
+    const trend = toNum(s.trendPct)
+    if (Math.abs(trend) >= 20) {
+      const arrow = trend > 0 ? '↗' : '↘'
+      const sign  = trend > 0 ? '+' : ''
+      base += ` ${arrow} ${sign}${Math.round(trend)}% vs 7d ant.`
+    }
+    return base
   }
 
   const isLocal = businessType === 'LOCAL'
@@ -225,6 +231,23 @@ function buildSmartInsight(
     }
   }
 
+  // ── Trend-driven REGULAR: month on track but recent decline ──────────────────
+  // When no metric is RUIM and the REGULAR status was triggered purely by recent trend
+  if (ruimSet.size === 0) {
+    const trendDriven = scores
+      .filter(s => s.status === 'REGULAR')
+      .find(s => {
+        const trend = toNum(s.trendPct)
+        const pct   = toNum(s.achievementPct)
+        return Math.abs(trend) >= 20 && pct >= 80
+      })
+    if (trendDriven) {
+      const trend = Math.round(toNum(trendDriven.trendPct))
+      const dir   = trend < 0 ? `queda de ${Math.abs(trend)}%` : `alta de ${Math.abs(trend)}%`
+      return `   ↳ ${label(trendDriven.metric)} — ritmo do mês ainda ok, mas ${dir} nos últimos 7 dias, monitorar de perto`
+    }
+  }
+
   // ── Fallback: worst metric with historical context ─────────────────────────
   const ruimScores = scores.filter(s => s.status === 'RUIM')
   const worstScore = ruimScores.length > 0
@@ -286,6 +309,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
         select: {
           status: true, period: true, periodStart: true,
           metric: true, achievementPct: true, actualValue: true, targetValue: true,
+          trendPct: true,
         },
       },
       assignments: {
@@ -480,8 +504,10 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
       }
       lines.push(line)
 
-      // Smart cross-metric insight for RUIM clients
-      if (c.status === 'RUIM' && c.activeScores.length > 0) {
+      // Smart cross-metric insight for RUIM clients, and REGULAR clients with trend signal
+      if (c.activeScores.length > 0 && (c.status === 'RUIM' || (
+        c.status === 'REGULAR' && c.activeScores.some(s => Math.abs(toNum(s.trendPct)) >= 20)
+      ))) {
         const insight = buildSmartInsight(c.id, c.activeScores, c.businessType, getHistAvg, funnelMap.get(c.id) ?? null)
         if (insight) lines.push(insight)
       }
@@ -508,7 +534,9 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
       extraLines.push(`*⚠️ Atenção — Contas travadas há mais de 5 dias*`)
       for (const c of atencao) {
         extraLines.push(`${emoji(c.status)} *${c.name}* — *${streakLabel(c.status, c.streakDays)}* — gestor ${c.managerName}`)
-        if (c.status === 'RUIM' && c.activeScores.length > 0) {
+        if (c.activeScores.length > 0 && (c.status === 'RUIM' || (
+          c.status === 'REGULAR' && c.activeScores.some(s => Math.abs(toNum(s.trendPct)) >= 20)
+        ))) {
           const insight = buildSmartInsight(c.id, c.activeScores, c.businessType, getHistAvg, funnelMap.get(c.id) ?? null)
           if (insight) extraLines.push(insight)
         }
