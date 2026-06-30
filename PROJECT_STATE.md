@@ -76,3 +76,10 @@ com `WarRoomPlanPanel`.
 
 - **BLOCO 1** — MERGED (#24, em produção). Migration aplicada (enum swap + 24 models + seed). Build com retry de migrate (cold-start Neon).
 - **BLOCO 2** (Central de Tarefas / UI) — branch feat/bloco2-central-tarefas: página /operacional (KPIs + 4 views Lista/Kanban/Responsável/Cliente + filtros), NovaTarefaModal (autofill do cliente, área/POP, checklist), TaskDrawer (status/checklist/comentários/atividade). DAL getOperacionalBoard + getNovaTarefaContext; actions createOperacionalTask/addTaskComment/toggleChecklistItem/loadTaskDetail.
+
+- **BLOCO 2** — MERGED (#25, em produção). /operacional (4 views + criação + drawer).
+- **BLOCO 3** (templates + recorrência + cron) — branch feat/bloco3-recorrencia:
+  motor recurrence-engine (fan-out por cliente ativo, idempotente por
+  template+cliente+janela, AutomationLog por resultado), rota /api/cron/recurrences
+  (CRON_SECRET, ?force=1), seed do template recorrente Check-in (OPE-06, semanal
+  segunda, checklist), vercel.json com novo cron.
