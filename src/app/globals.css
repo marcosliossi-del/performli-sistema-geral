@@ -118,7 +118,13 @@ body::before {
 }
 @keyframes ak-drift { from { transform: translate3d(0,0,0) scale(1) } to { transform: translate3d(0,-1.4%,0) scale(1.04) } }
 
-.font-mono, .tabular { font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace; }
+.font-mono, .tabular { font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+/* Tato iOS: elevação suave + movimento de mola */
+.card { transition: box-shadow .25s var(--ak-ease), border-color .2s var(--ak-ease), transform .3s var(--ak-spring); }
+.ak-lift { transition: transform .28s var(--ak-spring), box-shadow .25s var(--ak-ease), border-color .2s; }
+.ak-lift:hover { transform: translateY(-2px); box-shadow: var(--ak-shadow-pop); }
+@media (prefers-reduced-motion: reduce){ *{ animation: none !important; transition-duration: .01ms !important; } }
 
 /* Scrollbar fina estilo macOS */
 ::-webkit-scrollbar { width: 9px; height: 9px; }

@@ -163,3 +163,14 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
 - Shell: Sidebar (ak-sidebar + logo ciano), TopNav (ak-topbar), DashboardShell
   (ak-app-bg). Próximos slices: primitivos (Button gradient, segmented control),
   telas-herói (Cockpit/Operacional/Meu Dia) com densidade e drawer estilo protótipo.
+
+- **Slice 2 — Navegação + primitivos (igual ao protótipo):** Sidebar reestruturada
+  na IA do protótipo (PRINCIPAL: Meu Dia/Central de Tarefas/Cockpit/Dashboard ·
+  ÁREAS: Check-ins/Validação CS/Processos/War Room/Comercial/Pipeline/Financeiro/
+  Onboarding · CLIENTES · INTELIGÊNCIA · VISÕES POR PAPEL). Contadores de pendência
+  por item (DAL getSidebarCounts: meuDia/abertas/checkins/validacoes/warRooms/
+  alertas, role-scoped) com badge vermelho quando alerta. NavItem com barra ativa
+  ciano (gradiente+glow), prefetch p/ navegação rápida, active-scale. Button com
+  gradiente ciano + active-scale; segmented control iOS nas views do Operacional;
+  KPIs com ak-lift + números tabulares. Próximo: drawer de task no formato do
+  protótipo (breadcrumb, 2 colunas, checklist obrigatório, evidência, footer).

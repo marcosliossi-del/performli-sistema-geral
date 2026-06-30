@@ -4,14 +4,16 @@ import { useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { TopNav } from './TopNav'
 import type { SessionPayload } from '@/lib/session'
+import type { SidebarCounts } from '@/lib/dal'
 
 interface DashboardShellProps {
   children: React.ReactNode
   session: SessionPayload
   unreadAlerts: number
+  counts?: SidebarCounts
 }
 
-export function DashboardShell({ children, session, unreadAlerts }: DashboardShellProps) {
+export function DashboardShell({ children, session, unreadAlerts, counts }: DashboardShellProps) {
   const [viewMode, setViewMode] = useState<'ADMIN' | 'GESTOR'>(
     session.role === 'ADMIN' ? 'ADMIN' : 'GESTOR'
   )
@@ -19,7 +21,7 @@ export function DashboardShell({ children, session, unreadAlerts }: DashboardShe
   return (
     <div className="ak-app-bg flex h-screen overflow-hidden bg-[#05141C] print:block print:h-auto print:bg-white">
       <div className="print:hidden">
-        <Sidebar role={session.role} />
+        <Sidebar role={session.role} counts={counts} />
       </div>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden print:block print:overflow-visible">
         <div className="print:hidden">

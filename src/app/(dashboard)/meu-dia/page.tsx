@@ -106,12 +106,12 @@ export default async function MeuDiaPage() {
 
 function ResumoKpi({ label: l, value, tone, icon: Icon }: { label: string; value: number; tone: string; icon: typeof Clock }) {
   return (
-    <Card className="p-3">
+    <Card className="p-3 ak-lift">
       <div className="flex items-center gap-2">
         <Icon size={14} className={tone} />
         <p className="text-[10px] text-[#87919E] uppercase tracking-wider">{l}</p>
       </div>
-      <p className={`text-2xl font-bold mt-1 ${tone}`}>{value}</p>
+      <p className={`text-2xl font-bold mt-1 tabular ${tone}`}>{value}</p>
     </Card>
   )
 }
