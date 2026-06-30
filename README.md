@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Performli — Estrutura de Agentes (Claude Code)
 
-## Getting Started
+Sistema de subagents para desenvolver o Performli de forma segura, profunda e
+sem quebrar produção. Baseado na frase-guia: **"Arkza em processo, não em memória."**
 
-First, run the development server:
+## Como instalar
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+1. Copie a pasta `.claude/` e o `CLAUDE.md` para a raiz do repositório
+   `performli-sistema-geral`.
+2. No Claude Code, rode `/agents` para confirmar que os 11 agentes foram
+   reconhecidos.
+3. Coloque `PERFORMLI_CONTEXTO.md`, `Arkza_Dossie_POPs.html` e as imagens da
+   Ficha de Solução em `docs/` (ou na raiz).
+
+## Agentes
+
+| Agente | Papel | Permissão |
+|---|---|---|
+| `maestro` | Orquestra, mantém estado, valida gates | read-only |
+| `auditor-codigo` | Audita o que já existe | read-only |
+| `mapeador-pops` | Mapeia os 21 POPs + score 0.30 | read-only |
+| `analista-lacunas` | Mapa de lacunas (gate de escopo) | read-only |
+| `arquiteto-dados` | Propõe schema Prisma | read-only |
+| `arquiteto-produto` | Especifica telas/cards | read-only |
+| `backend-dal` | Implementa rotas/DAL | **escrita** |
+| `frontend` | Implementa telas/componentes | **escrita** |
+| `cron-automacao` | Implementa crons/alertas | **escrita** |
+| `ia-rag` | Implementa camada de IA | **escrita** |
+| `guardiao` | Gate segurança/QA/regressão | read-only |
+
+> Auditor, arquitetos e guardião são **read-only de propósito** — não conseguem
+> tocar no código, só inspecionar e reprovar. É uma trava real, não conceitual.
+
+## Fluxo de uso
+
+```
+1. "Use o maestro para iniciar o diagnóstico do Performli"
+2. maestro aciona auditor-codigo → mapeador-pops
+3. maestro aciona analista-lacunas        [GATE escopo]
+4. maestro aciona arquiteto-dados + arquiteto-produto   [GATE design]
+5. maestro escolhe o POP #1 do ranking e aciona backend-dal + frontend
+   (+ cron-automacao / ia-rag conforme a fatia)
+6. guardiao revisa → APROVADO avança, REPROVADO volta ao agente
+7. repete por fatia vertical (um POP completo de cada vez)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Score de priorização (versão 0.30)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+score_final =
+    dependencia_marcos     * 0.30
+  + risco_falha_silenciosa * 0.22
+  + impacto_churn          * 0.20
+  + valor_financeiro       * 0.13
+  + volume_frequencia      * 0.10
+  + chance_automacao       * 0.05
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Privilegia processos que hoje só funcionam porque o Marcos lembra deles. É a
+configuração mais agressiva para tirá-lo do papel de cérebro operacional.
 
-## Learn More
+## Fases
 
-To learn more about Next.js, take a look at the following resources:
+- **Fase 1** — Cockpit, catálogo de POPs, check-in semanal, fila CS, financeiro
+  básico (MRR, contas a receber, inadimplência, margem), Client 360 básico.
+- **Fase 2** — Termômetro semanal, anti-churn, War Room completo, escalação.
+- **Fase 3** — CRM comercial, cadência de follow-up, contratos, comissões.
+- **Fase 4** — Relatórios por IA, plano de ação, diagnóstico de War Room, copiloto.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+A Fase 1 só está pronta quando o `guardiao` aprova o checklist de QA funcional.
