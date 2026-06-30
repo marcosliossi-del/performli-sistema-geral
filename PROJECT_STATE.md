@@ -7,8 +7,10 @@
 ---
 
 ## FASE_ATUAL
-Fase 2 (build) — fatia vertical #1 (WAR-14) entregue ao guardião: **APROVADO_COM_RESSALVAS**
-(pendente confirmação de build no Vercel CI antes do merge).
+Fase 2 (build):
+- Fatia #1 (WAR-14) — **APROVADO** (PR #17, CI Vercel verde).
+- Fatia #2 (WAR-16) — entregue ao guardião (PR a abrir, branch feat/pop-war-16).
+Fórmula de score confirmada pelo usuário: **0.30** (mantida). Agentes .md: não sincronizar.
 
 ## POPS_MAPEADOS (21 — ranking 0.30)
 Top-8 MVP: WAR-14 (4.52) · WAR-16 (4.47) · FIN-19 (4.45) · CSX-13 (4.40) ·
@@ -17,7 +19,8 @@ OPE-06 (4.39) · CSX-12 (4.32) · CRM-18 (4.19) · ONB-05 (4.09). Detalhe em
 
 | POP | Status no sistema |
 |---|---|
-| WAR-14 | **EM REVISÃO (PR aberto, branch feat/pop-war-14)** |
+| WAR-14 | **APROVADO (PR #17, CI verde)** |
+| WAR-16 | **EM REVISÃO (branch feat/pop-war-16)** |
 | demais 20 | mapeados, aguardando fatia |
 
 ## LACUNAS_IDENTIFICADAS

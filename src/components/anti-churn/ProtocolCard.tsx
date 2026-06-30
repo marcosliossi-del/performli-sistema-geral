@@ -54,6 +54,9 @@ const TRIGGER_LABELS: Record<AlertType, string> = {
   KPI_DROP_24H:                  'Queda de KPI 24h',
   KPI_SPIKE_24H:                 'Alta de KPI 24h',
   CONTRACT_EXPIRING_SOON:        'Contrato vencendo',
+  WARROOM_NO_REVIEW:             'War Room sem revisão semanal',
+  WARROOM_EXIT_CRITERIA_MET:     'Critério de saída atingido',
+  WARROOM_REGRESSION:            'Critério de saída em regressão',
 }
 
 const NEXT_STATUS: Partial<Record<CriticalProtocolStatus, { to: CriticalProtocolStatus; label: string }>> = {

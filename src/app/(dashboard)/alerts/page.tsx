@@ -19,6 +19,9 @@ const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string
   ROAS_BELOW_TARGET_2W:           { icon: ShieldAlert,    color: 'text-[#EF4444]', label: '🚨 Conta Crítica — ROAS' },
   FATURAMENTO_BELOW_70PCT_WEEK2:  { icon: ShieldAlert,    color: 'text-[#EF4444]', label: '🚨 Conta Crítica — Faturamento' },
   CONTRACT_EXPIRING_SOON:         { icon: Scale,          color: 'text-[#F59E0B]', label: 'Contrato Vencendo' },
+  WARROOM_NO_REVIEW:              { icon: ShieldAlert,    color: 'text-[#EAB308]', label: 'War Room sem revisão' },
+  WARROOM_EXIT_CRITERIA_MET:      { icon: CheckCircle2,   color: 'text-[#22C55E]', label: 'Critério de saída atingido' },
+  WARROOM_REGRESSION:             { icon: TrendingDown,   color: 'text-[#EF4444]', label: 'War Room em regressão' },
 }
 
 export default async function AlertsPage() {

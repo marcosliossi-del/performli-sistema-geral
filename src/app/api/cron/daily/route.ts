@@ -13,6 +13,7 @@ import { sendDailyDigest } from '@/services/notifications/daily-digest'
 import { syncAsaasData } from '@/services/asaas/sync'
 import { detectCriticalAccounts } from '@/services/critical-account-detector'
 import { escalateStaleWarRooms } from '@/services/warroom-escalation'
+import { monitorWarRooms } from '@/services/warroom-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/app/actions/goals'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
 
@@ -49,6 +50,7 @@ async function runDailySync() {
     budgetWarnings: { ok: false },
     criticalAccounts: { ok: false },
     warRoomEscalation: { ok: false },
+    warRoomMonitor: { ok: false },
     weeklyReports: isSunday ? { ok: false } : { ok: true, skipped: true },
     weeklyChecklists: isSunday ? { ok: false } : { ok: true, skipped: true },
     contractExpiry:   { ok: false },
@@ -204,6 +206,23 @@ async function runDailySync() {
     }
   } catch (err) {
     summary.warRoomEscalation = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // ── Step 6d: War Room monitoring (critério de saída + revisão semanal) ────
+  try {
+    const monitorResult = await monitorWarRooms()
+    summary.warRoomMonitor = {
+      ok: true,
+      checked: monitorResult.checked,
+      reviewAlerts: monitorResult.reviewAlerts,
+      exitMetAlerts: monitorResult.exitMetAlerts,
+      regressionAlerts: monitorResult.regressionAlerts,
+    }
+  } catch (err) {
+    summary.warRoomMonitor = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     }

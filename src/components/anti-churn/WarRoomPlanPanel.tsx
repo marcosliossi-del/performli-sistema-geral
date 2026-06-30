@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { Card } from '@/components/ui/card'
-import { Target, AlertTriangle, Save, CheckCircle2, XCircle, MinusCircle } from 'lucide-react'
-import { saveWarRoomPlan, closeWarRoom, type WarRoomPlanInput } from '@/app/actions/warRoom'
+import { Target, AlertTriangle, Save, CheckCircle2, XCircle, MinusCircle, CalendarCheck } from 'lucide-react'
+import { saveWarRoomPlan, closeWarRoom, registerWarRoomReview, type WarRoomPlanInput } from '@/app/actions/warRoom'
 import { MetricType, WarRoomOutcome } from '@prisma/client'
 
 export type WarRoomPlan = {
@@ -17,6 +17,8 @@ export type WarRoomPlan = {
   responsibleId: string | null
   responsibleName: string | null
   deadline: Date | null
+  lastReviewedAt: Date | null
+  exitMetAt: Date | null
 }
 
 type ResponsibleOption = { id: string; name: string; role: string }
@@ -85,6 +87,21 @@ export function WarRoomPlanPanel({
     })
   }
 
+  function handleReview(met: boolean) {
+    setMsg(null)
+    startTransition(async () => {
+      const res = await registerWarRoomReview(plan.id, met)
+      setMsg('error' in res ? res.error : met ? 'Revisão registrada: critério atingido.' : 'Revisão registrada.')
+    })
+  }
+
+  const reviewLabel = plan.lastReviewedAt
+    ? `Última revisão: ${new Date(plan.lastReviewedAt).toLocaleDateString('pt-BR')}`
+    : 'Sem revisão registrada'
+  const exitMetLabel = plan.exitMetAt
+    ? `Critério atingido em ${new Date(plan.exitMetAt).toLocaleDateString('pt-BR')}`
+    : null
+
   // Visão de leitura para quem não pode editar ou War Room encerrada
   if (!canEdit || isEncerrado) {
     return (
@@ -105,6 +122,18 @@ export function WarRoomPlanPanel({
           <div className="flex items-center gap-2 text-xs text-[#EAB308]">
             <AlertTriangle size={13} />
             War Room sem critério de saída definido.
+          </div>
+        )}
+        {hasExitCriteria && (
+          <div className="flex flex-wrap items-center gap-2 mt-2 text-[10px]">
+            <span className="flex items-center gap-1 text-[#87919E]">
+              <CalendarCheck size={11} /> {reviewLabel}
+            </span>
+            {exitMetLabel && (
+              <span className="flex items-center gap-1 text-[#22C55E]">
+                <CheckCircle2 size={11} /> {exitMetLabel}
+              </span>
+            )}
           </div>
         )}
       </Card>
@@ -216,6 +245,35 @@ export function WarRoomPlanPanel({
           </div>
         </div>
       </div>
+
+      {/* WAR-16: revisão semanal */}
+      {hasExitCriteria && (
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#38435C]/60">
+          <span className="flex items-center gap-1 text-[10px] text-[#87919E]">
+            <CalendarCheck size={11} /> {reviewLabel}
+            {exitMetLabel && <span className="text-[#22C55E] ml-1">· {exitMetLabel}</span>}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-[#87919E]">Revisão semanal:</span>
+            <button
+              onClick={() => handleReview(true)}
+              disabled={isPending}
+              title="Critério de saída atingido nesta semana"
+              className="flex items-center gap-1 text-[10px] text-[#22C55E] border border-[#22C55E]/30 rounded px-2 py-1 hover:bg-[#22C55E]/10 transition-colors disabled:opacity-50"
+            >
+              <CheckCircle2 size={11} /> Atingido
+            </button>
+            <button
+              onClick={() => handleReview(false)}
+              disabled={isPending}
+              title="Revisado — critério ainda não atingido"
+              className="flex items-center gap-1 text-[10px] text-[#87919E] border border-[#38435C] rounded px-2 py-1 hover:bg-[#38435C]/30 transition-colors disabled:opacity-50"
+            >
+              <CalendarCheck size={11} /> Revisado
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between pt-1">
         <button
