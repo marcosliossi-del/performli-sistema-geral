@@ -111,19 +111,42 @@ export async function toggleChecklistItem(itemId: string, done: boolean): Promis
   return { ok: true }
 }
 
+export type TaskMeta = {
+  description: string | null
+  type: string
+  priority: string
+  origin: string
+  dueDate: Date | null
+  requestedAt: Date | null
+  startDate: Date | null
+  slaHours: number | null
+  slaBreached: boolean
+  areaName: string | null
+  listName: string | null
+  popCode: string | null
+  popName: string | null
+  clientName: string | null
+  clientSlug: string | null
+  assigneeName: string
+  requesterName: string | null
+  watcherNames: string[]
+  tags: string[]
+}
+
 export type TaskDetail = {
   status: string
   evidence: string | null
   requiredOpen: number
   canSubmit: boolean
   canValidate: boolean
+  meta: TaskMeta
   checklist: { id: string; label: string; done: boolean; required: boolean }[]
   comments: { id: string; body: string; authorName: string; createdAt: Date }[]
   activities: { id: string; action: string; fromValue: string | null; toValue: string | null; actorName: string; createdAt: Date }[]
   approvals: { id: string; approverName: string; approved: boolean | null; note: string | null; decidedAt: Date | null }[]
 }
 
-/** Carrega checklist, comentários, atividade, aprovações e flags de permissão. */
+/** Carrega checklist, comentários, atividade, aprovações, metadados e flags de permissão. */
 export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null> {
   const session = await requireSession()
   const task = await prisma.task.findUnique({
@@ -133,6 +156,23 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
       status: true,
       evidence: true,
       assignedTo: true,
+      description: true,
+      type: true,
+      priority: true,
+      origin: true,
+      dueDate: true,
+      requestedAt: true,
+      startDate: true,
+      slaHours: true,
+      slaBreached: true,
+      requesterId: true,
+      tags: true,
+      area: { select: { name: true } },
+      list: { select: { name: true } },
+      pop: { select: { code: true, name: true } },
+      client: { select: { name: true, slug: true } },
+      user: { select: { name: true } },
+      watchers: { select: { userId: true } },
       checklist: { orderBy: { order: 'asc' }, select: { id: true, label: true, done: true, required: true } },
       comments: { orderBy: { createdAt: 'desc' }, take: 30, select: { id: true, body: true, authorId: true, createdAt: true } },
       activities: { orderBy: { createdAt: 'desc' }, take: 30, select: { id: true, action: true, fromValue: true, toValue: true, actorId: true, createdAt: true } },
@@ -146,6 +186,8 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
       ...task.comments.map((c) => c.authorId),
       ...task.activities.map((a) => a.actorId).filter((x): x is string => !!x),
       ...task.approvals.map((a) => a.approverId).filter((x): x is string => !!x),
+      ...task.watchers.map((w) => w.userId),
+      ...(task.requesterId ? [task.requesterId] : []),
     ]),
   )
   const users = ids.length
@@ -159,12 +201,35 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
   const submittable = ['A_FAZER', 'EM_ANDAMENTO', 'AJUSTES_SOLICITADOS'].includes(task.status)
   const canSubmit = submittable && (isAssignee || session.role === 'ADMIN')
 
+  const meta: TaskMeta = {
+    description: task.description,
+    type: task.type,
+    priority: task.priority,
+    origin: task.origin,
+    dueDate: task.dueDate,
+    requestedAt: task.requestedAt,
+    startDate: task.startDate,
+    slaHours: task.slaHours,
+    slaBreached: task.slaBreached,
+    areaName: task.area?.name ?? null,
+    listName: task.list?.name ?? null,
+    popCode: task.pop?.code ?? null,
+    popName: task.pop?.name ?? null,
+    clientName: task.client?.name ?? null,
+    clientSlug: task.client?.slug ?? null,
+    assigneeName: task.user?.name ?? '—',
+    requesterName: task.requesterId ? (nameMap.get(task.requesterId) ?? null) : null,
+    watcherNames: task.watchers.map((w) => nameMap.get(w.userId) ?? '—').filter((n) => n !== '—'),
+    tags: task.tags,
+  }
+
   return {
     status: task.status,
     evidence: task.evidence,
     requiredOpen,
     canSubmit,
     canValidate,
+    meta,
     checklist: task.checklist,
     comments: task.comments.map((c) => ({ id: c.id, body: c.body, authorName: nameMap.get(c.authorId) ?? '—', createdAt: c.createdAt })),
     activities: task.activities.map((a) => ({
