@@ -12,6 +12,7 @@ import { generateAllWeeklyChecklists } from '@/services/weekly-checklist-generat
 import { sendDailyDigest } from '@/services/notifications/daily-digest'
 import { syncAsaasData } from '@/services/asaas/sync'
 import { detectCriticalAccounts } from '@/services/critical-account-detector'
+import { escalateStaleWarRooms } from '@/services/warroom-escalation'
 import { syncWeeklyGoalsFromMonthly } from '@/app/actions/goals'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
 
@@ -47,6 +48,7 @@ async function runDailySync() {
     churnRisk: { ok: false },
     budgetWarnings: { ok: false },
     criticalAccounts: { ok: false },
+    warRoomEscalation: { ok: false },
     weeklyReports: isSunday ? { ok: false } : { ok: true, skipped: true },
     weeklyChecklists: isSunday ? { ok: false } : { ok: true, skipped: true },
     contractExpiry:   { ok: false },
@@ -187,6 +189,21 @@ async function runDailySync() {
     }
   } catch (err) {
     summary.criticalAccounts = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // ── Step 6c: War Room escalation (3 semanas em crítico → Marcos) ──────────
+  try {
+    const escalationResult = await escalateStaleWarRooms()
+    summary.warRoomEscalation = {
+      ok: true,
+      checked: escalationResult.checked,
+      escalated: escalationResult.escalated,
+    }
+  } catch (err) {
+    summary.warRoomEscalation = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     }

@@ -1094,6 +1094,21 @@ export const getTeamMembers = cache(async () => {
   })
 })
 
+// ─── War Room — responsáveis elegíveis (WAR-14) ────────────────────────────────
+
+export type WarRoomResponsibleOption = { id: string; name: string; role: string }
+
+/** Usuários ativos que podem ser responsáveis por uma War Room (ADMIN, CS, MANAGER). */
+export const getWarRoomResponsibleOptions = cache(
+  async (): Promise<WarRoomResponsibleOption[]> => {
+    return prisma.user.findMany({
+      where: { active: true, role: { in: ['ADMIN', 'CS', 'MANAGER'] } },
+      orderBy: [{ role: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, role: true },
+    })
+  },
+)
+
 // ─── Managers overview ────────────────────────────────────────────────────────
 
 export type ManagerClientRow = {
