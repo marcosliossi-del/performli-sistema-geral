@@ -186,3 +186,12 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
   Slide com mola (.ak-drawer) + scrim com blur (.ak-scrim). loadTaskDetail estendido
   com TaskMeta (descrição, sla, datas, área/lista/pop, observadores, solicitante, tags).
   Mantém todas as ações existentes.
+
+- **Slice 4 — View Lista/Kanban (igual ao protótipo):** OperacionalBoard reescrito.
+  Lista = tabela densa (card) agrupada por status (header colapsável com contador),
+  colunas Tarefa · Cliente (ponto de saúde) · Resp. (avatar com iniciais/cor) ·
+  Status (badge com ponto) · Prioridade (bandeira) · Prazo (relativo, vermelho se
+  atrasado) · SLA (chip ok/warn/over). Linha crítica com faixa vermelha. Kanban =
+  colunas por status com cards (ak-lift), coluna crítica (BLOQUEADO/ATRASADO)
+  destacada em vermelho. Views Por gestor/Por cliente reusam a tabela. DAL
+  getOperacionalBoard estendido (clientHealth via statusStreak + slaHours/slaBreached).
