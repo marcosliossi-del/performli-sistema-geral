@@ -24,6 +24,7 @@ const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string
   WARROOM_REGRESSION:             { icon: TrendingDown,   color: 'text-[#EF4444]', label: 'War Room em regressão' },
   INVOICE_OVERDUE:                { icon: AlertCircle,    color: 'text-[#EF4444]', label: 'Fatura vencida' },
   CLIENT_WITHOUT_BILLING:         { icon: AlertTriangle,  color: 'text-[#EAB308]', label: 'Cliente sem cobrança' },
+  ANTICHURN_ACTION_NEEDED:        { icon: ShieldAlert,    color: 'text-[#EF4444]', label: 'Cliente em risco sem ação' },
 }
 
 export default async function AlertsPage() {

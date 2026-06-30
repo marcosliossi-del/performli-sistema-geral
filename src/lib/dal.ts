@@ -1294,6 +1294,79 @@ export const getClientsWithoutBilling = cache(
   },
 )
 
+// ─── CSX-13 — Fila anti-churn proativo ─────────────────────────────────────────
+
+export type AntiChurnQueueRow = {
+  id: string
+  name: string
+  slug: string
+  manager: string | null
+  riskScore: number | null
+  lastInteractionAt: Date | null
+  daysSinceInteraction: number | null
+  isSilent: boolean
+}
+
+const SILENT_DAYS = 14
+const ANTICHURN_RISK_THRESHOLD = 40
+
+/**
+ * Fila de ação anti-churn: clientes em risco (ChurnRiskScore) priorizados, com
+ * dias desde a última interação e sinal de "silencioso". Role-scoped.
+ */
+export const getAntiChurnQueue = cache(
+  async (userId: string, role: string): Promise<AntiChurnQueueRow[]> => {
+    const where: Prisma.ClientWhereInput = canViewAll(role)
+      ? { status: 'ACTIVE' }
+      : { status: 'ACTIVE', assignments: { some: { userId } } }
+
+    const clients = await prisma.client.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        assignments: {
+          where: { isPrimary: true },
+          select: { user: { select: { name: true } } },
+          take: 1,
+        },
+        churnRiskScores: { orderBy: { weekStart: 'desc' }, take: 1, select: { score: true } },
+        interactions: { orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
+      },
+      orderBy: { name: 'asc' },
+    })
+
+    const now = Date.now()
+
+    return clients
+      .map((c) => {
+        const riskScore = c.churnRiskScores[0]?.score ?? null
+        const lastInteractionAt = c.interactions[0]?.createdAt ?? null
+        const daysSinceInteraction = lastInteractionAt
+          ? Math.floor((now - new Date(lastInteractionAt).getTime()) / 86_400_000)
+          : null
+        const isSilent = daysSinceInteraction == null || daysSinceInteraction >= SILENT_DAYS
+        return {
+          id: c.id,
+          name: c.name,
+          slug: c.slug,
+          manager: c.assignments[0]?.user?.name ?? null,
+          riskScore,
+          lastInteractionAt,
+          daysSinceInteraction,
+          isSilent,
+        }
+      })
+      .filter((r) => (r.riskScore ?? 0) >= ANTICHURN_RISK_THRESHOLD)
+      .sort(
+        (a, b) =>
+          (b.riskScore ?? 0) - (a.riskScore ?? 0) ||
+          (b.daysSinceInteraction ?? 0) - (a.daysSinceInteraction ?? 0),
+      )
+  },
+)
+
 // ─── Managers overview ────────────────────────────────────────────────────────
 
 export type ManagerClientRow = {

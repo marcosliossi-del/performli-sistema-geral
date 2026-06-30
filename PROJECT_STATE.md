@@ -22,8 +22,9 @@ OPE-06 (4.39) · CSX-12 (4.32) · CRM-18 (4.19) · ONB-05 (4.09). Detalhe em
 | WAR-14 | **EM PRODUÇÃO (merged #17)** |
 | WAR-16 | **EM PRODUÇÃO (merged #18)** |
 | Cockpit | **EM PRODUÇÃO (merged #19)** |
-| FIN-19 | **EM REVISÃO (branch feat/pop-fin-19)** |
-| demais 17 | mapeados, aguardando fatia |
+| FIN-19 | **EM PRODUÇÃO (merged #20)** |
+| CSX-13 | **EM REVISÃO (branch feat/pop-csx-13)** |
+| demais 16 | mapeados, aguardando fatia |
 
 ## LACUNAS_IDENTIFICADAS
 `docs/mapa-lacunas.md`. 1 JÁ_EXISTE · 15 PARCIAL · 5 INEXISTENTE.

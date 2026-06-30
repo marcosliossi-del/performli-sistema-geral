@@ -59,6 +59,7 @@ const TRIGGER_LABELS: Record<AlertType, string> = {
   WARROOM_REGRESSION:            'Critério de saída em regressão',
   INVOICE_OVERDUE:               'Fatura vencida',
   CLIENT_WITHOUT_BILLING:        'Cliente sem cobrança ativa',
+  ANTICHURN_ACTION_NEEDED:       'Cliente em risco sem ação',
 }
 
 const NEXT_STATUS: Partial<Record<CriticalProtocolStatus, { to: CriticalProtocolStatus; label: string }>> = {
