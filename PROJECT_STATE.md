@@ -116,3 +116,11 @@ Após concluir todos os blocos da Central Operacional, fazer um overhaul de UX:
 - Tipografia moderna, clean e objetiva (fontes mais sofisticadas).
 - Liberdade para **revisar paleta de cores e fonte** buscando um ar mais sofisticado.
 - Manter todas as regras de UX operacional do CLAUDE.md (cada tela responde às 6 perguntas).
+
+  - **CSX-10 Validação da CS**: fila de validação dedicada (/validacoes).
+    DAL getValidationQueue (tarefas AGUARDANDO_CS/EM_VALIDACAO, role-scoped:
+    CS/ADMIN veem tudo e decidem, MANAGER vê as dos seus clientes p/ acompanhar;
+    calcula dias de espera e progresso do checklist). Componente ValidationQueue
+    (lista expansível com evidência, aprovar/solicitar ajustes inline, reusa
+    decideTaskValidation; destaca itens esperando 3+ dias). Página com KPIs.
+    Nav (PRINCIPAL, visível a ADMIN/CS/MANAGER) + middleware. Sem model novo.

@@ -3176,3 +3176,88 @@ export const getClienteTarefas = cache(
     }
   },
 )
+
+// ─── BLOCO 5 / CSX-10 — Fila de validação da CS ─────────────────────────────────
+
+export type ValidationQueueItem = {
+  id: string
+  title: string
+  status: string
+  clientName: string | null
+  clientSlug: string | null
+  assigneeName: string
+  popCode: string | null
+  evidence: string | null
+  checklistTotal: number
+  checklistDone: number
+  dueDate: Date | null
+  submittedAt: Date | null
+  waitingDays: number
+}
+
+export type ValidationQueue = {
+  items: ValidationQueueItem[]
+  canDecide: boolean
+}
+
+/**
+ * CSX-10 — Fila de validação: tarefas aguardando validação da CS
+ * (AGUARDANDO_CS / EM_VALIDACAO). CS/ADMIN veem tudo e podem decidir;
+ * MANAGER vê apenas as dos seus clientes (leitura, para acompanhar).
+ */
+export const getValidationQueue = cache(
+  async (userId: string, role: string): Promise<ValidationQueue> => {
+    const canDecide = role === 'CS' || role === 'ADMIN'
+    const base: Prisma.TaskWhereInput = { status: { in: ['AGUARDANDO_CS', 'EM_VALIDACAO'] } }
+    const where: Prisma.TaskWhereInput = canViewAll(role)
+      ? base
+      : { ...base, OR: [{ assignedTo: userId }, { client: { assignments: { some: { userId } } } }] }
+
+    const rows = await prisma.task.findMany({
+      where,
+      orderBy: [{ dueDate: 'asc' }, { updatedAt: 'asc' }],
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        evidence: true,
+        dueDate: true,
+        client: { select: { name: true, slug: true } },
+        user: { select: { name: true } },
+        pop: { select: { code: true } },
+        checklist: { select: { done: true } },
+        activities: {
+          where: { action: 'submitted_for_validation' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { createdAt: true },
+        },
+      },
+    })
+
+    const now = Date.now()
+    const items: ValidationQueueItem[] = rows.map((t) => {
+      const submittedAt = t.activities[0]?.createdAt ?? null
+      const waitingDays = submittedAt
+        ? Math.floor((now - new Date(submittedAt).getTime()) / 86_400_000)
+        : 0
+      return {
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        clientName: t.client?.name ?? null,
+        clientSlug: t.client?.slug ?? null,
+        assigneeName: t.user?.name ?? '—',
+        popCode: t.pop?.code ?? null,
+        evidence: t.evidence,
+        checklistTotal: t.checklist.length,
+        checklistDone: t.checklist.filter((c) => c.done).length,
+        dueDate: t.dueDate,
+        submittedAt,
+        waitingDays,
+      }
+    })
+
+    return { items, canDecide }
+  },
+)
