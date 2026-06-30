@@ -3286,12 +3286,12 @@ export const getSidebarCounts = cache(
 
     const now = new Date()
     const endToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
-    const open = { notIn: ['CONCLUIDO', 'CANCELADO'] as string[] }
+    const openStatus: Prisma.TaskWhereInput['status'] = { notIn: ['CONCLUIDO', 'CANCELADO'] }
 
     const [meuDia, abertas, checkins, validacoes, warRooms, alertas] = await Promise.all([
-      prisma.task.count({ where: { assignedTo: userId, status: open, dueDate: { lt: endToday } } }),
-      prisma.task.count({ where: { ...taskScope, status: open } }),
-      prisma.task.count({ where: { ...taskScope, status: open, pop: { code: 'OPE-06' } } }),
+      prisma.task.count({ where: { assignedTo: userId, status: openStatus, dueDate: { lt: endToday } } }),
+      prisma.task.count({ where: { ...taskScope, status: openStatus } }),
+      prisma.task.count({ where: { ...taskScope, status: openStatus, pop: { code: 'OPE-06' } } }),
       prisma.task.count({ where: { ...taskScope, status: { in: ['AGUARDANDO_CS', 'EM_VALIDACAO'] } } }),
       prisma.criticalProtocol.count({ where: { status: { not: 'ENCERRADO' }, client: clientScope } }),
       prisma.alert.count({ where: { read: false, client: clientScope } }),
