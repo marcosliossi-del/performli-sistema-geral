@@ -124,3 +124,28 @@ Após concluir todos os blocos da Central Operacional, fazer um overhaul de UX:
     (lista expansível com evidência, aprovar/solicitar ajustes inline, reusa
     decideTaskValidation; destaca itens esperando 3+ dias). Página com KPIs.
     Nav (PRINCIPAL, visível a ADMIN/CS/MANAGER) + middleware. Sem model novo.
+
+  - **WAR-14 War Room → Central Operacional**: War Room (CriticalProtocol) já
+    existia (plano/encerramento/revisão/painéis). Conectado ao Task: ao salvar
+    o plano, cria/atualiza Task WAR_ROOM CRÍTICA do responsável (idempotente por
+    `warroom:<protocolId>`, popId pop_war_14, dueDate=prazo) — aparece em
+    /operacional, /meu-dia e na carga por gestor. Ao encerrar a War Room, a tarefa
+    espelho fecha (CONCLUIDO se positivo, senão CANCELADO). Sem model novo.
+
+## DESIGN SYSTEM TRAVADO (Etapa A — do protótipo aprovado do usuário)
+Arquivos versionados: docs/ux/PROMPT_UX_DESIGN_SYSTEM_ARKZA.md + docs/ux/prototipo_ux_arkza.html.
+Usuário deu AUTONOMIA TOTAL (sem checkpoints) — aplicar direto na fase de redesign.
+Tokens definidos (NÃO clonar ClickUp, sem roxo ClickUp como primária):
+- Superfícies: --surface-0 #0c1014 / -1 #121820 / -2 #19212b / -3 #212c38
+- Bordas: --border #26323f / --border-soft #1c2530
+- Texto: hi #e8eef4 / mid #9fb0c0 / low #637284
+- Marca (ciano-petróleo): --brand #1fb6c9 / strong #3fd0e0 / dim rgba(31,182,201,.14)
+- Status: todo #7c8da0 · doing #3d8bff · wait #d9a23b · valid #9b7cff · block #e0625b ·
+  late #ff5470 · done #2fbf71 · cancel #4a5563 · critical #ff3b4e
+- Prioridade: low #5b6b7c · mid #3d8bff · high #f0922b · crit #ff3b4e
+- Raio: 12px (sm 8px)
+- Fontes: UI = Inter; números/mono = JetBrains Mono (tabular p/ métricas/SLA/datas)
+Etapas do prompt: A tokens+componentes base → B shell/sidebar hierárquica/topbar/views bar
+→ C views (Lista inline-edit, Kanban DnD, Calendário) + drawer de tarefa + quick-add.
+PLANO: terminar blocos funcionais (POPs restantes + 6 + 7), depois redesign aplicando
+estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.

@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Central Operacional Arkza — Protótipo de UX</title>
+<style>
+  /* ---------- TOKENS (paleta própria, dark, longe do roxo ClickUp) ---------- */
+  :root{
+    /* Superfícies escalonadas = profundidade de ferramenta densa */
+    --surface-0:#0c1014;   /* fundo da app */
+    --surface-1:#121820;   /* painel / sidebar */
+    --surface-2:#19212b;   /* card */
+    --surface-3:#212c38;   /* card elevado / hover */
+    --border:#26323f;
+    --border-soft:#1c2530;
+
+    /* Texto */
+    --text-hi:#e8eef4;
+    --text-mid:#9fb0c0;
+    --text-low:#637284;
+
+    /* Marca: ciano-petróleo elétrico — performance/tráfego, NÃO o roxo ClickUp */
+    --brand:#1fb6c9;
+    --brand-strong:#3fd0e0;
+    --brand-dim:rgba(31,182,201,.14);
+
+    /* Status operacionais (funcionais) */
+    --st-todo:#7c8da0;
+    --st-doing:#3d8bff;
+    --st-wait:#d9a23b;     /* aguardando: âmbar de "pausa" */
+    --st-valid:#9b7cff;    /* em validação */
+    --st-block:#e0625b;
+    --st-late:#ff5470;     /* atrasado: salta */
+    --st-done:#2fbf71;
+    --st-cancel:#4a5563;
+    --st-critical:#ff3b4e; /* crítico/war room: grita */
+
+    /* Prioridades (distintas dos status) */
+    --pr-low:#5b6b7c;
+    --pr-mid:#3d8bff;
+    --pr-high:#f0922b;
+    --pr-crit:#ff3b4e;
+
+    --radius:12px;
+    --radius-sm:8px;
+    --font-ui:"Inter","Segoe UI",system-ui,sans-serif;
+    --font-mono:"JetBrains Mono","SF Mono",ui-monospace,monospace;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--surface-0);color:var(--text-hi);
+    font-family:var(--font-ui);font-size:13px;line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{display:grid;grid-template-columns:236px 1fr;height:100vh;overflow:hidden}
+
+  /* ---------- SIDEBAR ---------- */
+  .sidebar{background:var(--surface-1);border-right:1px solid var(--border);
+    display:flex;flex-direction:column;overflow-y:auto}
+  .brand{display:flex;align-items:center;gap:9px;padding:16px 16px 14px;border-bottom:1px solid var(--border-soft)}
+  .brand .logo{width:26px;height:26px;border-radius:7px;
+    background:linear-gradient(135deg,var(--brand),#0f6f7e);display:grid;place-items:center;
+    font-weight:800;color:#04141a;font-size:13px}
+  .brand b{font-size:14px;letter-spacing:.2px}
+  .brand span{color:var(--text-low);font-size:10px;display:block;margin-top:-2px}
+
+  .nav-section{padding:10px 8px 4px}
+  .nav-label{color:var(--text-low);font-size:10px;text-transform:uppercase;letter-spacing:.8px;
+    padding:6px 8px 4px;font-weight:600}
+  .nav-item{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--radius-sm);
+    color:var(--text-mid);cursor:pointer;font-size:12.5px;position:relative}
+  .nav-item:hover{background:var(--surface-2);color:var(--text-hi)}
+  .nav-item.active{background:var(--brand-dim);color:var(--brand-strong);font-weight:600}
+  .nav-item.active::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;
+    border-radius:2px;background:var(--brand)}
+  .nav-item .ico{width:15px;height:15px;flex:0 0 15px;opacity:.85}
+  .nav-item .count{margin-left:auto;background:var(--surface-3);color:var(--text-mid);
+    font-size:10px;padding:1px 7px;border-radius:9px;font-weight:600}
+  .nav-item .count.alert{background:rgba(255,84,112,.16);color:var(--st-late)}
+  .nav-tree{margin-left:8px;border-left:1px solid var(--border-soft);padding-left:4px}
+
+  /* ---------- MAIN ---------- */
+  .main{display:flex;flex-direction:column;overflow:hidden}
+  .topbar{height:52px;border-bottom:1px solid var(--border);display:flex;align-items:center;
+    gap:12px;padding:0 16px;background:var(--surface-1)}
+  .search{flex:1;max-width:420px;display:flex;align-items:center;gap:8px;background:var(--surface-2);
+    border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 11px;color:var(--text-low);font-size:12px}
+  .search kbd{margin-left:auto;background:var(--surface-3);border-radius:4px;padding:1px 6px;font-size:10px;font-family:var(--font-mono)}
+  .btn{border:none;border-radius:var(--radius-sm);padding:8px 13px;font-size:12.5px;font-weight:600;
+    cursor:pointer;display:inline-flex;align-items:center;gap:7px;font-family:inherit}
+  .btn-primary{background:var(--brand);color:#04141a}
+  .btn-primary:hover{background:var(--brand-strong)}
+  .btn-ghost{background:transparent;color:var(--text-mid);border:1px solid var(--border)}
+  .btn-ghost:hover{background:var(--surface-2);color:var(--text-hi)}
+  .avatar{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;color:#04141a}
+
+  .header{padding:16px 20px 0}
+  .header h1{font-size:19px;font-weight:700;letter-spacing:-.2px}
+  .header p{color:var(--text-low);font-size:12px;margin-top:2px}
+
+  /* KPI strip */
+  .kpis{display:flex;gap:10px;padding:14px 20px 4px;flex-wrap:wrap}
+  .kpi{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);
+    padding:11px 14px;min-width:120px}
+  .kpi .v{font-size:22px;font-weight:700;font-family:var(--font-mono);letter-spacing:-.5px}
+  .kpi .l{color:var(--text-low);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;margin-top:1px}
+  .kpi.late .v{color:var(--st-late)}
+  .kpi.done .v{color:var(--st-done)}
+  .kpi.crit .v{color:var(--st-critical)}
+
+  /* view tabs */
+  .viewbar{display:flex;gap:2px;padding:12px 20px 0;border-bottom:1px solid var(--border)}
+  .vtab{padding:8px 13px;color:var(--text-mid);font-size:12.5px;cursor:pointer;border-bottom:2px solid transparent;font-weight:500}
+  .vtab:hover{color:var(--text-hi)}
+  .vtab.active{color:var(--brand-strong);border-bottom-color:var(--brand);font-weight:600}
+
+  .content{flex:1;overflow-y:auto;padding:0 20px 40px}
+
+  /* ---------- BADGES ---------- */
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:20px;
+    font-size:11px;font-weight:600;white-space:nowrap}
+  .dot{width:7px;height:7px;border-radius:50%;flex:0 0 7px}
+  .b-todo{background:rgba(124,141,160,.14);color:#aebccb} .b-todo .dot{background:var(--st-todo)}
+  .b-doing{background:rgba(61,139,255,.14);color:#86b4ff} .b-doing .dot{background:var(--st-doing)}
+  .b-wait{background:rgba(217,162,59,.15);color:#e8c074} .b-wait .dot{background:var(--st-wait)}
+  .b-valid{background:rgba(155,124,255,.15);color:#bda9ff} .b-valid .dot{background:var(--st-valid)}
+  .b-late{background:rgba(255,84,112,.15);color:#ff8198} .b-late .dot{background:var(--st-late)}
+  .b-done{background:rgba(47,191,113,.14);color:#6fd99e} .b-done .dot{background:var(--st-done)}
+  .b-crit{background:rgba(255,59,78,.18);color:#ff7080} .b-crit .dot{background:var(--st-critical)}
+
+  .prio{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--text-mid)}
+  .flag{width:0;height:0;border-left:8px solid;border-bottom:5px solid transparent;border-top:5px solid transparent}
+  .p-low{border-left-color:var(--pr-low)} .p-mid{border-left-color:var(--pr-mid)}
+  .p-high{border-left-color:var(--pr-high)} .p-crit{border-left-color:var(--pr-crit)}
+
+  .client-pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-mid)}
+  .health{width:7px;height:7px;border-radius:50%}
+  .h-good{background:var(--st-done)} .h-warn{background:var(--st-wait)} .h-bad{background:var(--st-critical)}
+
+  /* ---------- LIST VIEW ---------- */
+  .group{margin-top:18px}
+  .group-h{display:flex;align-items:center;gap:8px;padding:6px 4px;cursor:pointer}
+  .group-h .chev{color:var(--text-low);font-size:10px}
+  .group-h .name{font-weight:700;font-size:12.5px}
+  .group-h .gc{color:var(--text-low);font-size:11px;background:var(--surface-2);padding:1px 8px;border-radius:9px}
+  .tbl{width:100%;border-collapse:collapse;margin-top:4px}
+  .tbl th{text-align:left;color:var(--text-low);font-size:10px;text-transform:uppercase;letter-spacing:.6px;
+    font-weight:600;padding:6px 10px;border-bottom:1px solid var(--border-soft)}
+  .tbl td{padding:9px 10px;border-bottom:1px solid var(--border-soft);font-size:12.5px}
+  .row{cursor:pointer}
+  .row:hover{background:var(--surface-2)}
+  .row.crit{box-shadow:inset 3px 0 0 var(--st-critical)}
+  .t-title{font-weight:500;color:var(--text-hi)}
+  .due{font-family:var(--font-mono);font-size:11.5px;color:var(--text-mid)}
+  .due.over{color:var(--st-late);font-weight:600}
+  .sla{font-family:var(--font-mono);font-size:10.5px;padding:1px 7px;border-radius:5px;background:var(--surface-3);color:var(--text-mid)}
+  .sla.warn{color:var(--st-wait)} .sla.over{color:var(--st-late);background:rgba(255,84,112,.12)}
+  .avgrp{display:flex} .avgrp .avatar{width:22px;height:22px;font-size:9px;margin-left:-6px;border:2px solid var(--surface-1)}
+  .avgrp .avatar:first-child{margin-left:0}
+
+  /* ---------- KANBAN ---------- */
+  .kanban{display:flex;gap:13px;padding-top:16px;overflow-x:auto;min-height:400px}
+  .col{flex:0 0 268px;background:var(--surface-1);border:1px solid var(--border);border-radius:var(--radius);
+    display:flex;flex-direction:column;max-height:560px}
+  .col-h{display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid var(--border-soft)}
+  .col-h .c{margin-left:auto;color:var(--text-low);font-size:11px;background:var(--surface-2);padding:1px 8px;border-radius:9px}
+  .col.critical{border-color:rgba(255,59,78,.4)}
+  .col.critical .col-h{background:rgba(255,59,78,.06)}
+  .cards{padding:9px;display:flex;flex-direction:column;gap:9px;overflow-y:auto}
+  .card{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);
+    padding:11px;cursor:grab}
+  .card:hover{background:var(--surface-3);border-color:var(--border)}
+  .card .ct{font-weight:500;font-size:12.5px;margin:7px 0 9px;line-height:1.35}
+  .card-meta{display:flex;align-items:center;gap:10px;color:var(--text-low);font-size:11px}
+  .card-meta .m{display:flex;align-items:center;gap:4px}
+  .card-foot{display:flex;align-items:center;justify-content:space-between;margin-top:10px;
+    padding-top:9px;border-top:1px solid var(--border-soft)}
+  .chk{font-family:var(--font-mono);font-size:10.5px;color:var(--text-low)}
+
+  /* ---------- DRAWER ---------- */
+  .scrim{position:fixed;inset:0;background:rgba(4,8,12,.55);backdrop-filter:blur(2px);z-index:40;display:none}
+  .scrim.open{display:block}
+  .drawer{position:fixed;top:0;right:0;height:100vh;width:560px;max-width:92vw;background:var(--surface-1);
+    border-left:1px solid var(--border);z-index:50;transform:translateX(100%);transition:transform .22s cubic-bezier(.4,0,.2,1);
+    display:flex;flex-direction:column;box-shadow:-20px 0 60px rgba(0,0,0,.4)}
+  .drawer.open{transform:translateX(0)}
+  .dr-top{padding:16px 20px;border-bottom:1px solid var(--border)}
+  .dr-crumb{color:var(--text-low);font-size:11px;display:flex;align-items:center;gap:6px;margin-bottom:9px}
+  .dr-title{font-size:17px;font-weight:700;line-height:1.3}
+  .dr-controls{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .dr-body{flex:1;overflow-y:auto;display:grid;grid-template-columns:1fr 196px;gap:0}
+  .dr-main{padding:18px 20px;border-right:1px solid var(--border-soft)}
+  .dr-side{padding:18px 16px;display:flex;flex-direction:column;gap:14px}
+  .dr-side .f{font-size:11px}
+  .dr-side .f .k{color:var(--text-low);text-transform:uppercase;letter-spacing:.5px;font-size:9.5px;margin-bottom:4px}
+  .dr-side .f .v{color:var(--text-hi)}
+  .sec-t{font-size:11px;color:var(--text-low);text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin:18px 0 9px}
+  .sec-t:first-child{margin-top:0}
+  .desc{color:var(--text-mid);font-size:12.5px;line-height:1.55}
+  .check-item{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:12.5px;border-bottom:1px solid var(--border-soft)}
+  .cbox{width:16px;height:16px;border-radius:5px;border:1.5px solid var(--border);flex:0 0 16px}
+  .cbox.on{background:var(--st-done);border-color:var(--st-done);position:relative}
+  .cbox.on::after{content:"✓";position:absolute;inset:0;display:grid;place-items:center;color:#04140a;font-size:11px;font-weight:800}
+  .cbox.req{border-color:var(--st-late)}
+  .check-item.req-empty{color:var(--st-late)}
+  .req-tag{margin-left:auto;font-size:9px;color:var(--st-late);background:rgba(255,84,112,.12);padding:1px 7px;border-radius:5px;font-weight:600}
+  .evidence{background:var(--surface-2);border:1px dashed var(--border);border-radius:var(--radius-sm);padding:12px;color:var(--text-low);font-size:11.5px;margin-top:6px}
+  .tabs{display:flex;gap:2px;margin:18px 0 0;border-bottom:1px solid var(--border-soft)}
+  .tab{padding:8px 12px;color:var(--text-low);font-size:11.5px;cursor:pointer;border-bottom:2px solid transparent}
+  .tab.active{color:var(--brand-strong);border-bottom-color:var(--brand)}
+  .activity-row{display:flex;gap:9px;padding:8px 0;font-size:11.5px;color:var(--text-mid);border-bottom:1px solid var(--border-soft)}
+  .activity-row .when{margin-left:auto;color:var(--text-low);font-family:var(--font-mono);font-size:10px}
+  .dr-foot{padding:13px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px}
+  .dr-foot .hint{color:var(--st-late);font-size:11px;margin-right:auto}
+  .btn-done{background:var(--st-done);color:#04140a}
+  .btn-done.disabled{background:var(--surface-3);color:var(--text-low);cursor:not-allowed}
+
+  .hidden{display:none}
+  .legend{display:flex;gap:8px;flex-wrap:wrap;padding:10px 20px;color:var(--text-low);font-size:11px;align-items:center}
+  .swatch{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:12px;height:12px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">A</div>
+      <div><b>Arkza</b><span>Central Operacional</span></div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-item active"><span class="ico">◆</span> Meu Dia <span class="count alert">5</span></div>
+      <div class="nav-item"><span class="ico">▦</span> Minha Semana</div>
+      <div class="nav-item"><span class="ico">☰</span> Central de Tarefas</div>
+      <div class="nav-item"><span class="ico">▣</span> Dashboard</div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Áreas</div>
+      <div class="nav-item"><span class="ico">▶</span> Tráfego <span class="count">12</span></div>
+      <div class="nav-tree">
+        <div class="nav-item"><span class="ico">·</span> Check-ins da semana <span class="count alert">3</span></div>
+        <div class="nav-item"><span class="ico">·</span> Prestações de contas</div>
+        <div class="nav-item"><span class="ico">·</span> Auditorias técnicas</div>
+      </div>
+      <div class="nav-item"><span class="ico">▶</span> Sucesso do Cliente <span class="count">8</span></div>
+      <div class="nav-item"><span class="ico">▶</span> War Room <span class="count alert">2</span></div>
+      <div class="nav-item"><span class="ico">▶</span> Comercial <span class="count">15</span></div>
+      <div class="nav-item"><span class="ico">▶</span> Financeiro <span class="count">6</span></div>
+      <div class="nav-item"><span class="ico">▶</span> Onboarding <span class="count">4</span></div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Visões por papel</div>
+      <div class="nav-item"><span class="ico">◈</span> Visão CS</div>
+      <div class="nav-item"><span class="ico">◈</span> Visão Gestor</div>
+      <div class="nav-item"><span class="ico">◈</span> Visão CEO</div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div class="search">⌕ Buscar tarefas, clientes, POPs… <kbd>⌘K</kbd></div>
+      <button class="btn btn-ghost">⊟ Filtros</button>
+      <button class="btn btn-primary" onclick="openDrawer()">+ Nova tarefa</button>
+      <div class="avatar" style="background:linear-gradient(135deg,#1fb6c9,#0f6f7e)">ML</div>
+    </div>
+
+    <div class="header">
+      <h1>Central de Tarefas</h1>
+      <p>Tráfego · Check-ins da semana — 30 clientes ativos</p>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi"><div class="v">47</div><div class="l">Abertas</div></div>
+      <div class="kpi late"><div class="v">7</div><div class="l">Atrasadas</div></div>
+      <div class="kpi"><div class="v">12</div><div class="l">Aguardando</div></div>
+      <div class="kpi done"><div class="v">83%</div><div class="l">No prazo</div></div>
+      <div class="kpi crit"><div class="v">2</div><div class="l">War Room</div></div>
+    </div>
+
+    <div class="viewbar">
+      <div class="vtab active" onclick="showView('list',this)">☰ Lista</div>
+      <div class="vtab" onclick="showView('kanban',this)">▦ Kanban</div>
+      <div class="vtab" onclick="showView('cal',this)">▤ Calendário</div>
+      <div class="vtab" onclick="showView('client',this)">◈ Por Cliente</div>
+      <div class="vtab" onclick="showView('manager',this)">◈ Por Gestor</div>
+    </div>
+
+    <div class="content">
+      <!-- LIST VIEW -->
+      <div id="view-list">
+        <div class="group">
+          <div class="group-h"><span class="chev">▼</span><span class="name">Atrasado</span><span class="gc">3</span></div>
+          <table class="tbl">
+            <thead><tr><th>Tarefa</th><th>Cliente</th><th>Responsável</th><th>Status</th><th>Prioridade</th><th>Prazo</th><th>SLA</th></tr></thead>
+            <tbody>
+              <tr class="row crit" onclick="openDrawer()">
+                <td class="t-title">Check-in semanal — análise de queda de ROAS</td>
+                <td><span class="client-pill"><span class="health h-bad"></span>Jack Modas</span></td>
+                <td><div class="avgrp"><div class="avatar" style="background:#3d8bff">LE</div></div></td>
+                <td><span class="badge b-late"><span class="dot"></span>Atrasado</span></td>
+                <td><span class="prio"><span class="flag p-crit"></span>Crítica</span></td>
+                <td class="due over">há 2 dias</td>
+                <td><span class="sla over">-18h</span></td>
+              </tr>
+              <tr class="row" onclick="openDrawer()">
+                <td class="t-title">Prestação de contas semanal</td>
+                <td><span class="client-pill"><span class="health h-warn"></span>Bambola</span></td>
+                <td><div class="avgrp"><div class="avatar" style="background:#9b7cff">RA</div></div></td>
+                <td><span class="badge b-late"><span class="dot"></span>Atrasado</span></td>
+                <td><span class="prio"><span class="flag p-high"></span>Alta</span></td>
+                <td class="due over">há 1 dia</td>
+                <td><span class="sla over">-6h</span></td>
+              </tr>
+              <tr class="row" onclick="openDrawer()">
+                <td class="t-title">Cobrança — fatura vencida</td>
+                <td><span class="client-pill"><span class="health h-warn"></span>Lavinny</span></td>
+                <td><div class="avgrp"><div class="avatar" style="background:#2fbf71">FI</div></div></td>
+                <td><span class="badge b-late"><span class="dot"></span>Atrasado</span></td>
+                <td><span class="prio"><span class="flag p-mid"></span>Média</span></td>
+                <td class="due over">há 4 dias</td>
+                <td><span class="sla over">-72h</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="group">
+          <div class="group-h"><span class="chev">▼</span><span class="name">Em andamento</span><span class="gc">4</span></div>
+          <table class="tbl">
+            <thead><tr><th>Tarefa</th><th>Cliente</th><th>Responsável</th><th>Status</th><th>Prioridade</th><th>Prazo</th><th>SLA</th></tr></thead>
+            <tbody>
+              <tr class="row" onclick="openDrawer()">
+                <td class="t-title">Check-in semanal</td>
+                <td><span class="client-pill"><span class="health h-good"></span>My Muse</span></td>
+                <td><div class="avgrp"><div class="avatar" style="background:#3d8bff">LE</div></div></td>
+                <td><span class="badge b-doing"><span class="dot"></span>Em andamento</span></td>
+                <td><span class="prio"><span class="flag p-mid"></span>Média</span></td>
+                <td class="due">hoje 12h</td>
+                <td><span class="sla warn">3h</span></td>
+              </tr>
+              <tr class="row" onclick="openDrawer()">
+                <td class="t-title">Auditoria técnica — frequência e criativos</td>
+                <td><span class="client-pill"><span class="health h-good"></span>Tayna Modas</span></td>
+                <td><div class="avgrp"><div class="avatar" style="background:#f0922b">LD</div></div></td>
+                <td><span class="badge b-doing"><span class="dot"></span>Em andamento</span></td>
+                <td><span class="prio"><span class="flag p-high"></span>Alta</span></td>
+                <td class="due">amanhã</td>
+                <td><span class="sla">28h</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="group">
+          <div class="group-h"><span class="chev">▼</span><span class="name">Aguardando CS</span><span class="gc">2</span></div>
+          <table class="tbl">
+            <thead><tr><th>Tarefa</th><th>Cliente</th><th>Responsável</th><th>Status</th><th>Prioridade</th><th>Prazo</th><th>SLA</th></tr></thead>
+            <tbody>
+              <tr class="row" onclick="openDrawer()">
+                <td class="t-title">Prestação de contas — em revisão</td>
+                <td><span class="client-pill"><span class="health h-good"></span>New Man Store</span></td>
+                <td><div class="avgrp"><div class="avatar" style="background:#9b7cff">LE</div></div></td>
+                <td><span class="badge b-valid"><span class="dot"></span>Em validação</span></td>
+                <td><span class="prio"><span class="flag p-mid"></span>Média</span></td>
+                <td class="due">sex 17h</td>
+                <td><span class="sla">12h</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- KANBAN VIEW -->
+      <div id="view-kanban" class="hidden">
+        <div class="kanban">
+          <div class="col">
+            <div class="col-h"><span class="badge b-todo"><span class="dot"></span>A fazer</span><span class="c">6</span></div>
+            <div class="cards">
+              <div class="card" onclick="openDrawer()">
+                <span class="badge b-todo"><span class="dot"></span>A fazer</span>
+                <div class="ct">Relatório mensal consolidado</div>
+                <div class="card-meta"><span class="client-pill"><span class="health h-good"></span>Lalluzi</span></div>
+                <div class="card-foot"><span class="chk">☑ 0/7</span><div class="avgrp"><div class="avatar" style="background:#3d8bff">LE</div></div></div>
+              </div>
+              <div class="card" onclick="openDrawer()">
+                <span class="badge b-todo"><span class="dot"></span>A fazer</span>
+                <div class="ct">Follow-up comercial — lojista inbound</div>
+                <div class="card-meta"><span class="m">📅 amanhã</span></div>
+                <div class="card-foot"><span class="prio"><span class="flag p-mid"></span></span><div class="avgrp"><div class="avatar" style="background:#1fb6c9">CO</div></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="col-h"><span class="badge b-doing"><span class="dot"></span>Em andamento</span><span class="c">4</span></div>
+            <div class="cards">
+              <div class="card" onclick="openDrawer()">
+                <span class="badge b-doing"><span class="dot"></span>Em andamento</span>
+                <div class="ct">Check-in semanal</div>
+                <div class="card-meta"><span class="client-pill"><span class="health h-good"></span>My Muse</span></div>
+                <div class="card-foot"><span class="chk">☑ 5/9</span><div class="avgrp"><div class="avatar" style="background:#3d8bff">LE</div></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="col-h"><span class="badge b-valid"><span class="dot"></span>Em validação</span><span class="c">2</span></div>
+            <div class="cards">
+              <div class="card" onclick="openDrawer()">
+                <span class="badge b-valid"><span class="dot"></span>Em validação</span>
+                <div class="ct">Prestação de contas — revisão CS</div>
+                <div class="card-meta"><span class="client-pill"><span class="health h-good"></span>New Man</span></div>
+                <div class="card-foot"><span class="chk">☑ 7/7</span><div class="avgrp"><div class="avatar" style="background:#9b7cff">LE</div></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="col critical">
+            <div class="col-h"><span class="badge b-crit"><span class="dot"></span>War Room</span><span class="c">2</span></div>
+            <div class="cards">
+              <div class="card" onclick="openDrawer()">
+                <span class="badge b-crit"><span class="dot"></span>Crítico</span>
+                <div class="ct">War Room — queda de 40% no faturamento</div>
+                <div class="card-meta"><span class="client-pill"><span class="health h-bad"></span>Jack Modas</span></div>
+                <div class="card-foot"><span class="chk">☑ 2/8</span><div class="avgrp"><div class="avatar" style="background:#3d8bff">LE</div><div class="avatar" style="background:#9b7cff">LT</div><div class="avatar" style="background:#1fb6c9">ML</div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- placeholder views -->
+      <div id="view-cal" class="hidden"><div class="evidence" style="margin-top:24px">Visão Calendário — recorrências fixas marcadas (seg = check-in · sex = prestação · qui = war room · dia 1 = relatório mensal).</div></div>
+      <div id="view-client" class="hidden"><div class="evidence" style="margin-top:24px">Visão Por Cliente — agrupa todas as tarefas, check-ins, prestações, war rooms e histórico operacional por cliente.</div></div>
+      <div id="view-manager" class="hidden"><div class="evidence" style="margin-top:24px">Visão Por Gestor — carga de trabalho, clientes sem check-in, SLA por gestor.</div></div>
+
+      <div class="legend">
+        <b style="color:var(--text-mid)">Paleta:</b>
+        <span class="swatch"><span class="sw" style="background:var(--brand)"></span>Marca (ciano-petróleo)</span>
+        <span class="swatch"><span class="sw" style="background:var(--st-late)"></span>Atrasado</span>
+        <span class="swatch"><span class="sw" style="background:var(--st-critical)"></span>Crítico</span>
+        <span class="swatch"><span class="sw" style="background:var(--st-done)"></span>Concluído</span>
+        <span class="swatch"><span class="sw" style="background:var(--st-wait)"></span>Aguardando</span>
+        <span class="swatch"><span class="sw" style="background:var(--st-valid)"></span>Validação</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DRAWER -->
+<div class="scrim" id="scrim" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <div class="dr-top">
+    <div class="dr-crumb">Tráfego ▸ Check-ins da semana ▸ <span style="color:var(--brand-strong)">POP-OPE-06</span></div>
+    <div class="dr-title">Check-in semanal — análise de queda de ROAS</div>
+    <div class="dr-controls">
+      <span class="badge b-late"><span class="dot"></span>Atrasado</span>
+      <span class="prio"><span class="flag p-crit"></span>Crítica</span>
+      <span class="client-pill"><span class="health h-bad"></span>Jack Modas</span>
+    </div>
+  </div>
+  <div class="dr-body">
+    <div class="dr-main">
+      <div class="sec-t">Descrição</div>
+      <p class="desc">Cliente apresentou queda de ROAS de 3,1 para 1,8 na última semana. Investigar causa (criativo saturado, público, orçamento) e definir próxima ação antes do envio à CS.</p>
+
+      <div class="sec-t">Checklist obrigatório</div>
+      <div class="check-item"><span class="cbox on"></span> Dados Meta Ads coletados</div>
+      <div class="check-item"><span class="cbox on"></span> Dados GA4 coletados</div>
+      <div class="check-item req-empty"><span class="cbox req"></span> Faturamento preenchido <span class="req-tag">obrigatório</span></div>
+      <div class="check-item req-empty"><span class="cbox req"></span> ROAS preenchido <span class="req-tag">obrigatório</span></div>
+      <div class="check-item req-empty"><span class="cbox req"></span> Análise causal preenchida <span class="req-tag">obrigatório</span></div>
+      <div class="check-item"><span class="cbox"></span> Próxima ação definida</div>
+
+      <div class="sec-t">Evidência de conclusão</div>
+      <div class="evidence">Anexe o print do dashboard ou cole o resumo do check-in. Obrigatório para tarefas críticas.</div>
+
+      <div class="tabs">
+        <div class="tab active">Comentários</div>
+        <div class="tab">Atividade</div>
+        <div class="tab">Anexos</div>
+      </div>
+      <div class="activity-row">Letícia (CS) devolveu para ajustes — "faltou análise causal" <span class="when">2d atrás</span></div>
+      <div class="activity-row">Leandro mudou status para Em andamento <span class="when">3d atrás</span></div>
+      <div class="activity-row">Tarefa gerada automaticamente por POP-OPE-06 <span class="when">seg 08:00</span></div>
+    </div>
+    <div class="dr-side">
+      <div class="f"><div class="k">Responsável</div><div class="v">Leandro (Gestor)</div></div>
+      <div class="f"><div class="k">Observadores</div><div class="v">Letícia (CS) · Marcos</div></div>
+      <div class="f"><div class="k">Data do pedido</div><div class="v">Seg, 08:00</div></div>
+      <div class="f"><div class="k">Prazo</div><div class="v" style="color:var(--st-late)">Seg, 12:00 (atrasado)</div></div>
+      <div class="f"><div class="k">SLA</div><div class="v"><span class="sla over">-18h</span></div></div>
+      <div class="f"><div class="k">Área</div><div class="v">Tráfego</div></div>
+      <div class="f"><div class="k">Tipo</div><div class="v">Recorrente</div></div>
+      <div class="f"><div class="k">Tags</div><div class="v">ROAS · risco-churn</div></div>
+    </div>
+  </div>
+  <div class="dr-foot">
+    <span class="hint">⚠ 3 campos obrigatórios pendentes</span>
+    <button class="btn btn-ghost">Enviar para CS</button>
+    <button class="btn btn-done disabled">Concluir</button>
+  </div>
+</aside>
+
+<script>
+  function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('scrim').classList.add('open');}
+  function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('scrim').classList.remove('open');}
+  function showView(v,el){
+    ['list','kanban','cal','client','manager'].forEach(x=>document.getElementById('view-'+x).classList.add('hidden'));
+    document.getElementById('view-'+v).classList.remove('hidden');
+    document.querySelectorAll('.vtab').forEach(t=>t.classList.remove('active'));
+    el.classList.add('active');
+  }
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();});
+</script>
+</body>
+</html>
