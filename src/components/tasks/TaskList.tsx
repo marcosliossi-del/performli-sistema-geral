@@ -101,9 +101,8 @@ export function TaskList({ tasks }: Props) {
       <div className="px-5 py-3 border-b border-[#38435C] flex items-center justify-between">
         <h2 className="text-sm font-semibold text-[#EBEBEB]">Todas as Tarefas</h2>
         <div className="flex gap-3 text-xs text-[#87919E]">
-          <span>{pending.length} pendentes</span>
-          <span>{inProgress.length} em andamento</span>
-          <span>{done.length} concluídas</span>
+          <span>{naoConcluidas.length} abertas</span>
+          <span>{concluidas.length} concluídas</span>
         </div>
       </div>
       <div className="divide-y divide-[#38435C]/50">
