@@ -245,3 +245,12 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
   gera Task DEMANDA_INTERNA "Plano de ação (Otimização)" p/ o gestor primário
   (pop_ope_08, checklist diagnóstico/ajuste/meta/acompanhar, prazo 3d), idempotente
   (otimizacao:<clientId>:<semana>).
+
+## BLOCO 7 — IA + KPIs de aceite (último)
+- **Slice 7.1 — Aceite Operacional** — branch feat/bloco7-kpis-aceite:
+  DAL getAceiteOperacional (role-scoped) cruza sinais de integridade: tarefas
+  atrasadas, concluídas sem evidência (OPE-06/07), War Room sem critério, leads
+  quentes parados (3+ dias), clientes sem gestor, rotinas que não rodaram (recurrence
+  lastRunAt > 8d/null), falhas de automação (24h). Página /aceite com agrupamento
+  Crítico/Atenção/Sob controle — cada sinal responde o quê/porquê/ação/link.
+  Nav (PRINCIPAL, ADMIN/CS/MANAGER) + middleware.

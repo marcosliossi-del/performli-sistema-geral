@@ -61,6 +61,7 @@ const navigation: NavSection[] = [
       { name: 'Meu Dia',         href: '/meu-dia',     icon: Sun,       countKey: 'meuDia', alert: true },
       { name: 'Central de Tarefas', href: '/operacional', icon: ListTodo, countKey: 'abertas' },
       { name: 'Cockpit',         href: '/cockpit',     icon: Gauge },
+      { name: 'Aceite Operacional', href: '/aceite',   icon: ShieldCheck, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
       { name: 'Dashboard',       href: '/dashboard',   icon: LayoutDashboard },
     ],
   },
