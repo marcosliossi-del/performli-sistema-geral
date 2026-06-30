@@ -1089,9 +1089,12 @@ export type OperacionalTask = {
   createdAt: Date
   clientName: string | null
   clientSlug: string | null
+  clientHealth: 'OTIMO' | 'REGULAR' | 'RUIM' | null
   assigneeName: string
   areaName: string | null
   popCode: string | null
+  slaHours: number | null
+  slaBreached: boolean
 }
 
 export type OperacionalBoard = {
@@ -1118,7 +1121,9 @@ export const getOperacionalBoard = cache(
         dueDate: true,
         requestedAt: true,
         createdAt: true,
-        client: { select: { name: true, slug: true } },
+        slaHours: true,
+        slaBreached: true,
+        client: { select: { name: true, slug: true, statusStreak: { select: { status: true } } } },
         user: { select: { name: true } },
         area: { select: { name: true } },
         pop: { select: { code: true } },
@@ -1137,9 +1142,12 @@ export const getOperacionalBoard = cache(
       createdAt: t.createdAt,
       clientName: t.client?.name ?? null,
       clientSlug: t.client?.slug ?? null,
+      clientHealth: t.client?.statusStreak?.status ?? null,
       assigneeName: t.user?.name ?? '—',
       areaName: t.area?.name ?? null,
       popCode: t.pop?.code ?? null,
+      slaHours: t.slaHours,
+      slaBreached: t.slaBreached,
     }))
 
     const total = tasks.length
