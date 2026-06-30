@@ -37,6 +37,8 @@ model User {
   knowledgeDocuments   KnowledgeDocument[]
   agencyActivities     AgencyActivity[]
   contracts            Contract[]           @relation("ContractResponsible")
+  responsibleWarRooms  CriticalProtocol[]   @relation("WarRoomResponsible")
+  auditLogs            AuditLog[]
 }
 
 // ─── CLIENTS ─────────────────────────────────────────────────────────────────
@@ -110,6 +112,7 @@ model Client {
   statusStreak        ClientStatusStreak?
   criticalProtocols   CriticalProtocol[]
   contracts           Contract[]
+  auditLogs           AuditLog[]
 }
 
 model ClientInteraction {
@@ -320,6 +323,12 @@ enum CriticalProtocolStatus {
   ENCERRADO     // Protocolo encerrado (positivo, neutro ou negativo)
 }
 
+enum WarRoomOutcome {
+  RESOLVIDO_POSITIVO   // Cliente recuperado — critério de saída atingido
+  ENCERRADO_NEUTRO     // Encerrado sem resolução clara
+  PERDIDO_CHURN        // Cliente cancelou
+}
+
 model CriticalProtocol {
   id          String                 @id @default(cuid())
   clientId    String
@@ -331,10 +340,47 @@ model CriticalProtocol {
   notes       String?                @db.Text
   updatedAt   DateTime               @updatedAt
 
-  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  // ── WAR-14: plano da War Room (aditivo, nullable até o gestor preencher) ──
+  diagnosis     String?         @db.Text       // Diagnóstico / hipótese de causa
+  exitCriteria  String?         @db.Text       // Critério de saída em linguagem operacional (obrigatório por regra de negócio)
+  exitMetric    MetricType?                    // Métrica mensurável do critério (reusa enum existente)
+  exitTarget    Decimal?        @db.Decimal(12, 2) // Valor-alvo (ex.: ROAS 1.5)
+  exitMetAt     DateTime?                      // Quando o critério foi atingido (WAR-16)
+  responsibleId String?                        // Responsável pela War Room
+  deadline      DateTime?                      // Prazo da War Room
+  escalatedAt   DateTime?                      // Escalação para Marcos (3 semanas) — idempotência
+  closedOutcome WarRoomOutcome?                // Resultado do encerramento
+
+  client      Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  responsible User?  @relation("WarRoomResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
 
   @@index([clientId, status])
   @@index([status])
+  @@index([responsibleId])
+  @@index([escalatedAt])
+}
+
+// ─── AUDIT LOG (transversal — CLAUDE.md regra técnica #8) ────────────────────
+// Trilha imutável append-only de mutações sensíveis. Sem update/delete.
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?                 // User que executou (null = sistema/cron)
+  actorRole  String?                 // Snapshot do papel no momento da ação
+  action     String                  // Ex.: 'warroom.set_plan', 'warroom.close'
+  entityType String                  // Ex.: 'CriticalProtocol'
+  entityId   String
+  clientId   String?                 // Cliente afetado, quando aplicável
+  metadata   Json?                   // Payload resumido (antes/depois)
+  createdAt  DateTime @default(now())
+
+  actor  User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([clientId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
 }
 
 // ─── ALERTS ──────────────────────────────────────────────────────────────────

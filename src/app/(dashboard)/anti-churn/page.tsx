@@ -1,4 +1,4 @@
-import { requireSession, getAtRiskClients, getClientChurnHistory } from '@/lib/dal'
+import { requireSession, getAtRiskClients, getClientChurnHistory, getWarRoomResponsibleOptions } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -6,6 +6,7 @@ import { ShieldAlert, CheckCircle, TrendingDown } from 'lucide-react'
 import Link from 'next/link'
 import { ChurnRiskChart } from '@/components/anti-churn/ChurnRiskChart'
 import { ProtocolCard } from '@/components/anti-churn/ProtocolCard'
+import { WarRoomPlanPanel } from '@/components/anti-churn/WarRoomPlanPanel'
 
 export default async function AntiChurnPage() {
   const session = await requireSession()
@@ -30,6 +31,7 @@ export default async function AntiChurnPage() {
   const rawProtocols = await prisma.criticalProtocol.findMany({
     where: protocolWhere,
     include: {
+      responsible: { select: { name: true } },
       client: {
         select: {
           name: true,
@@ -57,10 +59,26 @@ export default async function AntiChurnPage() {
     client: { name: p.client.name, slug: p.client.slug },
     managerName: p.client.assignments[0]?.user?.name ?? 'Sem Gestor',
     daysSince: Math.floor((now - new Date(p.activatedAt).getTime()) / 86_400_000),
+    plan: {
+      id: p.id,
+      clientName: p.client.name,
+      status: p.status,
+      diagnosis: p.diagnosis,
+      exitCriteria: p.exitCriteria,
+      exitMetric: p.exitMetric,
+      exitTarget: p.exitTarget != null ? p.exitTarget.toString() : null,
+      responsibleId: p.responsibleId,
+      responsibleName: p.responsible?.name ?? null,
+      deadline: p.deadline,
+    },
   }))
 
   const activeProtocols   = protocols.filter((p) => p.status !== 'ENCERRADO')
   const closedProtocols   = protocols.filter((p) => p.status === 'ENCERRADO')
+
+  // WAR-14: plano da War Room (critério de saída, responsável, prazo)
+  const responsibleOptions = await getWarRoomResponsibleOptions()
+  const canEditWarRoom = role === 'ADMIN' || role === 'CS' || role === 'MANAGER'
 
   return (
     <div className="space-y-8">
@@ -110,7 +128,14 @@ export default async function AntiChurnPage() {
         ) : (
           <div className="space-y-3">
             {activeProtocols.map((p) => (
-              <ProtocolCard key={p.id} protocol={p} role={role} />
+              <div key={p.id} className="space-y-2">
+                <ProtocolCard protocol={p} role={role} />
+                <WarRoomPlanPanel
+                  plan={p.plan}
+                  responsibleOptions={responsibleOptions}
+                  canEdit={canEditWarRoom}
+                />
+              </div>
             ))}
           </div>
         )}
