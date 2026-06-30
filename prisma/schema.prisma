@@ -33,6 +33,8 @@ model User {
   alerts               Alert[]              @relation("TriggeredAlerts")
   chatMessages         ClientChatMessage[]
   weeklyChecklists     WeeklyChecklist[]
+  checkinsSubmitted    ClientWeeklyCheckin[] @relation("CheckinManager")
+  checkinsReviewed     ClientWeeklyCheckin[] @relation("CheckinReviewer")
   interactions         ClientInteraction[]
   knowledgeDocuments   KnowledgeDocument[]
   agencyActivities     AgencyActivity[]
@@ -113,6 +115,7 @@ model Client {
   criticalProtocols   CriticalProtocol[]
   contracts           Contract[]
   auditLogs           AuditLog[]
+  weeklyCheckins      ClientWeeklyCheckin[]
 }
 
 model ClientInteraction {
@@ -407,6 +410,9 @@ enum AlertType {
   CLIENT_WITHOUT_BILLING       // Cliente ativo sem cobrança ativa no Asaas
   // ── CSX-13: anti-churn proativo ──────────────────────────────────────────
   ANTICHURN_ACTION_NEEDED      // Cliente em risco e silencioso — ação proativa necessária
+  // ── OPE-06: check-in semanal ─────────────────────────────────────────────
+  CHECKIN_MISSING              // Cliente sem check-in preenchido na semana
+  CHECKIN_REJECTED_STALE       // Check-in reprovado sem correção no prazo
 }
 
 model Alert {
@@ -557,6 +563,47 @@ model WeeklyChecklist {
 
   @@unique([managerId, weekStart])
   @@index([managerId, weekStart])
+}
+
+// ─── OPE-06: CHECK-IN SEMANAL POR CLIENTE ─────────────────────────────────────
+// Diferente de WeeklyChecklist (lista de tarefas POR GESTOR): este é o check-in
+// POR CLIENTE com workflow de validação da CS (preenchido → aprovado/reprovado).
+
+enum CheckinStatus {
+  PENDENTE     // ainda não preenchido pelo gestor
+  PREENCHIDO   // gestor preencheu, aguardando revisão da CS
+  APROVADO     // CS aprovou
+  REPROVADO    // CS reprovou — gestor precisa corrigir
+}
+
+model ClientWeeklyCheckin {
+  id           String        @id @default(cuid())
+  clientId     String
+  weekStart    DateTime      @db.Date
+  managerId    String
+  status       CheckinStatus @default(PENDENTE)
+
+  // Conteúdo do check-in (preenchido pelo gestor)
+  resultadoSemana String? @db.Text   // o que aconteceu nas métricas
+  oQueFoiFeito    String? @db.Text   // ações executadas
+  proximosPassos  String? @db.Text   // plano para a próxima semana
+
+  submittedAt  DateTime?
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNote   String?       @db.Text  // motivo de reprovação / observação da CS
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  client     Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  manager    User   @relation("CheckinManager", fields: [managerId], references: [id], onDelete: Cascade)
+  reviewedBy User?  @relation("CheckinReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([clientId, weekStart])
+  @@index([status, weekStart])
+  @@index([managerId, weekStart])
+  @@index([clientId, weekStart])
 }
 
 // ─── CHURN RISK SCORE ─────────────────────────────────────────────────────────

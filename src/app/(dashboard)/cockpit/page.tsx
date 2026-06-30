@@ -1,9 +1,9 @@
-import { requireSession, getCockpitData } from '@/lib/dal'
+import { requireSession, getCockpitData, getCheckinStats } from '@/lib/dal'
 import { LastUpdatedBadge } from '@/components/cockpit/LastUpdatedBadge'
 import { OperationalCard } from '@/components/cockpit/OperationalCard'
 import {
   ShieldAlert, Target, ListTodo, FileWarning, Bell, Banknote,
-  HeartPulse, AlertTriangle, CheckCircle2, Lock,
+  HeartPulse, AlertTriangle, CheckCircle2, Lock, ClipboardCheck,
 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -13,7 +13,6 @@ const BRL = (n: number) =>
 
 // Blocos cuja fonte de dado ainda não foi sistematizada — plugam por fatia.
 const PENDENTES: { titulo: string; pop: string }[] = [
-  { titulo: 'Check-ins pendentes / reprovados', pop: 'OPE-06 · CSX-10' },
   { titulo: 'Clientes em onboarding / primeiros 30 dias', pop: 'ONB-04 · ONB-05' },
   { titulo: 'MRR previsto vs realizado · margem', pop: 'FIN-21' },
   { titulo: 'Leads em follow-up vencido', pop: 'CAP-03 · CRM' },
@@ -21,7 +20,10 @@ const PENDENTES: { titulo: string; pop: string }[] = [
 
 export default async function CockpitPage() {
   const { userId, role } = await requireSession()
-  const data = await getCockpitData(userId, role)
+  const [data, checkins] = await Promise.all([
+    getCockpitData(userId, role),
+    getCheckinStats(userId, role),
+  ])
 
   return (
     <div className="space-y-6">
@@ -85,6 +87,17 @@ export default async function CockpitPage() {
           deadline="SLA: D+3 alerta, D+7 escala"
           impact="Demanda atrasada reincidente gera insatisfação."
           action={{ href: '/tasks', label: 'Ver demandas' }}
+        />
+        <OperationalCard
+          icon={ClipboardCheck}
+          title="Check-ins da semana"
+          value={`${checkins.semCheckin}·${checkins.aguardandoRevisao}·${checkins.reprovados}`}
+          severity={checkins.semCheckin > 0 || checkins.reprovados > 0 ? 'warning' : 'ok'}
+          why={`${checkins.semCheckin} sem preencher · ${checkins.aguardandoRevisao} em revisão · ${checkins.reprovados} reprovados.`}
+          responsible="Gestor preenche · CS valida"
+          deadline="Preenchimento até quarta"
+          impact="Sem check-in não há prestação de contas ao cliente."
+          action={{ href: '/check-ins', label: 'Abrir fila de check-ins' }}
         />
         <OperationalCard
           icon={FileWarning}
