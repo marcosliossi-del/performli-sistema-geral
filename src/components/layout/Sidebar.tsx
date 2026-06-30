@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   Gauge,
+  ListTodo,
   LayoutDashboard,
   CheckSquare,
   Users,
@@ -49,9 +50,10 @@ const navigation: NavSection[] = [
   {
     label: 'PRINCIPAL',
     items: [
-      { name: 'Cockpit',       href: '/cockpit',   icon: Gauge },
-      { name: 'Dashboard',     href: '/dashboard', icon: LayoutDashboard },
-      { name: 'Check-ins',     href: '/check-ins', icon: CheckSquare },
+      { name: 'Cockpit',       href: '/cockpit',     icon: Gauge },
+      { name: 'Central Operacional', href: '/operacional', icon: ListTodo },
+      { name: 'Dashboard',     href: '/dashboard',   icon: LayoutDashboard },
+      { name: 'Check-ins',     href: '/check-ins',   icon: CheckSquare },
       { name: 'Processos',     href: '/processos', icon: Activity },
       { name: 'Alertas',       href: '/alerts',    icon: Bell },
       { name: 'Minhas Tarefas', href: '/tasks',    icon: CheckSquare },
