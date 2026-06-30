@@ -210,3 +210,8 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
     Idempotente por resultadoWeek; try/catch por cliente; AutomationLog por resultado.
   - Rota /api/cron/resultados (CRON_SECRET, ?force=1) + cron segunda 9h UTC (vercel.json).
   - Pendente: surfacing na carteira (coluna Resultado/Etapa) — próximo slice.
+
+  - **Slice Resultado surfacing** — branch feat/resultado-surfacing: colunas
+    Resultado (badge colorido Ótimo→Péssimo + ROAS da semana) e Etapa (badge
+    Escala/Monitoramento/Otimização) na tabela /clients; tooltip com data da
+    última atualização; LOCAL = "manual", ecommerce sem dado = "aguardando".
