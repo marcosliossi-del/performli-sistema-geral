@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { requireSession, getCheckinBoard } from '@/lib/dal'
 import { Card } from '@/components/ui/card'
 import { CheckinReviewCard } from '@/components/checkins/CheckinReviewCard'
@@ -138,7 +139,7 @@ function Stat({ label, value, cls }: { label: string; value: number; cls: string
 function Section({
   icon: Icon, title, count, children,
 }: {
-  icon: typeof ClipboardCheck; title: string; count: number; children: React.ReactNode
+  icon: typeof ClipboardCheck; title: string; count: number; children: ReactNode
 }) {
   return (
     <div className="space-y-2">
