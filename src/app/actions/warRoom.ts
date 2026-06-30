@@ -30,7 +30,7 @@ export async function saveWarRoomPlan(
 
   const protocol = await prisma.criticalProtocol.findUnique({
     where: { id: protocolId },
-    select: { id: true, clientId: true, status: true },
+    select: { id: true, clientId: true, status: true, client: { select: { name: true } } },
   })
   if (!protocol) return { error: 'War Room não encontrada.' }
   if (protocol.status === 'ENCERRADO') {
@@ -87,6 +87,19 @@ export async function saveWarRoomPlan(
     },
   })
 
+  // WAR-14 → Central Operacional: a War Room vira uma tarefa CRÍTICA do responsável,
+  // visível em /operacional, /meu-dia e na carga por gestor. Idempotente por War Room.
+  await upsertWarRoomTask({
+    protocolId,
+    clientId: protocol.clientId,
+    clientName: protocol.client?.name ?? 'Cliente',
+    responsibleId: input.responsibleId,
+    deadline,
+    diagnosis: input.diagnosis.trim(),
+    exitCriteria: input.exitCriteria.trim(),
+    actorId: session.userId,
+  })
+
   await writeAuditLog({
     actorId: session.userId,
     actorRole: session.role,
@@ -102,7 +115,66 @@ export async function saveWarRoomPlan(
   })
 
   revalidatePath('/anti-churn')
+  revalidatePath('/operacional')
   return { ok: true }
+}
+
+/**
+ * Cria ou atualiza a tarefa operacional que espelha a War Room (WAR-14).
+ * Idempotente: chave `warroom:<protocolId>`. Reaponta responsável/prazo se mudarem.
+ */
+async function upsertWarRoomTask(args: {
+  protocolId: string
+  clientId: string
+  clientName: string
+  responsibleId: string
+  deadline: Date
+  diagnosis: string
+  exitCriteria: string
+  actorId: string
+}): Promise<void> {
+  const idempotencyKey = `warroom:${args.protocolId}`
+  const title = `War Room — ${args.clientName}`
+  const description = `Diagnóstico: ${args.diagnosis}\n\nCritério de saída: ${args.exitCriteria}`
+
+  const existing = await prisma.task.findUnique({
+    where: { idempotencyKey },
+    select: { id: true, status: true },
+  })
+
+  if (existing) {
+    // Não reabre tarefa já concluída/cancelada; apenas atualiza dados do plano.
+    await prisma.task.update({
+      where: { id: existing.id },
+      data: {
+        title,
+        description,
+        assignedTo: args.responsibleId,
+        dueDate: args.deadline,
+      },
+    })
+    return
+  }
+
+  await prisma.task.create({
+    data: {
+      title,
+      description,
+      type: 'WAR_ROOM',
+      priority: 'CRITICA',
+      status: 'EM_ANDAMENTO',
+      origin: 'AUTOMACAO',
+      clientId: args.clientId,
+      assignedTo: args.responsibleId,
+      popId: 'pop_war_14',
+      areaId: 'area_war',
+      dueDate: args.deadline,
+      requesterId: args.actorId,
+      requestedAt: new Date(),
+      idempotencyKey,
+      activities: { create: { actorId: args.actorId, action: 'created' } },
+    },
+  })
 }
 
 /**
@@ -144,6 +216,23 @@ export async function closeWarRoom(
     },
   })
 
+  // Fecha a tarefa operacional espelho da War Room, se existir e ainda aberta.
+  const linked = await prisma.task.findUnique({
+    where: { idempotencyKey: `warroom:${protocolId}` },
+    select: { id: true, status: true },
+  })
+  if (linked && linked.status !== 'CONCLUIDO' && linked.status !== 'CANCELADO') {
+    const newStatus = outcome === 'RESOLVIDO_POSITIVO' ? 'CONCLUIDO' : 'CANCELADO'
+    await prisma.task.update({
+      where: { id: linked.id },
+      data: {
+        status: newStatus,
+        ...(newStatus === 'CONCLUIDO' ? { completedAt: new Date(), completedById: session.userId } : {}),
+        activities: { create: { actorId: session.userId, action: 'status_changed', fromValue: linked.status, toValue: newStatus } },
+      },
+    })
+  }
+
   await writeAuditLog({
     actorId: session.userId,
     actorRole: session.role,
@@ -155,6 +244,7 @@ export async function closeWarRoom(
   })
 
   revalidatePath('/anti-churn')
+  revalidatePath('/operacional')
   return { ok: true }
 }
 

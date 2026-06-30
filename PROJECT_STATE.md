@@ -124,3 +124,10 @@ Após concluir todos os blocos da Central Operacional, fazer um overhaul de UX:
     (lista expansível com evidência, aprovar/solicitar ajustes inline, reusa
     decideTaskValidation; destaca itens esperando 3+ dias). Página com KPIs.
     Nav (PRINCIPAL, visível a ADMIN/CS/MANAGER) + middleware. Sem model novo.
+
+  - **WAR-14 War Room → Central Operacional**: War Room (CriticalProtocol) já
+    existia (plano/encerramento/revisão/painéis). Conectado ao Task: ao salvar
+    o plano, cria/atualiza Task WAR_ROOM CRÍTICA do responsável (idempotente por
+    `warroom:<protocolId>`, popId pop_war_14, dueDate=prazo) — aparece em
+    /operacional, /meu-dia e na carga por gestor. Ao encerrar a War Room, a tarefa
+    espelho fecha (CONCLUIDO se positivo, senão CANCELADO). Sem model novo.
