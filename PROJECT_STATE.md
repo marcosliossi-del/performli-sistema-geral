@@ -226,3 +226,10 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
   1ª campanha), atribuída ao gestor primário. Idempotente (onboarding:<clientId>),
   best-effort (try/catch — não quebra a criação). Entra em /operacional e /meu-dia.
   ONB-05 (30 dias) será gerada por evento no BLOCO 6.
+
+- **CAP-01 Follow-up comercial** — branch feat/cap-01-followup: service
+  lead-followup-checker (cron diário). Leads em negociação ativa (EM_CONTATO→
+  PROPOSTA_ACEITA) sem atividade há 3+ dias e sem follow-up aberto → gera Task
+  FOLLOWUP (ALTA, area_comercial, pop_cap_01, leadId vinculado, prazo 1d) atribuída
+  ao usuário da última atividade (fallback ADMIN). Idempotente (follow-up aberto +
+  chave por lead/dia), try/catch por lead, AutomationLog. Sem model novo.
