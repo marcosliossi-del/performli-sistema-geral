@@ -24,7 +24,8 @@ OPE-06 (4.39) · CSX-12 (4.32) · CRM-18 (4.19) · ONB-05 (4.09). Detalhe em
 | Cockpit | **EM PRODUÇÃO (merged #19)** |
 | FIN-19 | **EM PRODUÇÃO (merged #20)** |
 | CSX-13 | **EM PRODUÇÃO (merged #21)** |
-| OPE-06 | **EM REVISÃO (branch feat/pop-ope-06)** |
+| OPE-06 | **EM PRODUÇÃO (merged #22)** |
+| /processos | **EM REVISÃO (catálogo vivo dos 21 POPs, branch feat/processos)** |
 | demais 15 | mapeados, aguardando fatia |
 
 ## MODELS NOVOS (cumulativo)
