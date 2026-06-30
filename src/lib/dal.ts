@@ -3261,3 +3261,42 @@ export const getValidationQueue = cache(
     return { items, canDecide }
   },
 )
+
+// ─── REDESIGN — Contadores de pendência da sidebar (navegação fluida) ──────────
+
+export type SidebarCounts = {
+  meuDia: number          // minhas tarefas atrasadas/para hoje
+  abertas: number         // tarefas abertas (role-scoped)
+  checkins: number        // check-ins (OPE-06) em aberto
+  validacoes: number      // aguardando validação da CS
+  warRooms: number        // War Rooms ativas
+  alertas: number         // alertas não lidos
+}
+
+/** Contadores leves para badges da sidebar. Role-scoped, tudo em paralelo. */
+export const getSidebarCounts = cache(
+  async (userId: string, role: string): Promise<SidebarCounts> => {
+    const viewAll = canViewAll(role)
+    const taskScope: Prisma.TaskWhereInput = viewAll
+      ? {}
+      : { OR: [{ assignedTo: userId }, { client: { assignments: { some: { userId } } } }] }
+    const clientScope: Prisma.ClientWhereInput = viewAll
+      ? {}
+      : { assignments: { some: { userId } } }
+
+    const now = new Date()
+    const endToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+    const openStatus: Prisma.TaskWhereInput['status'] = { notIn: ['CONCLUIDO', 'CANCELADO'] }
+
+    const [meuDia, abertas, checkins, validacoes, warRooms, alertas] = await Promise.all([
+      prisma.task.count({ where: { assignedTo: userId, status: openStatus, dueDate: { lt: endToday } } }),
+      prisma.task.count({ where: { ...taskScope, status: openStatus } }),
+      prisma.task.count({ where: { ...taskScope, status: openStatus, pop: { code: 'OPE-06' } } }),
+      prisma.task.count({ where: { ...taskScope, status: { in: ['AGUARDANDO_CS', 'EM_VALIDACAO'] } } }),
+      prisma.criticalProtocol.count({ where: { status: { not: 'ENCERRADO' }, client: clientScope } }),
+      prisma.alert.count({ where: { read: false, client: clientScope } }),
+    ])
+
+    return { meuDia, abertas, checkins, validacoes, warRooms, alertas }
+  },
+)

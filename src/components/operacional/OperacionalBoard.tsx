@@ -99,10 +99,10 @@ export function OperacionalBoard({
     <div className="space-y-4">
       {/* Barra de ações */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex gap-1 bg-[#0A1E2C]/40 border border-[#38435C]/50 rounded-lg p-0.5">
+        <div className="flex gap-0.5 bg-[#0A1E2C]/60 border border-[#38435C]/50 rounded-xl p-1">
           {VIEWS.map((v) => (
             <button key={v.key} onClick={() => setView(v.key)}
-              className={`text-[11px] px-2.5 py-1 rounded ${view === v.key ? 'bg-[#95BBE2]/15 text-[#95BBE2]' : 'text-[#87919E] hover:text-[#EBEBEB]'}`}>
+              className={`text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 ease-out ${view === v.key ? 'bg-gradient-to-b from-[#54e0ee] to-[#22c2d6] text-[#021015] shadow-[0_4px_12px_-4px_rgba(34,194,214,0.5)]' : 'text-[#87919E] hover:text-[#EBEBEB]'}`}>
               {v.label}
             </button>
           ))}

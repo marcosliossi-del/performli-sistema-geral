@@ -33,12 +33,12 @@ export default async function ValidacoesPage() {
 
 function Kpi({ icon: Icon, label, value, cls }: { icon: typeof Clock; label: string; value: number | string; cls: string }) {
   return (
-    <Card className="p-3">
+    <Card className="p-3 ak-lift">
       <div className="flex items-center gap-2">
         <Icon size={14} className={cls} />
         <p className="text-[10px] text-[#87919E] uppercase tracking-wider">{label}</p>
       </div>
-      <p className={`text-2xl font-bold mt-1 ${cls}`}>{value}</p>
+      <p className={`text-2xl font-bold mt-1 tabular ${cls}`}>{value}</p>
     </Card>
   )
 }

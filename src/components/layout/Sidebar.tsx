@@ -32,12 +32,18 @@ import { useState } from 'react'
 
 type Role = 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS'
 
+type CountKey = 'meuDia' | 'abertas' | 'checkins' | 'validacoes' | 'warRooms' | 'alertas'
+
 type NavItemDef = {
   name: string
   href: string
   icon: React.ElementType
   /** Which roles can see this item. Omit to show to all roles. */
   roles?: Role[]
+  /** Pendency counter key (badge). */
+  countKey?: CountKey
+  /** Render the badge in alert color when > 0. */
+  alert?: boolean
 }
 
 type NavSection = {
@@ -52,27 +58,33 @@ const navigation: NavSection[] = [
   {
     label: 'PRINCIPAL',
     items: [
-      { name: 'Cockpit',       href: '/cockpit',     icon: Gauge },
-      { name: 'Central Operacional', href: '/operacional', icon: ListTodo },
-      { name: 'Meu Dia',       href: '/meu-dia',     icon: Sun },
-      { name: 'Validação da CS', href: '/validacoes', icon: ShieldCheck, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
-      { name: 'Dashboard',     href: '/dashboard',   icon: LayoutDashboard },
-      { name: 'Check-ins',     href: '/check-ins',   icon: CheckSquare },
-      { name: 'Processos',     href: '/processos', icon: Activity },
-      { name: 'Alertas',       href: '/alerts',    icon: Bell },
-      { name: 'Minhas Tarefas', href: '/tasks',    icon: CheckSquare },
+      { name: 'Meu Dia',         href: '/meu-dia',     icon: Sun,       countKey: 'meuDia', alert: true },
+      { name: 'Central de Tarefas', href: '/operacional', icon: ListTodo, countKey: 'abertas' },
+      { name: 'Cockpit',         href: '/cockpit',     icon: Gauge },
+      { name: 'Dashboard',       href: '/dashboard',   icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: 'ÁREAS',
+    expandable: true,
+    items: [
+      { name: 'Check-ins da semana', href: '/check-ins',  icon: CheckSquare, countKey: 'checkins', alert: true },
+      { name: 'Validação da CS',     href: '/validacoes', icon: ShieldCheck, countKey: 'validacoes', alert: true, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
+      { name: 'Processos & POPs',    href: '/processos',  icon: Activity },
+      { name: 'War Room',            href: '/anti-churn', icon: ShieldAlert, countKey: 'warRooms', alert: true },
+      { name: 'Comercial',           href: '/comercial',  icon: Target },
+      { name: 'Pipeline CRM',        href: '/pipeline',   icon: Kanban },
+      { name: 'Financeiro',          href: '/financeiro', icon: TrendingUp, roles: ['ADMIN' as Role, 'CS' as Role] },
+      { name: 'Onboarding',          href: '/clients/new', icon: UserPlus,  roles: ['ADMIN' as Role] },
     ],
   },
   {
     label: 'CLIENTES',
-    expandable: true,
     items: [
-      { name: 'Meus Clientes',          href: '/clients',    icon: Users },
-      { name: 'Pipeline CRM',            href: '/pipeline',  icon: Kanban },
-      { name: 'Novo Onboarding',         href: '/clients/new', icon: UserPlus, roles: ['ADMIN' as Role] },
-      { name: 'Registro de Operações',   href: '/operations', icon: BookOpen },
-      { name: 'Anti Churn & Retenção',   href: '/anti-churn', icon: ShieldAlert },
-      { name: 'Relatórios',              href: '/reports',    icon: BarChart3 },
+      { name: 'Meus Clientes',        href: '/clients',    icon: Users },
+      { name: 'Registro de Operações', href: '/operations', icon: BookOpen },
+      { name: 'Relatórios',           href: '/reports',    icon: BarChart3 },
+      { name: 'Alertas',              href: '/alerts',     icon: Bell, countKey: 'alertas', alert: true },
     ],
   },
   {
@@ -83,23 +95,14 @@ const navigation: NavSection[] = [
     ],
   },
   {
-    label: 'FINANCEIRO',
-    roles: ['ADMIN', 'CS'],
-    expandable: true,
-    items: [
-      { name: 'DRE',              href: '/financeiro',  icon: TrendingUp },
-      { name: 'CRM Comercial',    href: '/comercial',   icon: Target },
-      { name: 'Jurídico',         href: '/juridico',    icon: Scale, roles: ['ADMIN' as Role] },
-    ],
-  },
-  {
-    label: 'AGÊNCIA',
+    label: 'VISÕES POR PAPEL',
     roles: ['ADMIN', 'CS'],
     items: [
-      { name: 'Visão Geral',   href: '/agency',       icon: Building2, roles: ['ADMIN' as Role] },
-      { name: 'Metas Mensais', href: '/agency/metas', icon: Target,    roles: ['ADMIN' as Role] },
+      { name: 'Visão CEO',     href: '/agency',       icon: Building2, roles: ['ADMIN' as Role] },
       { name: 'Gestores',      href: '/managers',     icon: PieChart },
+      { name: 'Metas Mensais', href: '/agency/metas', icon: Target,    roles: ['ADMIN' as Role] },
       { name: 'Equipe',        href: '/team',         icon: Users,     roles: ['ADMIN' as Role] },
+      { name: 'Jurídico',      href: '/juridico',     icon: Scale,     roles: ['ADMIN' as Role] },
     ],
   },
 ]
@@ -108,11 +111,14 @@ function canSee(roles: Role[] | undefined, userRole: Role): boolean {
   return !roles || roles.includes(userRole)
 }
 
+type Counts = Partial<Record<CountKey, number>>
+
 interface SidebarProps {
   role: Role
+  counts?: Counts
 }
 
-export function Sidebar({ role }: SidebarProps) {
+export function Sidebar({ role, counts }: SidebarProps) {
   const pathname = usePathname()
   const [clientsOpen, setClientsOpen] = useState(true)
 
@@ -160,7 +166,7 @@ export function Sidebar({ role }: SidebarProps) {
                     {clientsOpen && (
                       <div className="space-y-0.5">
                         {visibleItems.map((item) => (
-                          <NavItem key={item.href} item={item} pathname={pathname} />
+                          <NavItem key={item.href} item={item} pathname={pathname} counts={counts} />
                         ))}
                       </div>
                     )}
@@ -172,7 +178,7 @@ export function Sidebar({ role }: SidebarProps) {
                     </p>
                     <div className="space-y-0.5">
                       {visibleItems.map((item) => (
-                        <NavItem key={item.href} item={item} pathname={pathname} />
+                        <NavItem key={item.href} item={item} pathname={pathname} counts={counts} />
                       ))}
                     </div>
                   </>
@@ -199,27 +205,43 @@ export function Sidebar({ role }: SidebarProps) {
 function NavItem({
   item,
   pathname,
+  counts,
 }: {
   item: NavItemDef
   pathname: string
+  counts?: Counts
 }) {
   const Icon = item.icon
   const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+  const count = item.countKey ? counts?.[item.countKey] ?? 0 : 0
 
   return (
     <Link
       href={item.href}
+      prefetch
       className={cn(
-        'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150',
+        'group relative flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all duration-200 ease-out active:scale-[0.98]',
         isActive
-          ? 'bg-[#95BBE2]/15 text-[#95BBE2] font-medium'
+          ? 'bg-[#95BBE2]/15 text-[#95BBE2] font-semibold'
           : 'text-[#87919E] hover:bg-[#38435C]/50 hover:text-[#EBEBEB]'
       )}
     >
+      {isActive && (
+        <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-gradient-to-b from-[#54e0ee] to-[#22c2d6] shadow-[0_0_10px_rgba(34,194,214,0.5)]" />
+      )}
       <Icon size={16} className="flex-shrink-0" />
       <span className="truncate">{item.name}</span>
-      {isActive && (
-        <div className="ml-auto w-1 h-4 rounded-full bg-[#95BBE2]/60 flex-shrink-0" />
+      {count > 0 && (
+        <span
+          className={cn(
+            'ml-auto tabular text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[18px] text-center',
+            item.alert
+              ? 'bg-[#EF4444]/16 text-[#EF4444]'
+              : 'bg-[#38435C] text-[#87919E]'
+          )}
+        >
+          {count > 99 ? '99+' : count}
+        </span>
       )}
     </Link>
   )
