@@ -112,21 +112,31 @@ export async function toggleChecklistItem(itemId: string, done: boolean): Promis
 }
 
 export type TaskDetail = {
+  status: string
+  evidence: string | null
+  requiredOpen: number
+  canSubmit: boolean
+  canValidate: boolean
   checklist: { id: string; label: string; done: boolean; required: boolean }[]
   comments: { id: string; body: string; authorName: string; createdAt: Date }[]
   activities: { id: string; action: string; fromValue: string | null; toValue: string | null; actorName: string; createdAt: Date }[]
+  approvals: { id: string; approverName: string; approved: boolean | null; note: string | null; decidedAt: Date | null }[]
 }
 
-/** Carrega checklist, comentários e atividade de uma tarefa (para o drawer). */
+/** Carrega checklist, comentários, atividade, aprovações e flags de permissão. */
 export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null> {
-  await requireSession()
+  const session = await requireSession()
   const task = await prisma.task.findUnique({
     where: { id: taskId },
     select: {
       id: true,
+      status: true,
+      evidence: true,
+      assignedTo: true,
       checklist: { orderBy: { order: 'asc' }, select: { id: true, label: true, done: true, required: true } },
       comments: { orderBy: { createdAt: 'desc' }, take: 30, select: { id: true, body: true, authorId: true, createdAt: true } },
       activities: { orderBy: { createdAt: 'desc' }, take: 30, select: { id: true, action: true, fromValue: true, toValue: true, actorId: true, createdAt: true } },
+      approvals: { orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, approverId: true, approved: true, note: true, decidedAt: true } },
     },
   })
   if (!task) return null
@@ -135,6 +145,7 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
     new Set([
       ...task.comments.map((c) => c.authorId),
       ...task.activities.map((a) => a.actorId).filter((x): x is string => !!x),
+      ...task.approvals.map((a) => a.approverId).filter((x): x is string => !!x),
     ]),
   )
   const users = ids.length
@@ -142,12 +153,156 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
     : []
   const nameMap = new Map(users.map((u) => [u.id, u.name]))
 
+  const requiredOpen = task.checklist.filter((c) => c.required && !c.done).length
+  const isAssignee = task.assignedTo === session.userId
+  const canValidate = session.role === 'CS' || session.role === 'ADMIN'
+  const submittable = ['A_FAZER', 'EM_ANDAMENTO', 'AJUSTES_SOLICITADOS'].includes(task.status)
+  const canSubmit = submittable && (isAssignee || session.role === 'ADMIN')
+
   return {
+    status: task.status,
+    evidence: task.evidence,
+    requiredOpen,
+    canSubmit,
+    canValidate,
     checklist: task.checklist,
     comments: task.comments.map((c) => ({ id: c.id, body: c.body, authorName: nameMap.get(c.authorId) ?? '—', createdAt: c.createdAt })),
     activities: task.activities.map((a) => ({
       id: a.id, action: a.action, fromValue: a.fromValue, toValue: a.toValue,
       actorName: a.actorId ? (nameMap.get(a.actorId) ?? '—') : 'Sistema', createdAt: a.createdAt,
     })),
+    approvals: task.approvals.map((a) => ({
+      id: a.id, approverName: a.approverId ? (nameMap.get(a.approverId) ?? '—') : '—',
+      approved: a.approved, note: a.note, decidedAt: a.decidedAt,
+    })),
   }
+}
+
+/**
+ * OPE-06 / CSX-10 — Gestor envia a tarefa para validação da CS.
+ * Exige evidência preenchida e todos os itens obrigatórios do checklist concluídos.
+ * Só o responsável (ou ADMIN) envia. Cria registro de aprovação pendente.
+ */
+export async function submitTaskForValidation(taskId: string, evidence: string): Promise<ActionResult> {
+  const session = await requireSession()
+
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: {
+      id: true, status: true, assignedTo: true, clientId: true, popId: true,
+      checklist: { select: { required: true, done: true } },
+    },
+  })
+  if (!task) return { error: 'Tarefa não encontrada.' }
+
+  if (task.assignedTo !== session.userId && session.role !== 'ADMIN') {
+    return { error: 'Apenas o responsável pode enviar para validação.' }
+  }
+  if (!['A_FAZER', 'EM_ANDAMENTO', 'AJUSTES_SOLICITADOS'].includes(task.status)) {
+    return { error: 'Esta tarefa não está em um estado que permite envio para validação.' }
+  }
+  const ev = evidence.trim()
+  if (ev.length < 5) {
+    return { error: 'Descreva a evidência do que foi feito antes de enviar (mínimo 5 caracteres).' }
+  }
+  const requiredOpen = task.checklist.filter((c) => c.required && !c.done).length
+  if (requiredOpen > 0) {
+    return { error: `Conclua os ${requiredOpen} item(ns) obrigatório(s) do checklist antes de enviar.` }
+  }
+
+  await prisma.$transaction([
+    prisma.task.update({
+      where: { id: taskId },
+      data: { status: 'AGUARDANDO_CS', evidence: ev },
+    }),
+    prisma.taskApproval.create({
+      data: { taskId, approved: null },
+    }),
+    prisma.taskActivity.create({
+      data: { taskId, actorId: session.userId, action: 'submitted_for_validation', fromValue: task.status, toValue: 'AGUARDANDO_CS' },
+    }),
+  ])
+
+  await writeAuditLog({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: 'task.submit_validation',
+    entityType: 'Task',
+    entityId: taskId,
+    clientId: task.clientId,
+    metadata: { popId: task.popId ?? null },
+  })
+
+  revalidatePath('/operacional')
+  return { ok: true, id: taskId }
+}
+
+/**
+ * OPE-06 / CSX-10 — CS valida (aprova) ou solicita ajustes.
+ * Aprovado → CONCLUIDO (com completedAt/By). Reprovado → AJUSTES_SOLICITADOS.
+ * Só CS ou ADMIN. Fecha o registro de aprovação pendente.
+ */
+export async function decideTaskValidation(taskId: string, approved: boolean, note?: string): Promise<ActionResult> {
+  const session = await requireSession()
+  if (session.role !== 'CS' && session.role !== 'ADMIN') {
+    return { error: 'Apenas a CS (ou ADMIN) pode validar.' }
+  }
+  if (!approved && !(note && note.trim().length >= 3)) {
+    return { error: 'Explique o que precisa ser ajustado.' }
+  }
+
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { id: true, status: true, clientId: true, popId: true },
+  })
+  if (!task) return { error: 'Tarefa não encontrada.' }
+  if (!['AGUARDANDO_CS', 'EM_VALIDACAO'].includes(task.status)) {
+    return { error: 'Esta tarefa não está aguardando validação.' }
+  }
+
+  const pending = await prisma.taskApproval.findFirst({
+    where: { taskId, decidedAt: null },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  })
+
+  const newStatus = approved ? 'CONCLUIDO' : 'AJUSTES_SOLICITADOS'
+  const now = new Date()
+
+  await prisma.$transaction([
+    prisma.task.update({
+      where: { id: taskId },
+      data: approved
+        ? { status: 'CONCLUIDO', completedAt: now, completedById: session.userId }
+        : { status: 'AJUSTES_SOLICITADOS' },
+    }),
+    pending
+      ? prisma.taskApproval.update({
+          where: { id: pending.id },
+          data: { approverId: session.userId, approved, note: note?.trim() || null, decidedAt: now },
+        })
+      : prisma.taskApproval.create({
+          data: { taskId, approverId: session.userId, approved, note: note?.trim() || null, decidedAt: now },
+        }),
+    prisma.taskActivity.create({
+      data: {
+        taskId, actorId: session.userId,
+        action: approved ? 'validation_approved' : 'validation_changes_requested',
+        fromValue: task.status, toValue: newStatus,
+      },
+    }),
+  ])
+
+  await writeAuditLog({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: approved ? 'task.validation_approve' : 'task.validation_reject',
+    entityType: 'Task',
+    entityId: taskId,
+    clientId: task.clientId,
+    metadata: { popId: task.popId ?? null },
+  })
+
+  revalidatePath('/operacional')
+  return { ok: true, id: taskId }
 }

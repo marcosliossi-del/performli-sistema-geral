@@ -91,3 +91,14 @@ com `WarRoomPlanPanel`.
   para ADMIN/CS, com flag de gargalo). DAL getMinhaSemana, getGestoresCarga,
   getClienteTarefas. Bloco de tarefas operacionais na página do cliente
   (abertas + concluídas recentes, role-scoped por posse). Nav + middleware atualizados.
+
+- **BLOCO 5** (POPs críticos, um por vez) — branch feat/bloco5-pop-checkin-ope06:
+  - **OPE-06 Check-in semanal completo**: fluxo de validação na própria Task.
+    Gestor preenche checklist + evidência e envia (submitTaskForValidation →
+    AGUARDANDO_CS, exige itens obrigatórios + evidência ≥5 chars, só responsável/ADMIN).
+    CS valida (decideTaskValidation): Aprovar → CONCLUIDO (completedAt/By) ou
+    Solicitar ajustes → AJUSTES_SOLICITADOS (motivo obrigatório, só CS/ADMIN).
+    TaskApproval registra cada decisão; TaskActivity + AuditLog. UI no TaskDrawer
+    (painel "Validação da CS" com evidência, botões por papel, histórico de decisões).
+    loadTaskDetail estendido (status/evidence/requiredOpen/canSubmit/canValidate/approvals).
+    Reaproveitável para CSX-10 (validação da CS). /check-ins antigo mantido (regra 12).
