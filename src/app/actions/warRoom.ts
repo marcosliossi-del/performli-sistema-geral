@@ -157,3 +157,62 @@ export async function closeWarRoom(
   revalidatePath('/anti-churn')
   return { ok: true }
 }
+
+/**
+ * WAR-16 — Registra a revisão semanal de uma War Room.
+ * Marca lastReviewedAt (limpa o alerta de "sem revisão"). Se `met`, registra que
+ * o critério de saída foi atingido (exitMetAt) e move para MONITORANDO.
+ */
+export async function registerWarRoomReview(
+  protocolId: string,
+  met: boolean,
+  note?: string,
+): Promise<ActionResult> {
+  const session = await requireSession()
+
+  const protocol = await prisma.criticalProtocol.findUnique({
+    where: { id: protocolId },
+    select: { id: true, clientId: true, status: true, exitCriteria: true, notes: true },
+  })
+  if (!protocol) return { error: 'War Room não encontrada.' }
+  if (protocol.status === 'ENCERRADO') {
+    return { error: 'Esta War Room já foi encerrada.' }
+  }
+
+  try {
+    await assertClientMutationAccess(session, protocol.clientId, { allowCS: true })
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Sem permissão.' }
+  }
+
+  if (!protocol.exitCriteria?.trim()) {
+    return { error: 'Defina o critério de saída antes de registrar revisões.' }
+  }
+
+  const now = new Date()
+  const appendedNote = note?.trim()
+    ? `${protocol.notes ? protocol.notes + '\n' : ''}[${now.toLocaleDateString('pt-BR')}] Revisão: ${note.trim()}`
+    : protocol.notes
+
+  await prisma.criticalProtocol.update({
+    where: { id: protocolId },
+    data: {
+      lastReviewedAt: now,
+      notes: appendedNote,
+      ...(met ? { exitMetAt: now, status: 'MONITORANDO' as const } : {}),
+    },
+  })
+
+  await writeAuditLog({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: 'warroom.review',
+    entityType: 'CriticalProtocol',
+    entityId: protocolId,
+    clientId: protocol.clientId,
+    metadata: { met, note: note?.trim() ?? null },
+  })
+
+  revalidatePath('/anti-churn')
+  return { ok: true }
+}

@@ -350,6 +350,7 @@ model CriticalProtocol {
   deadline      DateTime?                      // Prazo da War Room
   escalatedAt   DateTime?                      // Escalação para Marcos (3 semanas) — idempotência
   closedOutcome WarRoomOutcome?                // Resultado do encerramento
+  lastReviewedAt DateTime?                     // WAR-16: última revisão semanal registrada
 
   client      Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
   responsible User?  @relation("WarRoomResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
@@ -397,6 +398,10 @@ enum AlertType {
   ROAS_BELOW_TARGET_2W
   FATURAMENTO_BELOW_70PCT_WEEK2
   CONTRACT_EXPIRING_SOON
+  // ── WAR-16: acompanhamento pós-War Room ──────────────────────────────────
+  WARROOM_NO_REVIEW            // War Room sem revisão semanal
+  WARROOM_EXIT_CRITERIA_MET    // Critério de saída atingido — avaliar encerramento
+  WARROOM_REGRESSION           // Critério de saída deixou de ser cumprido
 }
 
 model Alert {

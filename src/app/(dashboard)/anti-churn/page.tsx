@@ -70,6 +70,8 @@ export default async function AntiChurnPage() {
       responsibleId: p.responsibleId,
       responsibleName: p.responsible?.name ?? null,
       deadline: p.deadline,
+      lastReviewedAt: p.lastReviewedAt,
+      exitMetAt: p.exitMetAt,
     },
   }))
 
