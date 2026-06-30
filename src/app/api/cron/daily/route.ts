@@ -15,6 +15,7 @@ import { detectCriticalAccounts } from '@/services/critical-account-detector'
 import { escalateStaleWarRooms } from '@/services/warroom-escalation'
 import { monitorWarRooms } from '@/services/warroom-monitor'
 import { checkInadimplencia } from '@/services/inadimplencia-checker'
+import { checkLeadFollowups } from '@/services/lead-followup-checker'
 import { detectSilentAtRiskClients } from '@/services/antichurn-monitor'
 import { checkCheckins } from '@/services/checkin-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/app/actions/goals'
@@ -208,6 +209,14 @@ async function runDailySync() {
     summary.inadimplencia = { ok: true, ...inadResult }
   } catch (err) {
     summary.inadimplencia = { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+
+  // ── Step 5d: CAP-01 — follow-up comercial de leads quentes sem contato ─────
+  try {
+    const followupResult = await checkLeadFollowups()
+    summary.leadFollowups = { ok: true, ...followupResult }
+  } catch (err) {
+    summary.leadFollowups = { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 
   // ── Step 6: Budget warnings ────────────────────────────────────────────────
