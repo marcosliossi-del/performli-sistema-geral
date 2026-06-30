@@ -195,3 +195,18 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
   colunas por status com cards (ak-lift), coluna crítica (BLOQUEADO/ATRASADO)
   destacada em vermelho. Views Por gestor/Por cliente reusam a tabela. DAL
   getOperacionalBoard estendido (clientHealth via statusStreak + slaHours/slaBreached).
+
+## AUTOMAÇÃO RESULTADO (ROAS/GA4) — trilha funcional
+- **Slice Resultado v1** — branch feat/resultado-roas-cron:
+  - Schema (aditivo): enums ClientResultado (OTIMO/BOM/REGULAR/RUIM/PESSIMO) e
+    ClientEtapa (ESCALA/MONITORAMENTO/OTIMIZACAO); Client ganha resultado, etapa,
+    resultadoRoas, resultadoWeek (idempotência), resultadoUpdatedAt.
+  - Motor src/services/resultado-engine.ts: para cada cliente ECOMMERCE ativo,
+    soma faturamento GA4 (conversionValue) + investimento (spend das plataformas
+    de anúncio) da última semana DOM–SÁB (getWeekRange(hoje-7d)) → ROAS → compara
+    com meta de ROAS (Goal metric=ROAS, senão default 2.0) → Resultado e Etapa
+    (Ótimo=Escala; Bom/Regular=Monitoramento; Ruim/Péssimo=Otimização). Ruim/
+    Péssimo gera Alert (reusa ROAS_BELOW_TARGET_2W, sem duplicar na semana).
+    Idempotente por resultadoWeek; try/catch por cliente; AutomationLog por resultado.
+  - Rota /api/cron/resultados (CRON_SECRET, ?force=1) + cron segunda 9h UTC (vercel.json).
+  - Pendente: surfacing na carteira (coluna Resultado/Etapa) — próximo slice.

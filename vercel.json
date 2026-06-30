@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/recurrences",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/resultados",
+      "schedule": "0 9 * * 1"
     }
   ],
   "functions": {
