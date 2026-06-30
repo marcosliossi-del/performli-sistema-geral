@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
-import { requireSession } from '@/lib/dal'
+import { requireSession, getOverdueInvoices, getClientsWithoutBilling } from '@/lib/dal'
 import { redirect } from 'next/navigation'
+import { InadimplenciaFila } from '@/components/financeiro/InadimplenciaFila'
 import { prisma } from '@/lib/prisma'
 import { FinanceiroKpiCard } from '@/components/financeiro/FinanceiroKpiCard'
 import { EntradaSaidaChart } from '@/components/financeiro/EntradaSaidaChart'
@@ -246,9 +247,11 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
   const from   = params.from ? new Date(params.from) : new Date(today.getFullYear(), today.getMonth(), 1)
   const to     = params.to   ? new Date(params.to)   : new Date(today.getFullYear(), today.getMonth() + 1, 0)
 
-  const [data, { cashflow, receitaMedia }] = await Promise.all([
+  const [data, { cashflow, receitaMedia }, overdueInvoices, clientsWithoutBilling] = await Promise.all([
     getFinanceiroData(from, to),
     getCashflowData(),
+    getOverdueInvoices(session.role),
+    getClientsWithoutBilling(session.role),
   ])
 
   return (
@@ -269,6 +272,9 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
       <Suspense>
         <PeriodSelector />
       </Suspense>
+
+      {/* FIN-19 — Inadimplência: fila de cobrança + ativos sem cobrança */}
+      <InadimplenciaFila overdue={overdueInvoices} withoutBilling={clientsWithoutBilling} />
 
       {/* KPI Row 1 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

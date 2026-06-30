@@ -7,9 +7,9 @@
 ---
 
 ## FASE_ATUAL
-Fase 2 (build):
-- Fatia #1 (WAR-14) — **APROVADO** (PR #17, CI Vercel verde).
-- Fatia #2 (WAR-16) — entregue ao guardião (PR a abrir, branch feat/pop-war-16).
+Fase 2 (build) — fatias mescladas no `main` (deploy de produção):
+- #16 docs/agentes/CLAUDE.md(ClickUp) · #17 WAR-14 · #18 WAR-16 · #19 Cockpit — **MERGED**.
+- Fatia #4 (FIN-19) — entregue ao guardião (branch feat/pop-fin-19, PR a abrir).
 Fórmula de score confirmada pelo usuário: **0.30** (mantida). Agentes .md: não sincronizar.
 
 ## POPS_MAPEADOS (21 — ranking 0.30)
@@ -19,9 +19,11 @@ OPE-06 (4.39) · CSX-12 (4.32) · CRM-18 (4.19) · ONB-05 (4.09). Detalhe em
 
 | POP | Status no sistema |
 |---|---|
-| WAR-14 | **APROVADO (PR #17, CI verde)** |
-| WAR-16 | **EM REVISÃO (branch feat/pop-war-16)** |
-| demais 20 | mapeados, aguardando fatia |
+| WAR-14 | **EM PRODUÇÃO (merged #17)** |
+| WAR-16 | **EM PRODUÇÃO (merged #18)** |
+| Cockpit | **EM PRODUÇÃO (merged #19)** |
+| FIN-19 | **EM REVISÃO (branch feat/pop-fin-19)** |
+| demais 17 | mapeados, aguardando fatia |
 
 ## LACUNAS_IDENTIFICADAS
 `docs/mapa-lacunas.md`. 1 JÁ_EXISTE · 15 PARCIAL · 5 INEXISTENTE.

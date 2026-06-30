@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { markAlertRead, markAllAlertsRead } from '@/app/actions/alerts'
 import { timeAgo } from '@/lib/utils'
-import { AlertTriangle, CheckCircle2, TrendingDown, Bell, BellOff, ArrowDownRight, ArrowUpRight, ShieldAlert, Scale } from 'lucide-react'
+import { AlertTriangle, AlertCircle, CheckCircle2, TrendingDown, Bell, BellOff, ArrowDownRight, ArrowUpRight, ShieldAlert, Scale } from 'lucide-react'
 import { AlertType } from '@prisma/client'
 
 const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string; label: string }> = {
@@ -22,6 +22,8 @@ const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string
   WARROOM_NO_REVIEW:              { icon: ShieldAlert,    color: 'text-[#EAB308]', label: 'War Room sem revisão' },
   WARROOM_EXIT_CRITERIA_MET:      { icon: CheckCircle2,   color: 'text-[#22C55E]', label: 'Critério de saída atingido' },
   WARROOM_REGRESSION:             { icon: TrendingDown,   color: 'text-[#EF4444]', label: 'War Room em regressão' },
+  INVOICE_OVERDUE:                { icon: AlertCircle,    color: 'text-[#EF4444]', label: 'Fatura vencida' },
+  CLIENT_WITHOUT_BILLING:         { icon: AlertTriangle,  color: 'text-[#EAB308]', label: 'Cliente sem cobrança' },
 }
 
 export default async function AlertsPage() {
