@@ -102,3 +102,17 @@ com `WarRoomPlanPanel`.
     (painel "Validação da CS" com evidência, botões por papel, histórico de decisões).
     loadTaskDetail estendido (status/evidence/requiredOpen/canSubmit/canValidate/approvals).
     Reaproveitável para CSX-10 (validação da CS). /check-ins antigo mantido (regra 12).
+
+  - **OPE-07 Prestação de contas semanal**: seed do template TPL-OPE-07
+    (recorrência semanal quarta-feira, 5 passos — consolidar, gerar relatório,
+    enviar ao cliente, confirmar recebimento, registrar próxima ação;
+    evidência obrigatória, SLA 24h). Roda no motor de recorrência existente
+    (fan-out por cliente, idempotente) e usa o mesmo fluxo de validação da CS
+    do OPE-06. Migration aditiva (só INSERT idempotente).
+
+## FASE FINAL — REDESIGN UX (pós-BLOCO 7, solicitado pelo usuário)
+Após concluir todos os blocos da Central Operacional, fazer um overhaul de UX:
+- Layout mais otimizado, fluido e **semelhante ao ClickUp** (densidade, navegação, hierarquia visual).
+- Tipografia moderna, clean e objetiva (fontes mais sofisticadas).
+- Liberdade para **revisar paleta de cores e fonte** buscando um ar mais sofisticado.
+- Manter todas as regras de UX operacional do CLAUDE.md (cada tela responde às 6 perguntas).
