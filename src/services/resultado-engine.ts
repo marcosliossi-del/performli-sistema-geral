@@ -60,6 +60,7 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
         take: 1,
         select: { targetValue: true },
       },
+      assignments: { where: { isPrimary: true }, take: 1, select: { userId: true } },
     },
   })
 
@@ -132,6 +133,42 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
               body: `ROAS de ${roas.toFixed(2)} contra meta de ${target.toFixed(2)} (semana de ${windowKey}). Cliente entrou em Otimização — definir plano de ação.`,
             },
           })
+        }
+
+        // BLOCO 6 — gera tarefa de plano de ação (Otimização) para o gestor.
+        const managerId = c.assignments[0]?.userId
+        if (managerId) {
+          const taskKey = `otimizacao:${c.id}:${windowKey}`
+          const taskExists = await prisma.task.findUnique({ where: { idempotencyKey: taskKey }, select: { id: true } })
+          if (!taskExists) {
+            await prisma.task.create({
+              data: {
+                title: `Plano de ação (Otimização) — ${c.name}`,
+                description: `Resultado ${resultado === 'PESSIMO' ? 'péssimo' : 'ruim'} na semana de ${windowKey} (ROAS ${roas.toFixed(2)} vs meta ${target.toFixed(2)}). Diagnosticar e recuperar.`,
+                type: 'DEMANDA_INTERNA',
+                priority: 'ALTA',
+                status: 'A_FAZER',
+                origin: 'AUTOMACAO',
+                clientId: c.id,
+                assignedTo: managerId,
+                areaId: 'area_trafego',
+                popId: 'pop_ope_08',
+                requestedAt: now,
+                dueDate: new Date(now.getTime() + 3 * 86_400_000),
+                slaHours: 72,
+                idempotencyKey: taskKey,
+                checklist: {
+                  create: [
+                    { label: 'Diagnosticar a causa da queda (criativo, público, orçamento, página)', required: true, order: 0 },
+                    { label: 'Aplicar ajustes nas campanhas', required: true, order: 1 },
+                    { label: 'Definir meta de recuperação para a próxima semana', required: true, order: 2 },
+                    { label: 'Acompanhar e registrar evolução', required: false, order: 3 },
+                  ],
+                },
+                activities: { create: { actorId: null, action: 'created' } },
+              },
+            })
+          }
         }
       }
 

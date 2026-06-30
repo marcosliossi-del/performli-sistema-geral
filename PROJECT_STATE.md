@@ -233,3 +233,15 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
   FOLLOWUP (ALTA, area_comercial, pop_cap_01, leadId vinculado, prazo 1d) atribuída
   ao usuário da última atividade (fallback ADMIN). Idempotente (follow-up aberto +
   chave por lead/dia), try/catch por lead, AutomationLog. Sem model novo.
+
+## BLOCO 6 — Automações por evento — branch feat/bloco6-eventos
+- (a) ONB-05: ao CONCLUIR a tarefa de onboarding (pop_onb_04) em updateTaskStatus,
+  gera Task de acompanhamento 30 dias (pop_onb_05, checklist, prazo 30d), idempotente
+  (onboarding-30d:<clientId>), best-effort.
+- (b) Escalonamento (task-escalation, cron diário): tarefa aberta atrasada 2+ dias
+  sem tag "escalado" → sobe prioridade p/ ALTA, tag escalado, delayReason, atividade
+  'escalated'. Idempotente pela tag.
+- (c) Plano de ação: no resultado-engine, Resultado RUIM/PESSIMO (além do alerta)
+  gera Task DEMANDA_INTERNA "Plano de ação (Otimização)" p/ o gestor primário
+  (pop_ope_08, checklist diagnóstico/ajuste/meta/acompanhar, prazo 3d), idempotente
+  (otimizacao:<clientId>:<semana>).
