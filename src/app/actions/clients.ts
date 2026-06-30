@@ -70,5 +70,42 @@ export async function createClient(
     },
   })
 
+  // ONB-04 — Onboarding entra na Central Operacional como tarefa com checklist.
+  // Não quebra a criação do cliente se algo falhar (regra: não quebrar deploy).
+  try {
+    await prisma.task.create({
+      data: {
+        title: `Onboarding — ${name}`,
+        description: 'Configuração inicial do cliente (acessos, contas, rastreamento, kickoff e metas).',
+        type: 'ONBOARDING',
+        priority: 'ALTA',
+        status: 'A_FAZER',
+        origin: 'AUTOMACAO',
+        clientId: client.id,
+        assignedTo: assignedUserId,
+        areaId: 'area_onboarding',
+        popId: 'pop_onb_04',
+        requesterId: session.userId,
+        requestedAt: new Date(),
+        dueDate: new Date(Date.now() + 7 * 86_400_000),
+        slaHours: 168,
+        idempotencyKey: `onboarding:${client.id}`,
+        checklist: {
+          create: [
+            { label: 'Coletar acessos (Meta, Google, GA4, Nuvemshop)', required: true, order: 0 },
+            { label: 'Vincular contas de anúncio no Performli', required: true, order: 1 },
+            { label: 'Configurar e validar rastreamento (pixel/GA4)', required: true, order: 2 },
+            { label: 'Agendar reunião de kickoff com o cliente', required: true, order: 3 },
+            { label: 'Definir metas iniciais (ROAS / CPA)', required: true, order: 4 },
+            { label: 'Estruturar a primeira campanha', required: false, order: 5 },
+          ],
+        },
+        activities: { create: { actorId: session.userId, action: 'created' } },
+      },
+    })
+  } catch {
+    // tarefa de onboarding é best-effort; cliente já foi criado
+  }
+
   redirect(`/clients/${client.slug}`)
 }
