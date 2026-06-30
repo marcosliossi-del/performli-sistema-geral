@@ -56,6 +56,22 @@ enum BusinessType {
   LOCAL
 }
 
+// Resultado semanal do cliente (calculado a partir do ROAS para ecommerce)
+enum ClientResultado {
+  OTIMO
+  BOM
+  REGULAR
+  RUIM
+  PESSIMO
+}
+
+// Etapa operacional derivada automaticamente do Resultado
+enum ClientEtapa {
+  ESCALA          // Resultado Ótimo
+  MONITORAMENTO   // Resultado Bom ou Regular
+  OTIMIZACAO      // Resultado Ruim ou Péssimo
+}
+
 enum PipelineStage {
   LEAD
   PROPOSTA
@@ -92,6 +108,12 @@ model Client {
   source         String?
   tags           String[]
   notes          String?
+  // ── CSX/OPE: Resultado semanal automatizado (ROAS/GA4) ───────────────────
+  resultado          ClientResultado?  // Ótimo/Bom/Regular/Ruim/Péssimo (calculado p/ ecommerce)
+  etapa              ClientEtapa?       // Escala/Monitoramento/Otimização (derivado do resultado)
+  resultadoRoas      Decimal?  @db.Decimal(8, 4) // ROAS da última semana avaliada
+  resultadoWeek      String?            // janela avaliada (YYYY-MM-DD do domingo) — idempotência
+  resultadoUpdatedAt DateTime?          // última atualização automática do resultado
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
