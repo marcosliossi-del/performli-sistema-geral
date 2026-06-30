@@ -149,6 +149,12 @@ body::before {
   backdrop-filter: blur(34px) saturate(170%);
   -webkit-backdrop-filter: blur(34px) saturate(170%);
 }
+/* Drawer estilo iOS: slide com mola + scrim com blur */
+@keyframes ak-slide-in { from { transform: translateX(100%) } to { transform: translateX(0) } }
+@keyframes ak-fade-in { from { opacity: 0 } to { opacity: 1 } }
+.ak-drawer { animation: ak-slide-in .42s cubic-bezier(.34,1.56,.64,1); will-change: transform; }
+.ak-scrim { animation: ak-fade-in .25s var(--ak-ease); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+
 /* Fundo da app com malha de gradiente (mostra profundidade atrás do vidro) */
 .ak-app-bg {
   background-color: var(--ak-s0);

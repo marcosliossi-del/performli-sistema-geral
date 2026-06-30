@@ -174,3 +174,15 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
   gradiente ciano + active-scale; segmented control iOS nas views do Operacional;
   KPIs com ak-lift + números tabulares. Próximo: drawer de task no formato do
   protótipo (breadcrumb, 2 colunas, checklist obrigatório, evidência, footer).
+
+- **Slice 3 — Drawer de task (igual ao protótipo):** TaskDrawer reescrito no
+  layout Apple: breadcrumb (Área ▸ Lista ▸ POP), título grande, linha
+  status/prioridade/cliente; corpo em 2 colunas (principal: Descrição, Checklist
+  obrigatório com selo vermelho "obrigatório", Evidência, histórico de decisões CS,
+  abas Comentários/Atividade/Anexos; lateral: Status, Responsável, Observadores,
+  Solicitante, Data do pedido, Início, Prazo, SLA, Área, Tipo, Tags); rodapé com
+  "N campos obrigatórios pendentes" + ações por papel (Enviar para CS / Aprovar /
+  Ajustes / Concluir — Concluir desabilitado se há obrigatórios pendentes).
+  Slide com mola (.ak-drawer) + scrim com blur (.ak-scrim). loadTaskDetail estendido
+  com TaskMeta (descrição, sla, datas, área/lista/pop, observadores, solicitante, tags).
+  Mantém todas as ações existentes.

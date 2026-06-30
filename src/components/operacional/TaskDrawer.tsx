@@ -3,7 +3,10 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState, useTransition } from 'react'
 import Link from 'next/link'
-import { X, Send, Square, CheckSquare, Clock, User as UserIcon, ShieldCheck, RotateCcw } from 'lucide-react'
+import {
+  X, Send, Square, CheckSquare, User as UserIcon, ShieldCheck,
+  RotateCcw, Eye, Tag as TagIcon, Paperclip,
+} from 'lucide-react'
 import { updateTaskStatus } from '@/app/actions/tasks'
 import {
   addTaskComment, toggleChecklistItem, loadTaskDetail,
@@ -12,8 +15,10 @@ import {
 import type { OperacionalTask } from '@/lib/dal'
 import type { TaskStatus } from '@prisma/client'
 import {
-  STATUS_LABELS, STATUS_OPTIONS, PRIORITY_LABELS, TYPE_LABELS, label,
+  STATUS_LABELS, STATUS_COLORS, STATUS_OPTIONS, PRIORITY_LABELS, PRIORITY_COLORS, TYPE_LABELS, label,
 } from './labels'
+
+type Tab = 'comentarios' | 'atividade' | 'anexos'
 
 export function TaskDrawer({
   task, canEdit, onClose,
@@ -28,6 +33,7 @@ export function TaskDrawer({
   const [evidence, setEvidence] = useState('')
   const [rejectNote, setRejectNote] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
+  const [tab, setTab] = useState<Tab>('comentarios')
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
@@ -36,37 +42,32 @@ export function TaskDrawer({
     setEvidence('')
     setRejectNote('')
     setActionError(null)
+    setTab('comentarios')
     loadTaskDetail(task.id).then((d) => { setDetail(d); setEvidence(d?.evidence ?? ''); setLoading(false) })
   }, [task])
 
   if (!task) return null
 
+  async function reload() {
+    const d = await loadTaskDetail(task!.id)
+    setDetail(d)
+  }
   function handleStatus(status: string) {
-    startTransition(() => updateTaskStatus(task!.id, status as TaskStatus))
+    startTransition(async () => { await updateTaskStatus(task!.id, status as TaskStatus); await reload() })
   }
   function handleComment() {
     if (!comment.trim()) return
-    startTransition(async () => {
-      await addTaskComment(task!.id, comment)
-      setComment('')
-      const d = await loadTaskDetail(task!.id)
-      setDetail(d)
-    })
+    startTransition(async () => { await addTaskComment(task!.id, comment); setComment(''); await reload() })
   }
   function handleToggle(itemId: string, done: boolean) {
-    startTransition(async () => {
-      await toggleChecklistItem(itemId, done)
-      const d = await loadTaskDetail(task!.id)
-      setDetail(d)
-    })
+    startTransition(async () => { await toggleChecklistItem(itemId, done); await reload() })
   }
   function handleSubmitValidation() {
     setActionError(null)
     startTransition(async () => {
       const r = await submitTaskForValidation(task!.id, evidence)
       if ('error' in r) { setActionError(r.error); return }
-      const d = await loadTaskDetail(task!.id)
-      setDetail(d)
+      await reload()
     })
   }
   function handleDecide(approved: boolean) {
@@ -75,209 +76,278 @@ export function TaskDrawer({
       const r = await decideTaskValidation(task!.id, approved, approved ? undefined : rejectNote)
       if ('error' in r) { setActionError(r.error); return }
       setRejectNote('')
-      const d = await loadTaskDetail(task!.id)
-      setDetail(d)
+      await reload()
     })
   }
+  function handleComplete() {
+    startTransition(async () => { await updateTaskStatus(task!.id, 'CONCLUIDO' as TaskStatus); await reload() })
+  }
+
+  const m = detail?.meta
+  const status = detail?.status ?? task.status
+  const requiredOpen = detail?.requiredOpen ?? 0
+  const isValidating = !!detail?.canValidate && (status === 'AGUARDANDO_CS' || status === 'EM_VALIDACAO')
+  const isOverdue = m?.dueDate != null && new Date(m.dueDate).getTime() < Date.now() && status !== 'CONCLUIDO' && status !== 'CANCELADO'
+  const fmtDate = (d: Date | null | undefined) => (d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—')
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-[#05141C] border-l border-[#38435C] z-50 overflow-y-auto">
-        <div className="sticky top-0 bg-[#05141C] border-b border-[#38435C] px-5 py-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-[#EBEBEB]">{task.title}</p>
-            <p className="text-[11px] text-[#87919E] mt-0.5">
-              {task.popCode ? `${task.popCode} · ` : ''}{label(TYPE_LABELS, task.type)}
-            </p>
+      <div className="ak-scrim fixed inset-0 bg-black/55 z-40" onClick={onClose} />
+      <aside className="ak-drawer ak-glass-strong fixed right-0 top-0 h-screen w-full max-w-[580px] border-l border-[#38435C] z-50 flex flex-col shadow-[-20px_0_60px_rgba(0,0,0,0.4)]">
+        {/* ── Topo: breadcrumb + título + controles ── */}
+        <div className="px-5 py-4 border-b border-[#38435C]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-[11px] text-[#87919E] flex items-center gap-1.5 flex-wrap">
+              {m?.areaName && <span>{m.areaName}</span>}
+              {m?.listName && <><span className="text-[#576070]">▸</span><span>{m.listName}</span></>}
+              {(task.popCode || m?.popCode) && <><span className="text-[#576070]">▸</span><span className="text-[#95BBE2]">{task.popCode ?? m?.popCode}</span></>}
+            </div>
+            <button onClick={onClose} className="text-[#87919E] hover:text-[#EBEBEB] shrink-0"><X size={18} /></button>
           </div>
-          <button onClick={onClose} className="text-[#87919E] hover:text-[#EBEBEB]"><X size={18} /></button>
+          <h2 className="text-[17px] font-bold text-[#EBEBEB] leading-snug mt-2">{task.title}</h2>
+          <div className="flex items-center gap-2.5 mt-3 flex-wrap">
+            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${STATUS_COLORS[status] ?? 'text-[#87919E] border-[#38435C]'}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current" />{label(STATUS_LABELS, status)}
+            </span>
+            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold ${PRIORITY_COLORS[task.priority] ?? 'text-[#87919E]'}`}>
+              {label(PRIORITY_LABELS, task.priority)}
+            </span>
+            {task.clientName && (
+              task.clientSlug
+                ? <Link href={`/clients/${task.clientSlug}`} className="text-[11px] text-[#95BBE2] hover:underline">{task.clientName}</Link>
+                : <span className="text-[11px] text-[#87919E]">{task.clientName}</span>
+            )}
+          </div>
         </div>
 
-        <div className="p-5 space-y-4">
-          {/* Meta */}
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <Meta title="Cliente">
-              {task.clientSlug ? <Link href={`/clients/${task.clientSlug}`} className="text-[#95BBE2] hover:underline">{task.clientName}</Link> : <span className="text-[#87919E]">Interno</span>}
-            </Meta>
-            <Meta title="Responsável"><span className="text-[#EBEBEB] flex items-center gap-1"><UserIcon size={11} />{task.assigneeName}</span></Meta>
-            <Meta title="Prioridade"><span className="text-[#EBEBEB]">{label(PRIORITY_LABELS, task.priority)}</span></Meta>
-            <Meta title="Prazo"><span className="text-[#EBEBEB] flex items-center gap-1"><Clock size={11} />{task.dueDate ? new Date(task.dueDate).toLocaleDateString('pt-BR') : '—'}</span></Meta>
-            {task.areaName && <Meta title="Área"><span className="text-[#EBEBEB]">{task.areaName}</span></Meta>}
-          </div>
+        {/* ── Corpo: 2 colunas ── */}
+        <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-[1fr_190px]">
+          {/* Coluna principal */}
+          <div className="p-5 md:border-r border-[#38435C]/50 space-y-1">
+            {loading && <p className="text-[11px] text-[#87919E]">Carregando…</p>}
 
-          {/* Status */}
-          <div>
-            <p className="text-[10px] font-medium text-[#87919E] uppercase tracking-wider mb-1">Status</p>
-            {canEdit ? (
-              <select
-                value={task.status}
-                onChange={(e) => handleStatus(e.target.value)}
-                disabled={isPending}
-                className="w-full bg-[#0A1E2C] border border-[#38435C] rounded-lg px-3 py-2 text-xs text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
-              >
-                {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{label(STATUS_LABELS, s)}</option>)}
-              </select>
+            {m?.description && (
+              <>
+                <Sec>Descrição</Sec>
+                <p className="text-[12.5px] text-[#9fb0c0] leading-relaxed whitespace-pre-wrap">{m.description}</p>
+              </>
+            )}
+
+            {/* Checklist obrigatório */}
+            {detail && detail.checklist.length > 0 && (
+              <>
+                <Sec>Checklist obrigatório</Sec>
+                <div>
+                  {detail.checklist.map((it) => {
+                    const reqEmpty = it.required && !it.done
+                    return (
+                      <button
+                        key={it.id}
+                        onClick={() => canEdit && handleToggle(it.id, !it.done)}
+                        disabled={!canEdit || isPending}
+                        className="flex items-center gap-2.5 py-2 w-full text-left text-[12.5px] border-b border-[#38435C]/40 disabled:opacity-70"
+                      >
+                        {it.done
+                          ? <CheckSquare size={16} className="text-[#22C55E] shrink-0" />
+                          : <Square size={16} className={`shrink-0 ${reqEmpty ? 'text-[#EF4444]' : 'text-[#87919E]'}`} />}
+                        <span className={it.done ? 'line-through text-[#87919E]' : reqEmpty ? 'text-[#EF4444]' : 'text-[#EBEBEB]'}>
+                          {it.label}
+                        </span>
+                        {reqEmpty && <span className="ml-auto text-[9px] font-semibold text-[#EF4444] bg-[#EF4444]/10 px-1.5 py-0.5 rounded">obrigatório</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* Evidência de conclusão */}
+            <Sec>Evidência de conclusão</Sec>
+            {detail?.canSubmit ? (
+              <textarea
+                value={evidence}
+                onChange={(e) => setEvidence(e.target.value)}
+                rows={3}
+                placeholder="Anexe o print do dashboard ou cole o resumo do check-in. Obrigatório para tarefas críticas."
+                className="w-full bg-[#0A1E2C] border border-dashed border-[#38435C] rounded-lg px-3 py-2.5 text-[12px] text-[#EBEBEB] placeholder:text-[#87919E]/60 focus:outline-none focus:border-[#95BBE2]/50"
+              />
             ) : (
-              <span className="text-xs text-[#EBEBEB]">{label(STATUS_LABELS, task.status)}</span>
-            )}
-          </div>
-
-          {loading && <p className="text-[11px] text-[#87919E]">Carregando…</p>}
-
-          {/* Checklist */}
-          {detail && detail.checklist.length > 0 && (
-            <div>
-              <p className="text-[10px] font-medium text-[#87919E] uppercase tracking-wider mb-1">Checklist</p>
-              <div className="space-y-1">
-                {detail.checklist.map((it) => (
-                  <button
-                    key={it.id}
-                    onClick={() => canEdit && handleToggle(it.id, !it.done)}
-                    disabled={!canEdit || isPending}
-                    className="flex items-center gap-2 text-xs text-left w-full disabled:opacity-60"
-                  >
-                    {it.done ? <CheckSquare size={14} className="text-[#22C55E]" /> : <Square size={14} className="text-[#87919E]" />}
-                    <span className={it.done ? 'line-through text-[#87919E]' : 'text-[#EBEBEB]'}>
-                      {it.label}{it.required && !it.done && <span className="text-[#EF4444]"> *</span>}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Validação da CS (OPE-06 / CSX-10) */}
-          {detail && (detail.canSubmit || detail.canValidate || detail.status === 'AGUARDANDO_CS' || detail.status === 'EM_VALIDACAO' || detail.evidence) && (
-            <div className="border border-[#38435C] rounded-lg p-3 space-y-2">
-              <div className="flex items-center gap-1.5">
-                <ShieldCheck size={13} className="text-[#95BBE2]" />
-                <p className="text-[10px] font-medium text-[#87919E] uppercase tracking-wider">Validação da CS</p>
-              </div>
-
-              {/* Evidência */}
-              <div>
-                <p className="text-[10px] text-[#87919E] mb-1">Evidência do que foi feito</p>
-                {detail.canSubmit ? (
-                  <textarea
-                    value={evidence}
-                    onChange={(e) => setEvidence(e.target.value)}
-                    rows={3}
-                    placeholder="Resultado do check-in, link do relatório, próxima ação definida…"
-                    className="w-full bg-[#0A1E2C] border border-[#38435C] rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/50 focus:outline-none focus:border-[#95BBE2]/50"
-                  />
-                ) : (
-                  <p className="text-xs text-[#EBEBEB] whitespace-pre-wrap">{detail.evidence || '—'}</p>
-                )}
-              </div>
-
-              {detail.canSubmit && (
-                <>
-                  {detail.requiredOpen > 0 && (
-                    <p className="text-[11px] text-[#EAB308]">Faltam {detail.requiredOpen} item(ns) obrigatório(s) do checklist.</p>
-                  )}
-                  <button
-                    onClick={handleSubmitValidation}
-                    disabled={isPending}
-                    className="w-full text-xs text-[#95BBE2] border border-[#95BBE2]/30 rounded-lg px-3 py-2 hover:bg-[#95BBE2]/10 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                  >
-                    <Send size={13} /> Enviar para validação da CS
-                  </button>
-                </>
-              )}
-
-              {detail.canValidate && (detail.status === 'AGUARDANDO_CS' || detail.status === 'EM_VALIDACAO') && (
-                <div className="space-y-2 pt-1">
-                  <input
-                    value={rejectNote}
-                    onChange={(e) => setRejectNote(e.target.value)}
-                    placeholder="Motivo (obrigatório p/ solicitar ajustes)"
-                    className="w-full bg-[#0A1E2C] border border-[#38435C] rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/50 focus:outline-none focus:border-[#95BBE2]/50"
-                  />
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleDecide(true)}
-                      disabled={isPending}
-                      className="flex-1 text-xs text-[#22C55E] border border-[#22C55E]/30 rounded-lg px-3 py-2 hover:bg-[#22C55E]/10 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                    >
-                      <CheckSquare size={13} /> Aprovar
-                    </button>
-                    <button
-                      onClick={() => handleDecide(false)}
-                      disabled={isPending}
-                      className="flex-1 text-xs text-[#F59E0B] border border-[#F59E0B]/30 rounded-lg px-3 py-2 hover:bg-[#F59E0B]/10 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                    >
-                      <RotateCcw size={13} /> Solicitar ajustes
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {actionError && <p className="text-[11px] text-[#EF4444]">{actionError}</p>}
-
-              {/* Histórico de decisões */}
-              {detail.approvals.filter((a) => a.decidedAt).length > 0 && (
-                <div className="space-y-1 pt-1">
-                  {detail.approvals.filter((a) => a.decidedAt).map((a) => (
-                    <p key={a.id} className="text-[10px] text-[#87919E]">
-                      {a.approved ? <span className="text-[#22C55E]">✓ Aprovado</span> : <span className="text-[#F59E0B]">↺ Ajustes solicitados</span>}
-                      {' '}por {a.approverName}{a.note ? ` · ${a.note}` : ''}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Comentários */}
-          <div>
-            <p className="text-[10px] font-medium text-[#87919E] uppercase tracking-wider mb-1">Comentários</p>
-            {canEdit && (
-              <div className="flex items-center gap-2 mb-2">
-                <input
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="Escreva um comentário…"
-                  className="flex-1 bg-[#0A1E2C] border border-[#38435C] rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/50 focus:outline-none focus:border-[#95BBE2]/50"
-                />
-                <button onClick={handleComment} disabled={isPending} className="text-[#95BBE2] border border-[#95BBE2]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#95BBE2]/10 disabled:opacity-50">
-                  <Send size={13} />
-                </button>
+              <div className="bg-[#0A1E2C] border border-dashed border-[#38435C] rounded-lg px-3 py-2.5 text-[11.5px] text-[#9fb0c0] whitespace-pre-wrap">
+                {detail?.evidence || 'Sem evidência registrada.'}
               </div>
             )}
-            <div className="space-y-2">
-              {detail?.comments.map((c) => (
-                <div key={c.id} className="text-xs">
-                  <p className="text-[#EBEBEB] whitespace-pre-wrap">{c.body}</p>
-                  <p className="text-[10px] text-[#87919E]">{c.authorName} · {new Date(c.createdAt).toLocaleString('pt-BR')}</p>
-                </div>
-              ))}
-              {detail && detail.comments.length === 0 && <p className="text-[11px] text-[#87919E]">Sem comentários.</p>}
-            </div>
-          </div>
 
-          {/* Atividade */}
-          {detail && detail.activities.length > 0 && (
-            <div>
-              <p className="text-[10px] font-medium text-[#87919E] uppercase tracking-wider mb-1">Atividade</p>
-              <div className="space-y-1">
-                {detail.activities.map((a) => (
+            {/* Histórico de decisões da CS */}
+            {detail && detail.approvals.filter((a) => a.decidedAt).length > 0 && (
+              <div className="mt-3 space-y-1">
+                {detail.approvals.filter((a) => a.decidedAt).map((a) => (
                   <p key={a.id} className="text-[10px] text-[#87919E]">
-                    {a.actorName} · {describeActivity(a.action, a.fromValue, a.toValue)} · {new Date(a.createdAt).toLocaleString('pt-BR')}
+                    {a.approved ? <span className="text-[#22C55E]">✓ Aprovado</span> : <span className="text-[#F59E0B]">↺ Ajustes solicitados</span>}
+                    {' '}por {a.approverName}{a.note ? ` · ${a.note}` : ''}
                   </p>
                 ))}
               </div>
+            )}
+
+            {/* Abas */}
+            <div className="flex gap-1 mt-5 border-b border-[#38435C]/50">
+              <TabBtn active={tab === 'comentarios'} onClick={() => setTab('comentarios')}>Comentários</TabBtn>
+              <TabBtn active={tab === 'atividade'} onClick={() => setTab('atividade')}>Atividade</TabBtn>
+              <TabBtn active={tab === 'anexos'} onClick={() => setTab('anexos')}>Anexos</TabBtn>
             </div>
+
+            {tab === 'comentarios' && (
+              <div className="pt-3">
+                {canEdit && (
+                  <div className="flex items-center gap-2 mb-3">
+                    <input
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleComment()}
+                      placeholder="Escreva um comentário…"
+                      className="flex-1 bg-[#0A1E2C] border border-[#38435C] rounded-lg px-3 py-1.5 text-[12px] text-[#EBEBEB] placeholder:text-[#87919E]/50 focus:outline-none focus:border-[#95BBE2]/50"
+                    />
+                    <button onClick={handleComment} disabled={isPending} className="text-[#95BBE2] border border-[#95BBE2]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#95BBE2]/10 disabled:opacity-50"><Send size={13} /></button>
+                  </div>
+                )}
+                <div className="space-y-2.5">
+                  {detail?.comments.map((c) => (
+                    <div key={c.id} className="text-[12px]">
+                      <p className="text-[#EBEBEB] whitespace-pre-wrap">{c.body}</p>
+                      <p className="text-[10px] text-[#87919E] mt-0.5">{c.authorName} · {new Date(c.createdAt).toLocaleString('pt-BR')}</p>
+                    </div>
+                  ))}
+                  {detail && detail.comments.length === 0 && <p className="text-[11px] text-[#87919E]">Sem comentários.</p>}
+                </div>
+              </div>
+            )}
+
+            {tab === 'atividade' && (
+              <div className="pt-3 space-y-1.5">
+                {detail?.activities.map((a) => (
+                  <p key={a.id} className="text-[11px] text-[#87919E]">
+                    <span className="text-[#9fb0c0]">{a.actorName}</span> {describeActivity(a.action, a.fromValue, a.toValue)}
+                    <span className="text-[#576070] font-mono"> · {new Date(a.createdAt).toLocaleString('pt-BR')}</span>
+                  </p>
+                ))}
+                {detail && detail.activities.length === 0 && <p className="text-[11px] text-[#87919E]">Sem atividade.</p>}
+              </div>
+            )}
+
+            {tab === 'anexos' && (
+              <div className="pt-4 text-center">
+                <Paperclip size={20} className="text-[#576070] mx-auto mb-1.5" />
+                <p className="text-[11px] text-[#87919E]">Nenhum anexo nesta tarefa.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Coluna lateral */}
+          <div className="p-4 space-y-3.5 bg-[#0A1E2C]/30">
+            {canEdit && (
+              <Field k="Status">
+                <select
+                  value={status}
+                  onChange={(e) => handleStatus(e.target.value)}
+                  disabled={isPending}
+                  className="w-full bg-[#0A1E2C] border border-[#38435C] rounded-lg px-2 py-1.5 text-[11px] text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
+                >
+                  {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{label(STATUS_LABELS, s)}</option>)}
+                </select>
+              </Field>
+            )}
+            <Field k="Responsável"><span className="flex items-center gap-1.5"><UserIcon size={11} />{m?.assigneeName ?? task.assigneeName}</span></Field>
+            {m?.watcherNames && m.watcherNames.length > 0 && (
+              <Field k="Observadores"><span className="flex items-center gap-1.5"><Eye size={11} />{m.watcherNames.join(' · ')}</span></Field>
+            )}
+            {m?.requesterName && <Field k="Solicitante">{m.requesterName}</Field>}
+            <Field k="Data do pedido">{fmtDate(m?.requestedAt ?? task.requestedAt)}</Field>
+            {m?.startDate && <Field k="Início">{fmtDate(m.startDate)}</Field>}
+            <Field k="Prazo"><span className={isOverdue ? 'text-[#EF4444]' : ''}>{fmtDate(m?.dueDate ?? task.dueDate)}{isOverdue ? ' (atrasado)' : ''}</span></Field>
+            {m?.slaHours != null && (
+              <Field k="SLA"><span className={`font-mono ${m.slaBreached ? 'text-[#EF4444]' : 'text-[#9fb0c0]'}`}>{m.slaHours}h{m.slaBreached ? ' · estourado' : ''}</span></Field>
+            )}
+            <Field k="Área">{m?.areaName ?? task.areaName ?? '—'}</Field>
+            <Field k="Tipo">{label(TYPE_LABELS, m?.type ?? task.type)}</Field>
+            {m?.tags && m.tags.length > 0 && (
+              <Field k="Tags">
+                <span className="flex items-center gap-1.5 flex-wrap">
+                  <TagIcon size={10} />{m.tags.join(' · ')}
+                </span>
+              </Field>
+            )}
+          </div>
+        </div>
+
+        {/* ── Rodapé: avisos + ações ── */}
+        <div className="px-5 py-3.5 border-t border-[#38435C] flex items-center gap-2.5 ak-glass-strong">
+          {requiredOpen > 0 && (
+            <span className="text-[11px] text-[#EF4444] mr-auto">⚠ {requiredOpen} {requiredOpen === 1 ? 'campo obrigatório pendente' : 'campos obrigatórios pendentes'}</span>
+          )}
+          {actionError && <span className="text-[11px] text-[#EF4444] mr-auto">{actionError}</span>}
+          {requiredOpen === 0 && !actionError && <span className="mr-auto" />}
+
+          {isValidating ? (
+            <>
+              <input
+                value={rejectNote}
+                onChange={(e) => setRejectNote(e.target.value)}
+                placeholder="Motivo p/ ajustes"
+                className="w-36 bg-[#0A1E2C] border border-[#38435C] rounded-lg px-2.5 py-1.5 text-[11px] text-[#EBEBEB] placeholder:text-[#87919E]/50 focus:outline-none focus:border-[#95BBE2]/50"
+              />
+              <button onClick={() => handleDecide(false)} disabled={isPending} className="text-[12px] text-[#F59E0B] border border-[#F59E0B]/30 rounded-lg px-3 py-2 hover:bg-[#F59E0B]/10 disabled:opacity-50 flex items-center gap-1.5"><RotateCcw size={13} /> Ajustes</button>
+              <button onClick={() => handleDecide(true)} disabled={isPending} className="text-[12px] font-semibold text-[#021015] bg-gradient-to-b from-[#46d98a] to-[#22C55E] rounded-lg px-3.5 py-2 disabled:opacity-50 flex items-center gap-1.5"><CheckSquare size={13} /> Aprovar</button>
+            </>
+          ) : detail?.canSubmit ? (
+            <>
+              <button onClick={handleSubmitValidation} disabled={isPending} className="text-[12px] text-[#95BBE2] border border-[#95BBE2]/30 rounded-lg px-3 py-2 hover:bg-[#95BBE2]/10 disabled:opacity-50 flex items-center gap-1.5"><Send size={13} /> Enviar para CS</button>
+              <button
+                onClick={handleComplete}
+                disabled={isPending || requiredOpen > 0}
+                className={`text-[12px] font-semibold rounded-lg px-3.5 py-2 flex items-center gap-1.5 ${requiredOpen > 0 ? 'bg-[#38435C] text-[#87919E] cursor-not-allowed' : 'text-[#021015] bg-gradient-to-b from-[#46d98a] to-[#22C55E]'}`}
+              >
+                <CheckSquare size={13} /> Concluir
+              </button>
+            </>
+          ) : canEdit && status !== 'CONCLUIDO' && status !== 'CANCELADO' ? (
+            <button
+              onClick={handleComplete}
+              disabled={isPending || requiredOpen > 0}
+              className={`text-[12px] font-semibold rounded-lg px-3.5 py-2 flex items-center gap-1.5 ${requiredOpen > 0 ? 'bg-[#38435C] text-[#87919E] cursor-not-allowed' : 'text-[#021015] bg-gradient-to-b from-[#46d98a] to-[#22C55E]'}`}
+            >
+              <CheckSquare size={13} /> Concluir
+            </button>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-[#22C55E]"><ShieldCheck size={13} /> {label(STATUS_LABELS, status)}</span>
           )}
         </div>
-      </div>
+      </aside>
     </>
+  )
+}
+
+function Sec({ children }: { children: ReactNode }) {
+  return <p className="text-[10px] font-semibold text-[#87919E] uppercase tracking-wider mt-5 first:mt-0 mb-2">{children}</p>
+}
+function Field({ k, children }: { k: string; children: ReactNode }) {
+  return (
+    <div>
+      <p className="text-[9.5px] font-semibold text-[#87919E] uppercase tracking-wider mb-1">{k}</p>
+      <div className="text-[12px] text-[#EBEBEB]">{children}</div>
+    </div>
+  )
+}
+function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button onClick={onClick} className={`px-3 py-2 text-[11.5px] font-medium border-b-2 -mb-px transition-colors ${active ? 'text-[#95BBE2] border-[#95BBE2]' : 'text-[#87919E] border-transparent hover:text-[#EBEBEB]'}`}>
+      {children}
+    </button>
   )
 }
 
 function describeActivity(action: string, from: string | null, to: string | null): string {
   switch (action) {
-    case 'status_changed': return `status: ${label(STATUS_LABELS, from ?? '')} → ${label(STATUS_LABELS, to ?? '')}`
+    case 'status_changed': return `mudou status: ${label(STATUS_LABELS, from ?? '')} → ${label(STATUS_LABELS, to ?? '')}`
     case 'created': return 'criou a tarefa'
     case 'created_by_recurrence': return 'gerada por recorrência'
     case 'commented': return 'comentou'
@@ -286,13 +356,4 @@ function describeActivity(action: string, from: string | null, to: string | null
     case 'validation_changes_requested': return 'solicitou ajustes'
     default: return action
   }
-}
-
-function Meta({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div>
-      <p className="text-[10px] font-medium text-[#87919E] uppercase tracking-wider">{title}</p>
-      <div className="mt-0.5">{children}</div>
-    </div>
-  )
 }
