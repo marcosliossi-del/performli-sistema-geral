@@ -7,20 +7,23 @@ import { updateTaskStatus } from '@/app/actions/tasks'
 import { TaskStatus } from '@prisma/client'
 import Link from 'next/link'
 
-const priorityColors = {
-  HIGH:   'text-[#EF4444]',
-  MEDIUM: 'text-[#EAB308]',
-  LOW:    'text-[#87919E]',
+const priorityColors: Record<'BAIXA' | 'MEDIA' | 'ALTA' | 'CRITICA', string> = {
+  CRITICA: 'text-[#EF4444]',
+  ALTA:    'text-[#EF4444]',
+  MEDIA:   'text-[#EAB308]',
+  BAIXA:   'text-[#87919E]',
 }
 
-const priorityLabels = { HIGH: 'Alta', MEDIUM: 'Média', LOW: 'Baixa' }
+const priorityLabels: Record<'BAIXA' | 'MEDIA' | 'ALTA' | 'CRITICA', string> = {
+  CRITICA: 'Crítica', ALTA: 'Alta', MEDIA: 'Média', BAIXA: 'Baixa',
+}
 
 interface Task {
   id: string
   title: string
   description: string | null
   status: TaskStatus
-  priority: 'LOW' | 'MEDIUM' | 'HIGH'
+  priority: 'BAIXA' | 'MEDIA' | 'ALTA' | 'CRITICA'
   dueDate: Date | null
   client: { name: string; slug: string } | null
   user: { name: string }
@@ -32,12 +35,12 @@ interface Props {
 
 function TaskRow({ task }: { task: Task }) {
   const [isPending, startTransition] = useTransition()
-  const isDone    = task.status === 'DONE'
+  const isDone    = task.status === 'CONCLUIDO'
   const isOverdue = !isDone && task.dueDate !== null && task.dueDate < new Date()
 
   function toggle() {
     startTransition(() =>
-      updateTaskStatus(task.id, isDone ? 'PENDING' : 'DONE')
+      updateTaskStatus(task.id, isDone ? 'A_FAZER' : 'CONCLUIDO')
     )
   }
 
@@ -88,11 +91,10 @@ export function TaskList({ tasks }: Props) {
     )
   }
 
-  const pending    = tasks.filter((t) => t.status === 'PENDING')
-  const inProgress = tasks.filter((t) => t.status === 'IN_PROGRESS')
-  const done       = tasks.filter((t) => t.status === 'DONE')
+  const naoConcluidas = tasks.filter((t) => t.status !== 'CONCLUIDO' && t.status !== 'CANCELADO')
+  const concluidas    = tasks.filter((t) => t.status === 'CONCLUIDO' || t.status === 'CANCELADO')
 
-  const ordered = [...pending, ...inProgress, ...done]
+  const ordered = [...naoConcluidas, ...concluidas]
 
   return (
     <div className="bg-[#38435C]/20 border border-[#38435C] rounded-xl overflow-hidden">

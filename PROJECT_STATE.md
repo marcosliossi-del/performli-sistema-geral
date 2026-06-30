@@ -65,3 +65,11 @@ com `WarRoomPlanPanel`.
   Gate obrigatório: Vercel CI verde antes de qualquer merge.
 - Pré-existente: `src/app/actions/protocols.ts` valida só auth (sem posse).
   Recomendada fatia de correção de segurança.
+
+## CENTRAL OPERACIONAL (nova direção — prompt em 7 blocos)
+- Decisões do usuário: check-in migra para Task (A); enums Task substituídos+backfill; execução contínua.
+- **BLOCO 1** (fundação) — branch feat/bloco1-central-operacional: Task estendido +
+  24 models (hierarquia Área→POP→Lista→Tarefa, templates, recorrência, automação,
+  campos personalizados, atividade, dependências, aprovação) + enums novos +
+  troca TaskStatus/TaskPriority (backfill) + seed 7 áreas/21 POPs + TaskActivity nas actions.
+- Próximos: BLOCO 2 (UI Central), 3 (templates+recorrência+cron), 4 (integração), 5 (POPs), 6 (automações), 7 (IA+KPIs).

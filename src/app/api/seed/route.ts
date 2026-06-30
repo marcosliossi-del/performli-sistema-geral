@@ -97,12 +97,12 @@ export async function POST(request: NextRequest) {
     await prisma.task.createMany({
       skipDuplicates: true,
       data: [
-        { title: 'Revisar criativos da campanha de ROAS – Loja Alpha', clientId: lojaAlpha.id, assignedTo: ana.id, status: 'PENDING', priority: 'HIGH' },
-        { title: 'Ajustar lances no Meta – E-commerce Beta', clientId: ecommerceBeta.id, assignedTo: carlos.id, status: 'IN_PROGRESS', priority: 'HIGH' },
-        { title: 'Ligar para Marca Gamma – risco de churn', clientId: marcaGamma.id, assignedTo: ana.id, status: 'PENDING', priority: 'HIGH' },
-        { title: 'Configurar rastreamento GA4 – Tech Delta', clientId: techDelta.id, assignedTo: carlos.id, status: 'DONE', priority: 'MEDIUM' },
-        { title: 'Criar novos públicos no Meta – Fit Store', clientId: fitStore.id, assignedTo: ana.id, status: 'IN_PROGRESS', priority: 'MEDIUM' },
-        { title: 'Relatório mensal – Imóveis Prime', clientId: imoveisPrime.id, assignedTo: carlos.id, status: 'PENDING', priority: 'LOW' },
+        { title: 'Revisar criativos da campanha de ROAS – Loja Alpha', clientId: lojaAlpha.id, assignedTo: ana.id, status: 'A_FAZER', priority: 'ALTA' },
+        { title: 'Ajustar lances no Meta – E-commerce Beta', clientId: ecommerceBeta.id, assignedTo: carlos.id, status: 'EM_ANDAMENTO', priority: 'ALTA' },
+        { title: 'Ligar para Marca Gamma – risco de churn', clientId: marcaGamma.id, assignedTo: ana.id, status: 'A_FAZER', priority: 'ALTA' },
+        { title: 'Configurar rastreamento GA4 – Tech Delta', clientId: techDelta.id, assignedTo: carlos.id, status: 'CONCLUIDO', priority: 'MEDIA' },
+        { title: 'Criar novos públicos no Meta – Fit Store', clientId: fitStore.id, assignedTo: ana.id, status: 'EM_ANDAMENTO', priority: 'MEDIA' },
+        { title: 'Relatório mensal – Imóveis Prime', clientId: imoveisPrime.id, assignedTo: carlos.id, status: 'A_FAZER', priority: 'BAIXA' },
       ],
     })
 

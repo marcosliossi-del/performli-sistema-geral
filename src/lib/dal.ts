@@ -1061,10 +1061,10 @@ export const getReportData = cache(async (
 // ─── Tasks ────────────────────────────────────────────────────────────────────
 
 export const getTasks = cache(async (userId: string, role: string) => {
-  const where =
+  const where: Prisma.TaskWhereInput =
     canViewAll(role)
       ? {}
-      : { assignedTo: userId }
+      : { OR: [{ assignedTo: userId }, { client: { assignments: { some: { userId } } } }] }
 
   return prisma.task.findMany({
     where,
@@ -1166,7 +1166,7 @@ export const getCockpitData = cache(
       }),
       prisma.task.count({
         where: {
-          status: { in: ['PENDING', 'IN_PROGRESS'] },
+          status: { notIn: ['CONCLUIDO', 'CANCELADO'] },
           dueDate: { lt: now },
           ...taskScope,
         },
