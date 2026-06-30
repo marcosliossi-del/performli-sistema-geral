@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   Gauge,
   Sun,
+  ShieldCheck,
   ListTodo,
   LayoutDashboard,
   CheckSquare,
@@ -54,6 +55,7 @@ const navigation: NavSection[] = [
       { name: 'Cockpit',       href: '/cockpit',     icon: Gauge },
       { name: 'Central Operacional', href: '/operacional', icon: ListTodo },
       { name: 'Meu Dia',       href: '/meu-dia',     icon: Sun },
+      { name: 'Validação da CS', href: '/validacoes', icon: ShieldCheck, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
       { name: 'Dashboard',     href: '/dashboard',   icon: LayoutDashboard },
       { name: 'Check-ins',     href: '/check-ins',   icon: CheckSquare },
       { name: 'Processos',     href: '/processos', icon: Activity },
