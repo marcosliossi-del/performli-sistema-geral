@@ -83,3 +83,11 @@ com `WarRoomPlanPanel`.
   template+cliente+janela, AutomationLog por resultado), rota /api/cron/recurrences
   (CRON_SECRET, ?force=1), seed do template recorrente Check-in (OPE-06, semanal
   segunda, checklist), vercel.json com novo cron.
+
+- **BLOCO 3** — MERGED (#26, em produção). Motor de recorrência + cron + template OPE-06.
+- **BLOCO 4** (visões por papel) — branch feat/bloco4-views-papel:
+  página /meu-dia ("Meu Dia · Minha Semana": tarefas próprias agrupadas por
+  urgência — atrasadas/hoje/esta semana/depois/sem prazo + "Carga por gestor"
+  para ADMIN/CS, com flag de gargalo). DAL getMinhaSemana, getGestoresCarga,
+  getClienteTarefas. Bloco de tarefas operacionais na página do cliente
+  (abertas + concluídas recentes, role-scoped por posse). Nav + middleware atualizados.

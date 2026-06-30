@@ -2947,3 +2947,232 @@ export const getClientSalesFunnel = cache(async (
     hasData,
   }
 })
+
+// ─── BLOCO 4 — Visões por papel da Central Operacional ──────────────────────────
+
+export type MinhaTarefa = {
+  id: string
+  title: string
+  status: string
+  priority: string
+  type: string
+  dueDate: Date | null
+  clientName: string | null
+  clientSlug: string | null
+  areaName: string | null
+  popCode: string | null
+}
+
+export type MinhaSemanaBucket = {
+  key: 'atrasadas' | 'hoje' | 'estaSemana' | 'depois' | 'semPrazo'
+  label: string
+  pergunta: string
+  tasks: MinhaTarefa[]
+}
+
+export type MinhaSemana = {
+  buckets: MinhaSemanaBucket[]
+  total: number
+  atrasadasCount: number
+  hojeCount: number
+}
+
+/**
+ * "Meu Dia / Minha Semana": tarefas ABERTAS atribuídas ao usuário, agrupadas por
+ * urgência (atrasadas → hoje → esta semana → depois → sem prazo). Responde
+ * "o que eu preciso fazer agora?" para qualquer papel.
+ */
+export const getMinhaSemana = cache(async (userId: string): Promise<MinhaSemana> => {
+  const rows = await prisma.task.findMany({
+    where: { assignedTo: userId, status: { notIn: ['CONCLUIDO', 'CANCELADO'] } },
+    orderBy: [{ dueDate: 'asc' }, { priority: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      id: true, title: true, status: true, priority: true, type: true, dueDate: true,
+      client: { select: { name: true, slug: true } },
+      area: { select: { name: true } },
+      pop: { select: { code: true } },
+    },
+  })
+
+  const tasks: MinhaTarefa[] = rows.map((t) => ({
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    priority: t.priority,
+    type: t.type,
+    dueDate: t.dueDate,
+    clientName: t.client?.name ?? null,
+    clientSlug: t.client?.slug ?? null,
+    areaName: t.area?.name ?? null,
+    popCode: t.pop?.code ?? null,
+  }))
+
+  const now = new Date()
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const endToday = new Date(startToday.getTime() + 86_400_000)
+  const { end: weekEnd } = getWeekRange(now)
+
+  const atrasadas: MinhaTarefa[] = []
+  const hoje: MinhaTarefa[] = []
+  const estaSemana: MinhaTarefa[] = []
+  const depois: MinhaTarefa[] = []
+  const semPrazo: MinhaTarefa[] = []
+
+  for (const t of tasks) {
+    if (t.dueDate == null) { semPrazo.push(t); continue }
+    const d = new Date(t.dueDate).getTime()
+    if (d < startToday.getTime()) atrasadas.push(t)
+    else if (d < endToday.getTime()) hoje.push(t)
+    else if (d <= weekEnd.getTime()) estaSemana.push(t)
+    else depois.push(t)
+  }
+
+  const buckets: MinhaSemanaBucket[] = [
+    { key: 'atrasadas', label: 'Atrasadas', pergunta: 'Passou do prazo — resolva ou repactue hoje', tasks: atrasadas },
+    { key: 'hoje', label: 'Para hoje', pergunta: 'Vence hoje', tasks: hoje },
+    { key: 'estaSemana', label: 'Esta semana', pergunta: 'Vence até o fim da semana', tasks: estaSemana },
+    { key: 'depois', label: 'Depois', pergunta: 'Prazo mais distante', tasks: depois },
+    { key: 'semPrazo', label: 'Sem prazo', pergunta: 'Sem data — defina um prazo', tasks: semPrazo },
+  ]
+
+  return {
+    buckets,
+    total: tasks.length,
+    atrasadasCount: atrasadas.length,
+    hojeCount: hoje.length,
+  }
+})
+
+export type GestorCarga = {
+  id: string
+  name: string
+  role: string
+  abertas: number
+  atrasadas: number
+  concluidas7d: number
+  semPrazo: number
+  gargalo: boolean
+}
+
+/**
+ * "Por Gestor": carga de trabalho de cada gestor/CS — abertas, atrasadas,
+ * concluídas na semana e gargalos. Visão de quem está acumulando (CEO/CS).
+ * Restrita a quem tem leitura ampla (ADMIN/CS).
+ */
+export const getGestoresCarga = cache(async (role: string): Promise<GestorCarga[] | null> => {
+  if (!canViewAll(role)) return null
+
+  const now = new Date()
+  const sete = new Date(now.getTime() - 7 * 86_400_000)
+
+  const users = await prisma.user.findMany({
+    where: { active: true, role: { in: ['ADMIN', 'CS', 'MANAGER'] } },
+    orderBy: [{ role: 'asc' }, { name: 'asc' }],
+    select: {
+      id: true,
+      name: true,
+      role: true,
+      tasks: {
+        select: { status: true, dueDate: true, completedAt: true },
+      },
+    },
+  })
+
+  const rows: GestorCarga[] = users.map((u) => {
+    let abertas = 0
+    let atrasadas = 0
+    let concluidas7d = 0
+    let semPrazo = 0
+    for (const t of u.tasks) {
+      const aberta = t.status !== 'CONCLUIDO' && t.status !== 'CANCELADO'
+      if (aberta) {
+        abertas++
+        if (t.dueDate == null) semPrazo++
+        else if (new Date(t.dueDate).getTime() < now.getTime()) atrasadas++
+      }
+      if (t.status === 'CONCLUIDO' && t.completedAt != null && new Date(t.completedAt).getTime() >= sete.getTime()) {
+        concluidas7d++
+      }
+    }
+    return {
+      id: u.id,
+      name: u.name,
+      role: u.role,
+      abertas,
+      atrasadas,
+      concluidas7d,
+      semPrazo,
+      gargalo: atrasadas >= 3 || abertas >= 15,
+    }
+  })
+
+  // Mais carregados primeiro (gargalos no topo)
+  return rows.sort((a, b) => Number(b.gargalo) - Number(a.gargalo) || b.atrasadas - a.atrasadas || b.abertas - a.abertas)
+})
+
+export type ClienteTarefaRow = {
+  id: string
+  title: string
+  status: string
+  priority: string
+  type: string
+  dueDate: Date | null
+  assigneeName: string
+  popCode: string | null
+}
+
+export type ClienteTarefas = {
+  abertas: ClienteTarefaRow[]
+  concluidasRecentes: ClienteTarefaRow[]
+  atrasadasCount: number
+}
+
+/** Tarefas operacionais de um cliente (para a página do cliente). Role-scoped por posse. */
+export const getClienteTarefas = cache(
+  async (clientId: string, userId: string, role: string): Promise<ClienteTarefas> => {
+    if (!canViewAll(role)) {
+      const owns = await prisma.clientAssignment.findFirst({
+        where: { clientId, userId },
+        select: { id: true },
+      })
+      if (!owns) return { abertas: [], concluidasRecentes: [], atrasadasCount: 0 }
+    }
+
+    const rows = await prisma.task.findMany({
+      where: { clientId },
+      orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
+      select: {
+        id: true, title: true, status: true, priority: true, type: true, dueDate: true,
+        completedAt: true,
+        user: { select: { name: true } },
+        pop: { select: { code: true } },
+      },
+    })
+
+    const map = (t: (typeof rows)[number]): ClienteTarefaRow => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      priority: t.priority,
+      type: t.type,
+      dueDate: t.dueDate,
+      assigneeName: t.user?.name ?? '—',
+      popCode: t.pop?.code ?? null,
+    })
+
+    const now = Date.now()
+    const abertasRows = rows.filter((t) => t.status !== 'CONCLUIDO' && t.status !== 'CANCELADO')
+    const concluidasRows = rows
+      .filter((t) => t.status === 'CONCLUIDO')
+      .sort((a, b) => (new Date(b.completedAt ?? 0).getTime()) - (new Date(a.completedAt ?? 0).getTime()))
+      .slice(0, 5)
+
+    return {
+      abertas: abertasRows.map(map),
+      concluidasRecentes: concluidasRows.map(map),
+      atrasadasCount: abertasRows.filter(
+        (t) => t.dueDate != null && new Date(t.dueDate).getTime() < now,
+      ).length,
+    }
+  },
+)

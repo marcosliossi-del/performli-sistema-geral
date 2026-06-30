@@ -8,7 +8,13 @@ import {
   getClientCampaigns, getLatestCampaignInsight, metricLabels,
   getClientDailyRevenue, getClientMonthlyComparison, getClientInteractions,
   getHealthScoreHistory, getWeekScoreComparison, getClientSalesFunnel,
+  getClienteTarefas,
 } from '@/lib/dal'
+import type { ClienteTarefas, ClienteTarefaRow } from '@/lib/dal'
+import {
+  STATUS_LABELS, STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS, label as opLabel,
+} from '@/components/operacional/labels'
+import { ListTodo } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardValue } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -120,7 +126,7 @@ export default async function ClientDetailPage({
   const activeFrom = from ?? defaultFrom
   const activeTo = to ?? defaultTo
 
-  const [metricHistory, kpis, paceGoals, chat, weeklyReport, monthlyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel, activeContract] = await Promise.all([
+  const [metricHistory, kpis, paceGoals, chat, weeklyReport, monthlyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel, activeContract, clienteTarefas] = await Promise.all([
     getClientMetricHistory(client.id, 14),
     getClientKPIs(client.id, activeFrom, activeTo),
     getGoalPaceMetrics(client.id),
@@ -146,6 +152,7 @@ export default async function ClientDetailPage({
         responsible: { select: { name: true } },
       },
     }),
+    getClienteTarefas(client.id, session.userId, session.role),
   ])
 
   const contractData = activeContract ? {
@@ -725,10 +732,75 @@ export default async function ClientDetailPage({
         </div>
       )}
 
+      {/* ── Tarefas operacionais do cliente ───────────────────────────────── */}
+      <ClientTasksCard tarefas={clienteTarefas} />
+
       {/* ── Histórico de Interações CRM ───────────────────────────────────── */}
       <div className="card p-5">
         <InteractionTimeline clientId={client.id} interactions={interactions} />
       </div>
+    </div>
+  )
+}
+
+function ClientTasksCard({ tarefas }: { tarefas: ClienteTarefas }) {
+  const { abertas, concluidasRecentes, atrasadasCount } = tarefas
+  return (
+    <div className="card p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <ListTodo size={16} className="text-[#95BBE2]" />
+          <h3 className="text-sm font-semibold text-[#EBEBEB]">Tarefas operacionais</h3>
+          <span className="text-[11px] text-[#87919E]">· {abertas.length} abertas</span>
+          {atrasadasCount > 0 && (
+            <span className="text-[11px] text-[#EF4444]">· {atrasadasCount} atrasada{atrasadasCount > 1 ? 's' : ''}</span>
+          )}
+        </div>
+        <Link href="/operacional" className="text-[11px] text-[#95BBE2] hover:underline">Abrir Central →</Link>
+      </div>
+
+      {abertas.length === 0 ? (
+        <p className="text-[#87919E] text-sm">Nenhuma tarefa aberta para este cliente.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {abertas.map((t) => <ClientTaskRow key={t.id} t={t} />)}
+        </div>
+      )}
+
+      {concluidasRecentes.length > 0 && (
+        <div className="mt-4">
+          <p className="text-[10px] uppercase tracking-wider text-[#576070] mb-1.5">Concluídas recentemente</p>
+          <div className="space-y-1">
+            {concluidasRecentes.map((t) => (
+              <div key={t.id} className="flex items-center gap-2 text-[12px] text-[#87919E]">
+                <span className="text-[#22C55E]">✓</span>
+                <span className="truncate">{t.title}</span>
+                {t.popCode && <span className="text-[10px] text-[#576070] shrink-0">{t.popCode}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ClientTaskRow({ t }: { t: ClienteTarefaRow }) {
+  const atrasada = t.dueDate != null && new Date(t.dueDate).getTime() < Date.now()
+  return (
+    <div className={`flex items-center gap-3 px-3 py-2 rounded-lg border bg-[#0F1623] ${atrasada ? 'border-[#EF4444]/30' : 'border-[#1F2937]'}`}>
+      <span className={`text-[11px] shrink-0 ${PRIORITY_COLORS[t.priority] ?? 'text-[#87919E]'}`}>
+        {opLabel(PRIORITY_LABELS, t.priority)}
+      </span>
+      <span className="flex-1 min-w-0 truncate text-[#EBEBEB] text-sm">{t.title}</span>
+      <span className="text-[11px] text-[#87919E] shrink-0 hidden sm:inline">{t.assigneeName}</span>
+      {t.popCode && <span className="text-[10px] text-[#576070] shrink-0 hidden md:inline">{t.popCode}</span>}
+      <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${STATUS_COLORS[t.status] ?? 'text-[#87919E] border-[#38435C]'}`}>
+        {opLabel(STATUS_LABELS, t.status)}
+      </span>
+      <span className={`text-[11px] shrink-0 w-14 text-right ${atrasada ? 'text-[#EF4444]' : 'text-[#87919E]'}`}>
+        {t.dueDate ? new Date(t.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'}
+      </span>
     </div>
   )
 }
