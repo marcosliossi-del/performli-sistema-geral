@@ -1,30 +1,66 @@
 @import "tailwindcss";
 
-/* ─── Performli Design System ─────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   ARKZA · Central Operacional — Design System (direção Apple/iOS, dark)
+   Marca ciano-petróleo · vibrancy (vidro fosco) · tipografia SF · profundidade
+   Esta folha retematiza o app inteiro: além dos tokens, reescreve (override) as
+   classes de cor mais usadas para a nova paleta — telas existentes herdam o novo
+   visual sem precisar editar cada arquivo.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Brand Colors */
-  --color-meia-noite:  #05141C;
-  --color-classico:    #38435C;
-  --color-ceu:         #95BBE2;
-  --color-nanquim:     #87919E;
-  --color-branco-dama: #EBEBEB;
+  /* ─── Paleta Arkza (Apple/iOS) ─── */
+  --ak-s0:#0a0e13;            /* fundo da app          */
+  --ak-s1:#10151c;            /* sidebar / painel      */
+  --ak-s2:#161d26;            /* card                  */
+  --ak-s3:#1e2832;            /* card elevado / hover  */
+  --ak-hair:rgba(255,255,255,.09);
+  --ak-hair2:rgba(255,255,255,.055);
 
-  /* UI Tokens - Dark Mode (default) */
-  --background:        #05141C;
-  --background-card:   #38435C;
-  --background-hover:  #2D3A4D;
-  --background-sidebar:#0A1E2C;
-  --foreground:        #EBEBEB;
-  --foreground-muted:  #87919E;
-  --border:            #38435C;
-  --accent:            #95BBE2;
-  --accent-foreground: #05141C;
+  --ak-hi:#f2f6fa;           /* texto alto contraste  */
+  --ak-mid:#a3b2c2;          /* texto secundário      */
+  --ak-low:#647488;          /* texto terciário       */
 
-  /* Status Colors */
-  --status-otimo:   #22C55E;
-  --status-regular: #EAB308;
-  --status-ruim:    #EF4444;
+  --ak-brand:#22c2d6;        /* marca ciano-petróleo  */
+  --ak-brand-2:#54e0ee;      /* marca brilhante (texto/links) */
+  --ak-brand-deep:#0f7d8c;
+  --ak-brand-rgb:34,194,214;
+
+  --ak-green:#34c97a;
+  --ak-amber:#e3ad45;
+  --ak-red:#ff5e6a;
+  --ak-orange:#f0922b;
+  --ak-violet:#a98cff;
+
+  /* Vidro / sombras / movimento */
+  --ak-glass:rgba(16,21,28,.66);
+  --ak-glass-strong:rgba(13,18,25,.82);
+  --ak-shadow-card:0 1px 1px rgba(0,0,0,.28),0 10px 28px -16px rgba(0,0,0,.55);
+  --ak-shadow-pop:0 24px 70px -16px rgba(0,0,0,.62);
+  --ak-spring:cubic-bezier(.34,1.56,.64,1);
+  --ak-ease:cubic-bezier(.4,0,.2,1);
+  --ak-radius:18px;
+
+  /* ─── Tokens legados remapeados p/ a nova paleta (mantém nomes) ─── */
+  --color-meia-noite:  var(--ak-s0);
+  --color-classico:    var(--ak-s3);
+  --color-ceu:         var(--ak-brand-2);
+  --color-nanquim:     var(--ak-mid);
+  --color-branco-dama: var(--ak-hi);
+
+  --background:        var(--ak-s0);
+  --background-card:   var(--ak-s2);
+  --background-hover:  var(--ak-s3);
+  --background-sidebar:var(--ak-s1);
+  --foreground:        var(--ak-hi);
+  --foreground-muted:  var(--ak-mid);
+  --border:            var(--ak-hair);
+  --accent:            var(--ak-brand);
+  --accent-foreground: #021015;
+
+  --status-otimo:   var(--ak-green);
+  --status-regular: var(--ak-amber);
+  --status-ruim:    var(--ak-red);
 }
 
 @theme inline {
@@ -40,8 +76,9 @@
   --color-otimo: var(--status-otimo);
   --color-regular: var(--status-regular);
   --color-ruim: var(--status-ruim);
+  --color-brand: var(--ak-brand);
+  --color-brand-strong: var(--ak-brand-2);
 
-  /* Performli Brand */
   --color-meia-noite:  var(--color-meia-noite);
   --color-classico:    var(--color-classico);
   --color-ceu:         var(--color-ceu);
@@ -49,61 +86,169 @@
   --color-branco-dama: var(--color-branco-dama);
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html {
-  height: 100%;
-}
+* { box-sizing: border-box; }
+html { height: 100%; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--ak-s0);
+  color: var(--ak-hi);
+  /* Tipografia SF primeiro (Apple), Inter como fallback */
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+               Inter, "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  letter-spacing: -0.01em;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Fundo dinâmico — malha de gradientes viva, estilo wallpaper iOS */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 50% at 10% 6%, rgba(var(--ak-brand-rgb), .09), transparent 70%),
+    radial-gradient(34% 44% at 94% 0%, rgba(169,140,255,.06), transparent 70%),
+    radial-gradient(48% 50% at 82% 98%, rgba(var(--ak-brand-rgb), .05), transparent 72%);
+  filter: saturate(118%);
+  animation: ak-drift 28s ease-in-out infinite alternate;
 }
-::-webkit-scrollbar-track {
-  background: var(--background);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--foreground-muted);
-}
+@keyframes ak-drift { from { transform: translate3d(0,0,0) scale(1) } to { transform: translate3d(0,-1.4%,0) scale(1.04) } }
 
-/* ─── Utility classes ─────────────────────────────────────────────────────── */
+.font-mono, .tabular { font-family: "SF Mono", "JetBrains Mono", ui-monospace, monospace; }
 
+/* Scrollbar fina estilo macOS */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.10); border-radius: 9px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.18); background-clip: padding-box; }
+
+/* ─── Utilitários ─────────────────────────────────────────────────────────── */
 .card {
-  background: var(--background-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--ak-s2);
+  border: 1px solid var(--ak-hair);
+  border-radius: var(--ak-radius);
+  box-shadow: var(--ak-shadow-card);
 }
+.ak-glass {
+  background: var(--ak-glass);
+  backdrop-filter: blur(30px) saturate(160%);
+  -webkit-backdrop-filter: blur(30px) saturate(160%);
+}
+.ak-glass-strong {
+  background: var(--ak-glass-strong);
+  backdrop-filter: blur(34px) saturate(170%);
+  -webkit-backdrop-filter: blur(34px) saturate(170%);
+}
+/* Fundo da app com malha de gradiente (mostra profundidade atrás do vidro) */
+.ak-app-bg {
+  background-color: var(--ak-s0);
+  background-image:
+    radial-gradient(38% 46% at 8% 4%, rgba(var(--ak-brand-rgb), .08), transparent 70%),
+    radial-gradient(32% 42% at 96% 2%, rgba(169,140,255,.05), transparent 70%),
+    radial-gradient(46% 48% at 88% 98%, rgba(var(--ak-brand-rgb), .045), transparent 72%);
+  background-attachment: fixed;
+}
+/* Sidebar e topbar com vibrancy */
+.ak-sidebar { background: var(--ak-glass) !important; backdrop-filter: blur(30px) saturate(160%); -webkit-backdrop-filter: blur(30px) saturate(160%); border-color: var(--ak-hair) !important; }
+.ak-topbar  { background: var(--ak-glass-strong) !important; backdrop-filter: blur(30px) saturate(160%); -webkit-backdrop-filter: blur(30px) saturate(160%); border-color: var(--ak-hair) !important; }
 
-.badge-otimo {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22C55E;
-  border: 1px solid rgba(34, 197, 94, 0.3);
-}
+.badge-otimo   { background: rgba(52,201,122,.15);  color: var(--ak-green); border: 1px solid rgba(52,201,122,.3); }
+.badge-regular { background: rgba(227,173,69,.16);  color: var(--ak-amber); border: 1px solid rgba(227,173,69,.3); }
+.badge-ruim    { background: rgba(255,94,106,.16);  color: var(--ak-red);   border: 1px solid rgba(255,94,106,.3); }
 
-.badge-regular {
-  background: rgba(234, 179, 8, 0.15);
-  color: #EAB308;
-  border: 1px solid rgba(234, 179, 8, 0.3);
-}
+/* ═══════════════════════════════════════════════════════════════════════════
+   OVERRIDES DE PALETA (regras sem @layer vencem as utilities do Tailwind)
+   Remapeia as cores antigas (azul-marinho + sky) para a paleta Arkza (Apple).
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-.badge-ruim {
-  background: rgba(239, 68, 68, 0.15);
-  color: #EF4444;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-}
+/* Superfícies */
+.bg-\[\#05141C\] { background-color: var(--ak-s0); }
+.bg-\[\#0A1E2C\] { background-color: var(--ak-s1); }
+.bg-\[\#0F1623\] { background-color: var(--ak-s1); }
+.bg-\[\#1B2B3A\] { background-color: var(--ak-s2); }
+.bg-\[\#0D2137\] { background-color: var(--ak-s2); }
+.bg-\[\#141C2B\] { background-color: var(--ak-s3); }
+.bg-\[\#1F2937\] { background-color: var(--ak-s2); }
+.bg-\[\#38435C\] { background-color: var(--ak-s3); }
+.bg-\[\#2D3A4D\] { background-color: var(--ak-s3); }
+.bg-\[\#38435C\]\/10 { background-color: rgba(255,255,255,.03); }
+.bg-\[\#38435C\]\/20 { background-color: rgba(255,255,255,.04); }
+.bg-\[\#38435C\]\/30 { background-color: rgba(255,255,255,.05); }
+.bg-\[\#38435C\]\/40 { background-color: rgba(255,255,255,.06); }
+.bg-\[\#38435C\]\/50 { background-color: rgba(255,255,255,.07); }
+.bg-\[\#38435C\]\/60 { background-color: rgba(255,255,255,.08); }
+.hover\:bg-\[\#38435C\]:hover    { background-color: var(--ak-s3); }
+.hover\:bg-\[\#38435C\]\/50:hover { background-color: rgba(255,255,255,.06); }
+.hover\:bg-\[\#141C2B\]:hover    { background-color: var(--ak-s3); }
+.hover\:bg-\[\#2D3A4D\]:hover    { background-color: var(--ak-s3); }
+
+/* Bordas */
+.border-\[\#38435C\]      { border-color: var(--ak-hair); }
+.border-\[\#38435C\]\/50  { border-color: var(--ak-hair2); }
+.border-\[\#38435C\]\/30  { border-color: var(--ak-hair2); }
+.border-\[\#1F2937\]      { border-color: var(--ak-hair2); }
+.border-\[\#0A1E2C\]      { border-color: var(--ak-hair); }
+
+/* Texto */
+.text-\[\#EBEBEB\]     { color: var(--ak-hi); }
+.text-\[\#87919E\]     { color: var(--ak-mid); }
+.text-\[\#87919E\]\/40 { color: rgba(163,178,194,.4); }
+.text-\[\#87919E\]\/50 { color: rgba(163,178,194,.5); }
+.text-\[\#87919E\]\/60 { color: rgba(163,178,194,.6); }
+.text-\[\#576070\]     { color: var(--ak-low); }
+.text-\[\#38435C\]     { color: var(--ak-low); }
+.text-\[\#05141C\]     { color: #021015; }   /* texto sobre botão ciano */
+.placeholder\:text-\[\#87919E\]\/50::placeholder { color: rgba(163,178,194,.45); }
+
+/* ── Marca: sky #95BBE2 → ciano-petróleo ── */
+.text-\[\#95BBE2\]       { color: var(--ak-brand-2); }
+.bg-\[\#95BBE2\]         { background-color: var(--ak-brand); }
+.bg-\[\#95BBE2\]\/5      { background-color: rgba(var(--ak-brand-rgb),.05); }
+.bg-\[\#95BBE2\]\/10     { background-color: rgba(var(--ak-brand-rgb),.10); }
+.bg-\[\#95BBE2\]\/15     { background-color: rgba(var(--ak-brand-rgb),.15); }
+.bg-\[\#95BBE2\]\/20     { background-color: rgba(var(--ak-brand-rgb),.20); }
+.bg-\[\#95BBE2\]\/25     { background-color: rgba(var(--ak-brand-rgb),.25); }
+.bg-\[\#95BBE2\]\/90     { background-color: rgba(var(--ak-brand-rgb),.90); }
+.hover\:bg-\[\#95BBE2\]\/10:hover { background-color: rgba(var(--ak-brand-rgb),.12); }
+.hover\:bg-\[\#7aafd9\]:hover     { background-color: var(--ak-brand-2); }
+.border-\[\#95BBE2\]      { border-color: rgba(var(--ak-brand-rgb),.55); }
+.border-\[\#95BBE2\]\/20  { border-color: rgba(var(--ak-brand-rgb),.20); }
+.border-\[\#95BBE2\]\/30  { border-color: rgba(var(--ak-brand-rgb),.30); }
+.border-\[\#95BBE2\]\/40  { border-color: rgba(var(--ak-brand-rgb),.40); }
+.border-\[\#95BBE2\]\/50  { border-color: rgba(var(--ak-brand-rgb),.50); }
+
+/* ── Status ── */
+.text-\[\#22C55E\]   { color: var(--ak-green); }
+.bg-\[\#22C55E\]     { background-color: var(--ak-green); }
+.bg-\[\#22C55E\]\/10 { background-color: rgba(52,201,122,.10); }
+.bg-\[\#22C55E\]\/20 { background-color: rgba(52,201,122,.20); }
+.border-\[\#22C55E\]\/30 { border-color: rgba(52,201,122,.30); }
+
+.text-\[\#EAB308\]   { color: var(--ak-amber); }
+.bg-\[\#EAB308\]     { background-color: var(--ak-amber); }
+.bg-\[\#EAB308\]\/10 { background-color: rgba(227,173,69,.10); }
+.border-\[\#EAB308\]\/30 { border-color: rgba(227,173,69,.30); }
+
+.text-\[\#EF4444\]     { color: var(--ak-red); }
+.text-\[\#EF4444\]\/70 { color: rgba(255,94,106,.75); }
+.bg-\[\#EF4444\]       { background-color: var(--ak-red); }
+.bg-\[\#EF4444\]\/10   { background-color: rgba(255,94,106,.10); }
+.bg-\[\#EF4444\]\/20   { background-color: rgba(255,94,106,.20); }
+.border-\[\#EF4444\]\/20 { border-color: rgba(255,94,106,.20); }
+.border-\[\#EF4444\]\/30 { border-color: rgba(255,94,106,.30); }
+
+.text-\[\#F59E0B\]     { color: var(--ak-orange); }
+.bg-\[\#F59E0B\]       { background-color: var(--ak-orange); }
+.bg-\[\#F59E0B\]\/10   { background-color: rgba(240,146,43,.10); }
+.border-\[\#F59E0B\]\/30 { border-color: rgba(240,146,43,.30); }
+
+/* Foco ciano */
+.focus\:ring-\[\#95BBE2\]\/50:focus { --tw-ring-color: rgba(var(--ak-brand-rgb),.5); }
+
+/* Cantos mais Apple para os cards/painéis utilitários comuns */
+.rounded-xl  { border-radius: 16px; }
+.rounded-2xl { border-radius: 20px; }

@@ -32,7 +32,7 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
     .toUpperCase()
 
   return (
-    <header className="h-16 flex items-center justify-between px-6 bg-[#05141C] border-b border-[#38435C] sticky top-0 z-40">
+    <header className="ak-topbar h-16 flex items-center justify-between px-6 bg-[#05141C] border-b border-[#38435C] sticky top-0 z-40">
       {/* Search */}
       <div className="flex-1 max-w-md">
         <div className="relative">
