@@ -215,3 +215,14 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
     Resultado (badge colorido Ótimo→Péssimo + ROAS da semana) e Etapa (badge
     Escala/Monitoramento/Otimização) na tabela /clients; tooltip com data da
     última atualização; LOCAL = "manual", ecommerce sem dado = "aguardando".
+
+## POPs FUNCIONAIS — continuação
+- **FIN-19**: já estava completo (/financeiro DRE: entradas/saídas, lucro, margem,
+  MRR, inadimplência, Contas a Pagar via Expense, fila de cobrança, inadimplencia-checker).
+  Não refeito.
+- **ONB-04 Onboarding** — branch feat/onb-04-onboarding: ao criar cliente
+  (createClient), gera Task ONBOARDING (ALTA, área onboarding, pop_onb_04, prazo 7d,
+  SLA 168h) com checklist (acessos, vincular contas, rastreamento, kickoff, metas,
+  1ª campanha), atribuída ao gestor primário. Idempotente (onboarding:<clientId>),
+  best-effort (try/catch — não quebra a criação). Entra em /operacional e /meu-dia.
+  ONB-05 (30 dias) será gerada por evento no BLOCO 6.
