@@ -56,7 +56,7 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
 
   const current = await prisma.task.findUnique({
     where: { id: taskId },
-    select: { status: true },
+    select: { status: true, popId: true, type: true, clientId: true, assignedTo: true, client: { select: { name: true } } },
   })
   if (!current) throw new Error('Tarefa não encontrada.')
 
@@ -79,6 +79,45 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
       },
     },
   })
+
+  // BLOCO 6 — evento: concluir ONB-04 gera o acompanhamento dos 30 dias (ONB-05).
+  if (isConcluir && current.status !== 'CONCLUIDO' && current.popId === 'pop_onb_04' && current.clientId) {
+    try {
+      const idempotencyKey = `onboarding-30d:${current.clientId}`
+      const exists = await prisma.task.findUnique({ where: { idempotencyKey }, select: { id: true } })
+      if (!exists) {
+        await prisma.task.create({
+          data: {
+            title: `Acompanhamento 30 dias — ${current.client?.name ?? 'cliente'}`,
+            description: 'Revisar os primeiros 30 dias do cliente: resultados, expectativas, saúde e próximos passos.',
+            type: 'ONBOARDING',
+            priority: 'MEDIA',
+            status: 'A_FAZER',
+            origin: 'AUTOMACAO',
+            clientId: current.clientId,
+            assignedTo: current.assignedTo,
+            areaId: 'area_onboarding',
+            popId: 'pop_onb_05',
+            requesterId: userId,
+            requestedAt: new Date(),
+            dueDate: new Date(Date.now() + 30 * 86_400_000),
+            idempotencyKey,
+            checklist: {
+              create: [
+                { label: 'Revisar resultados dos primeiros 30 dias', required: true, order: 0 },
+                { label: 'Conferir alinhamento de expectativas com o cliente', required: true, order: 1 },
+                { label: 'Avaliar saúde e risco de churn', required: true, order: 2 },
+                { label: 'Definir próximos passos / plano do mês 2', required: false, order: 3 },
+              ],
+            },
+            activities: { create: { actorId: userId, action: 'created' } },
+          },
+        })
+      }
+    } catch {
+      // best-effort: não quebra a conclusão da tarefa
+    }
+  }
 
   revalidatePath('/tasks')
   revalidatePath('/operacional')
