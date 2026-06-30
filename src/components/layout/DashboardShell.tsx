@@ -17,7 +17,7 @@ export function DashboardShell({ children, session, unreadAlerts }: DashboardShe
   )
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#05141C] print:block print:h-auto print:bg-white">
+    <div className="ak-app-bg flex h-screen overflow-hidden bg-[#05141C] print:block print:h-auto print:bg-white">
       <div className="print:hidden">
         <Sidebar role={session.role} />
       </div>

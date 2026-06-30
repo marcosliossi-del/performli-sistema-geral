@@ -149,3 +149,17 @@ Etapas do prompt: A tokens+componentes base → B shell/sidebar hierárquica/top
 → C views (Lista inline-edit, Kanban DnD, Calendário) + drawer de tarefa + quick-add.
 PLANO: terminar blocos funcionais (POPs restantes + 6 + 7), depois redesign aplicando
 estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
+
+## REDESIGN UX — INÍCIO (fase final, autônoma, direção Apple/iOS)
+- Branch feat/ux-redesign-apple. Usuário pediu "produto iOS", dinâmico/inovador.
+- **Slice 1 — Skin global (globals.css):** reescrita da camada de tokens p/ paleta
+  Arkza Apple (superfícies #0a0e13→#1e2832, marca ciano #22c2d6/#54e0ee, status
+  iOS), fonte SF-first (-apple-system → Inter fallback), fundo dinâmico (malha de
+  gradiente .ak-app-bg), .card com profundidade (raio 18 + sombra), vidro fosco
+  (.ak-glass / .ak-sidebar / .ak-topbar), scrollbar macOS. OVERRIDE das classes
+  de cor arbitrárias mais usadas (sky #95BBE2 → ciano em todas as variantes;
+  superfícies/bordas/textos/status remapeados) — retematiza telas existentes sem
+  editar cada arquivo. Regras sem @layer vencem as utilities do Tailwind v4.
+- Shell: Sidebar (ak-sidebar + logo ciano), TopNav (ak-topbar), DashboardShell
+  (ak-app-bg). Próximos slices: primitivos (Button gradient, segmented control),
+  telas-herói (Cockpit/Operacional/Meu Dia) com densidade e drawer estilo protótipo.

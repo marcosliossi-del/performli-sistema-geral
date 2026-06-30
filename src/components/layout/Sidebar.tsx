@@ -117,14 +117,14 @@ export function Sidebar({ role }: SidebarProps) {
   const [clientsOpen, setClientsOpen] = useState(true)
 
   return (
-    <aside className="w-60 flex-shrink-0 h-screen sticky top-0 bg-[#0A1E2C] border-r border-[#38435C] flex flex-col">
+    <aside className="ak-sidebar w-60 flex-shrink-0 h-screen sticky top-0 bg-[#0A1E2C] border-r border-[#38435C] flex flex-col">
       {/* Logo */}
       <div className="h-16 flex items-center px-5 border-b border-[#38435C]">
         <Link href="/dashboard" className="flex items-center gap-2.5">
           <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M50 5L90 28V72L50 95L10 72V28L50 5Z" fill="none" stroke="#95BBE2" strokeWidth="6"/>
-            <path d="M50 5L50 50M50 50L90 28M50 50L10 28" stroke="#95BBE2" strokeWidth="4"/>
-            <path d="M50 50L50 95" stroke="#95BBE2" strokeWidth="4" strokeDasharray="6 4"/>
+            <path d="M50 5L90 28V72L50 95L10 72V28L50 5Z" fill="none" stroke="#54e0ee" strokeWidth="6"/>
+            <path d="M50 5L50 50M50 50L90 28M50 50L10 28" stroke="#54e0ee" strokeWidth="4"/>
+            <path d="M50 50L50 95" stroke="#54e0ee" strokeWidth="4" strokeDasharray="6 4"/>
           </svg>
           <span className="font-bold text-[#EBEBEB] text-lg tracking-tight">
             Perform<span className="italic font-normal text-[#95BBE2]">li</span>

@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Central Operacional Arkza — Protótipo Apple/iOS</title>
+<style>
+  /* ============================================================
+     ARKZA · Central Operacional — direção Apple/iOS (dark)
+     Base: design system ciano-petróleo (travado).
+     Camada Apple: vibrancy (frosted glass), tipografia SF,
+     profundidade em camadas, spring motion, segmented controls.
+     ============================================================ */
+  :root{
+    /* Superfícies — agora com leve transparência p/ vibrancy */
+    --surface-0:#0a0e13;
+    --surface-1:#10151c;
+    --surface-2:#161d26;
+    --surface-3:#1e2832;
+    --glass:rgba(20,27,36,.66);
+    --glass-strong:rgba(16,21,28,.82);
+    --hairline:rgba(255,255,255,.07);
+    --hairline-soft:rgba(255,255,255,.045);
+    --border:rgba(255,255,255,.09);
+
+    --text-hi:#f2f6fa;
+    --text-mid:#a3b2c2;
+    --text-low:#647488;
+
+    /* Marca ciano-petróleo */
+    --brand:#22c2d6;
+    --brand-strong:#54e0ee;
+    --brand-deep:#0f7d8c;
+    --brand-dim:rgba(34,194,214,.15);
+    --brand-glow:rgba(34,194,214,.45);
+
+    /* Status (funcionais) */
+    --st-todo:#8493a4;
+    --st-doing:#4d96ff;
+    --st-wait:#e3ad45;
+    --st-valid:#a98cff;
+    --st-block:#e0625b;
+    --st-late:#ff5e7a;
+    --st-done:#34c97a;
+    --st-cancel:#4a5563;
+    --st-critical:#ff3b4e;
+
+    --pr-low:#5b6b7c;--pr-mid:#4d96ff;--pr-high:#f0922b;--pr-crit:#ff3b4e;
+
+    /* Apple usa raios generosos */
+    --radius:18px;
+    --radius-md:14px;
+    --radius-sm:10px;
+
+    --font-ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Inter","Segoe UI",system-ui,sans-serif;
+    --font-display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter",system-ui,sans-serif;
+    --font-mono:"SF Mono","JetBrains Mono",ui-monospace,monospace;
+
+    --shadow-card:0 1px 1px rgba(0,0,0,.3),0 8px 24px -12px rgba(0,0,0,.55);
+    --shadow-pop:0 24px 70px -16px rgba(0,0,0,.6);
+    --spring:cubic-bezier(.34,1.56,.64,1);
+    --ease:cubic-bezier(.4,0,.2,1);
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--surface-0);color:var(--text-hi);
+    font-family:var(--font-ui);font-size:13px;line-height:1.45;letter-spacing:-.01em;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+    overflow:hidden;
+  }
+  /* Fundo "dynamic" — malha de gradientes sutil e viva, estilo wallpaper iOS */
+  body::before{
+    content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(40% 50% at 12% 8%,rgba(34,194,214,.10),transparent 70%),
+      radial-gradient(36% 46% at 92% 0%,rgba(169,140,255,.08),transparent 70%),
+      radial-gradient(50% 50% at 80% 96%,rgba(34,194,214,.06),transparent 72%);
+    filter:saturate(120%);
+    animation:drift 26s ease-in-out infinite alternate;
+  }
+  @keyframes drift{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(0,-1.5%,0) scale(1.04)}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+  .app{display:grid;grid-template-columns:248px 1fr;height:100vh;overflow:hidden}
+
+  /* ---------- SIDEBAR (vibrancy) ---------- */
+  .sidebar{background:var(--glass);backdrop-filter:blur(30px) saturate(160%);
+    -webkit-backdrop-filter:blur(30px) saturate(160%);
+    border-right:1px solid var(--hairline);display:flex;flex-direction:column;overflow-y:auto}
+  .sidebar::-webkit-scrollbar,.content::-webkit-scrollbar,.cards::-webkit-scrollbar,.dr-body::-webkit-scrollbar{width:8px}
+  .sidebar::-webkit-scrollbar-thumb,.content::-webkit-scrollbar-thumb,.cards::-webkit-scrollbar-thumb,.dr-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:8px}
+  .brand{display:flex;align-items:center;gap:11px;padding:18px 18px 16px}
+  .brand .logo{width:30px;height:30px;border-radius:9px;
+    background:linear-gradient(145deg,var(--brand-strong),var(--brand-deep));
+    display:grid;place-items:center;font-weight:800;color:#021015;font-size:15px;
+    box-shadow:0 4px 14px -2px var(--brand-glow),inset 0 1px 0 rgba(255,255,255,.4)}
+  .brand b{font-size:15px;letter-spacing:-.02em;font-family:var(--font-display)}
+  .brand span{color:var(--text-low);font-size:10.5px;display:block;margin-top:-1px;letter-spacing:.01em}
+
+  .nav-section{padding:8px 10px 4px}
+  .nav-label{color:var(--text-low);font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;
+    padding:10px 8px 5px;font-weight:680}
+  .nav-item{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:var(--radius-sm);
+    color:var(--text-mid);cursor:pointer;font-size:13px;position:relative;font-weight:500;
+    transition:background .18s var(--ease),color .18s var(--ease),transform .25s var(--spring)}
+  .nav-item:hover{background:rgba(255,255,255,.05);color:var(--text-hi)}
+  .nav-item:active{transform:scale(.97)}
+  .nav-item.active{background:var(--brand-dim);color:var(--brand-strong);font-weight:650;
+    box-shadow:inset 0 0 0 1px rgba(34,194,214,.2)}
+  .nav-item.active::before{content:"";position:absolute;left:-2px;top:8px;bottom:8px;width:3px;
+    border-radius:3px;background:linear-gradient(var(--brand-strong),var(--brand));box-shadow:0 0 10px var(--brand-glow)}
+  .nav-item .ico{width:17px;text-align:center;flex:0 0 17px;opacity:.9;font-size:13px}
+  .nav-item .count{margin-left:auto;background:rgba(255,255,255,.07);color:var(--text-mid);
+    font-size:10.5px;padding:1.5px 8px;border-radius:20px;font-weight:680;font-family:var(--font-mono)}
+  .nav-item .count.alert{background:rgba(255,94,122,.16);color:var(--st-late)}
+  .nav-tree{margin-left:14px;border-left:1px solid var(--hairline-soft);padding-left:6px;margin-top:2px}
+  .nav-tree .nav-item{font-size:12.5px;padding:6px 10px}
+
+  /* ---------- MAIN ---------- */
+  .main{display:flex;flex-direction:column;overflow:hidden;min-width:0}
+  .topbar{height:56px;border-bottom:1px solid var(--hairline);display:flex;align-items:center;
+    gap:12px;padding:0 18px;background:var(--glass-strong);
+    backdrop-filter:blur(30px) saturate(160%);-webkit-backdrop-filter:blur(30px) saturate(160%);
+    position:sticky;top:0;z-index:20}
+  .search{flex:1;max-width:440px;display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.05);
+    border:1px solid var(--hairline);border-radius:11px;padding:9px 13px;color:var(--text-low);font-size:12.5px;
+    transition:border-color .2s,background .2s}
+  .search:hover{background:rgba(255,255,255,.07);border-color:var(--border)}
+  .search kbd{margin-left:auto;background:rgba(255,255,255,.08);border-radius:6px;padding:2px 7px;font-size:10.5px;font-family:var(--font-mono)}
+  .btn{border:none;border-radius:11px;padding:9px 15px;font-size:12.5px;font-weight:640;
+    cursor:pointer;display:inline-flex;align-items:center;gap:7px;font-family:inherit;letter-spacing:-.01em;
+    transition:transform .25s var(--spring),filter .2s,background .2s}
+  .btn:active{transform:scale(.95)}
+  .btn-primary{background:linear-gradient(180deg,var(--brand-strong),var(--brand));color:#021015;
+    box-shadow:0 6px 18px -6px var(--brand-glow),inset 0 1px 0 rgba(255,255,255,.4)}
+  .btn-primary:hover{filter:brightness(1.07)}
+  .btn-ghost{background:rgba(255,255,255,.05);color:var(--text-mid);border:1px solid var(--hairline)}
+  .btn-ghost:hover{background:rgba(255,255,255,.09);color:var(--text-hi)}
+  .avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;color:#021015;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.35)}
+
+  .header{padding:20px 24px 2px}
+  .header h1{font-size:24px;font-weight:740;letter-spacing:-.03em;font-family:var(--font-display)}
+  .header p{color:var(--text-low);font-size:12.5px;margin-top:3px}
+
+  /* KPI strip — cards de vidro com leve elevação */
+  .kpis{display:flex;gap:12px;padding:16px 24px 4px;flex-wrap:wrap}
+  .kpi{background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--radius-md);
+    padding:13px 16px;min-width:128px;box-shadow:var(--shadow-card);position:relative;overflow:hidden;
+    transition:transform .3s var(--spring),border-color .2s}
+  .kpi::after{content:"";position:absolute;inset:0 0 auto 0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent)}
+  .kpi:hover{transform:translateY(-2px);border-color:var(--border)}
+  .kpi .v{font-size:26px;font-weight:720;font-family:var(--font-mono);letter-spacing:-.04em}
+  .kpi .l{color:var(--text-low);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;margin-top:2px;font-weight:600}
+  .kpi.late .v{color:var(--st-late)} .kpi.done .v{color:var(--st-done)} .kpi.crit .v{color:var(--st-critical)}
+
+  /* SEGMENTED CONTROL (iOS) p/ as views */
+  .viewbar{padding:16px 24px 4px}
+  .segmented{display:inline-flex;background:rgba(255,255,255,.05);border:1px solid var(--hairline);
+    border-radius:12px;padding:3px;gap:2px;position:relative}
+  .vtab{padding:7px 15px;color:var(--text-mid);font-size:12.5px;cursor:pointer;border-radius:9px;font-weight:580;
+    position:relative;z-index:1;transition:color .2s;white-space:nowrap}
+  .vtab:hover{color:var(--text-hi)}
+  .vtab.active{color:#021015;font-weight:680}
+  .seg-thumb{position:absolute;top:3px;bottom:3px;border-radius:9px;
+    background:linear-gradient(180deg,var(--brand-strong),var(--brand));
+    box-shadow:0 4px 12px -4px var(--brand-glow);z-index:0;
+    transition:transform .38s var(--spring),width .38s var(--spring)}
+
+  .content{flex:1;overflow-y:auto;padding:6px 24px 48px}
+
+  /* ---------- BADGES ---------- */
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;
+    font-size:11px;font-weight:640;white-space:nowrap;letter-spacing:-.01em}
+  .dot{width:7px;height:7px;border-radius:50%;flex:0 0 7px;box-shadow:0 0 8px currentColor}
+  .b-todo{background:rgba(132,147,164,.14);color:#b4c1cf} .b-todo .dot{background:var(--st-todo);box-shadow:none}
+  .b-doing{background:rgba(77,150,255,.15);color:#8fbaff} .b-doing .dot{background:var(--st-doing)}
+  .b-wait{background:rgba(227,173,69,.16);color:#ecc379} .b-wait .dot{background:var(--st-wait)}
+  .b-valid{background:rgba(169,140,255,.16);color:#c3b1ff} .b-valid .dot{background:var(--st-valid)}
+  .b-late{background:rgba(255,94,122,.16);color:#ff8aa1} .b-late .dot{background:var(--st-late)}
+  .b-done{background:rgba(52,201,122,.15);color:#6fe0a2} .b-done .dot{background:var(--st-done)}
+  .b-crit{background:rgba(255,59,78,.2);color:#ff7a8a} .b-crit .dot{background:var(--st-critical);animation:pulse 1.8s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,59,78,.5)}50%{box-shadow:0 0 0 5px rgba(255,59,78,0)}}
+
+  .prio{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:620;color:var(--text-mid)}
+  .flag{width:0;height:0;border-left:8px solid;border-bottom:5px solid transparent;border-top:5px solid transparent}
+  .p-low{border-left-color:var(--pr-low)} .p-mid{border-left-color:var(--pr-mid)}
+  .p-high{border-left-color:var(--pr-high)} .p-crit{border-left-color:var(--pr-crit)}
+
+  .client-pill{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-mid)}
+  .health{width:7px;height:7px;border-radius:50%}
+  .h-good{background:var(--st-done)} .h-warn{background:var(--st-wait)} .h-bad{background:var(--st-critical)}
+
+  /* ---------- LIST ---------- */
+  .group{margin-top:22px}
+  .group-h{display:flex;align-items:center;gap:9px;padding:6px 4px;cursor:pointer}
+  .group-h .chev{color:var(--text-low);font-size:10px;transition:transform .2s}
+  .group-h .name{font-weight:700;font-size:13px;letter-spacing:-.01em}
+  .group-h .gc{color:var(--text-low);font-size:11px;background:rgba(255,255,255,.06);padding:1.5px 9px;border-radius:20px;font-family:var(--font-mono)}
+  .panel{background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--radius);margin-top:8px;overflow:hidden;box-shadow:var(--shadow-card)}
+  .tbl{width:100%;border-collapse:collapse}
+  .tbl th{text-align:left;color:var(--text-low);font-size:10px;text-transform:uppercase;letter-spacing:.07em;
+    font-weight:640;padding:10px 14px;border-bottom:1px solid var(--hairline-soft)}
+  .tbl td{padding:12px 14px;border-bottom:1px solid var(--hairline-soft);font-size:12.5px}
+  .tbl tr:last-child td{border-bottom:none}
+  .row{cursor:pointer;transition:background .15s}
+  .row:hover{background:rgba(255,255,255,.035)}
+  .row.crit{box-shadow:inset 3px 0 0 var(--st-critical)}
+  .t-title{font-weight:540;color:var(--text-hi)}
+  .due{font-family:var(--font-mono);font-size:11.5px;color:var(--text-mid)}
+  .due.over{color:var(--st-late);font-weight:640}
+  .sla{font-family:var(--font-mono);font-size:10.5px;padding:2px 8px;border-radius:6px;background:rgba(255,255,255,.06);color:var(--text-mid)}
+  .sla.warn{color:var(--st-wait)} .sla.over{color:var(--st-late);background:rgba(255,94,122,.12)}
+  .avgrp{display:flex} .avgrp .avatar{width:23px;height:23px;font-size:9px;margin-left:-7px;border:2px solid var(--surface-1)}
+  .avgrp .avatar:first-child{margin-left:0}
+
+  /* ---------- KANBAN ---------- */
+  .kanban{display:flex;gap:14px;padding-top:18px;overflow-x:auto;min-height:420px}
+  .col{flex:0 0 280px;background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--radius);
+    display:flex;flex-direction:column;max-height:580px;box-shadow:var(--shadow-card)}
+  .col-h{display:flex;align-items:center;gap:8px;padding:13px 14px;border-bottom:1px solid var(--hairline-soft)}
+  .col-h .c{margin-left:auto;color:var(--text-low);font-size:11px;background:rgba(255,255,255,.06);padding:1.5px 9px;border-radius:20px;font-family:var(--font-mono)}
+  .col.critical{border-color:rgba(255,59,78,.35)}
+  .col.critical .col-h{background:rgba(255,59,78,.06)}
+  .cards{padding:11px;display:flex;flex-direction:column;gap:11px;overflow-y:auto}
+  .card{background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--radius-md);
+    padding:13px;cursor:grab;transition:transform .28s var(--spring),box-shadow .25s,border-color .2s}
+  .card:hover{transform:translateY(-3px);box-shadow:var(--shadow-pop);border-color:var(--border)}
+  .card:active{cursor:grabbing;transform:scale(1.02) rotate(-.4deg)}
+  .card .ct{font-weight:560;font-size:12.5px;margin:9px 0 11px;line-height:1.4;color:var(--text-hi)}
+  .card-meta{display:flex;align-items:center;gap:10px;color:var(--text-low);font-size:11px}
+  .card-foot{display:flex;align-items:center;justify-content:space-between;margin-top:11px;
+    padding-top:10px;border-top:1px solid var(--hairline-soft)}
+  .chk{font-family:var(--font-mono);font-size:10.5px;color:var(--text-low)}
+
+  /* ---------- DRAWER (sheet com vibrancy + spring) ---------- */
+  .scrim{position:fixed;inset:0;background:rgba(4,8,12,.5);backdrop-filter:blur(4px);z-index:40;opacity:0;
+    pointer-events:none;transition:opacity .3s var(--ease)}
+  .scrim.open{opacity:1;pointer-events:auto}
+  .drawer{position:fixed;top:0;right:0;height:100vh;width:580px;max-width:94vw;
+    background:var(--glass-strong);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);
+    border-left:1px solid var(--hairline);z-index:50;transform:translateX(102%);
+    transition:transform .5s var(--spring);display:flex;flex-direction:column;box-shadow:var(--shadow-pop)}
+  .drawer.open{transform:translateX(0)}
+  .dr-top{padding:18px 22px;border-bottom:1px solid var(--hairline)}
+  .dr-crumb{color:var(--text-low);font-size:11px;display:flex;align-items:center;gap:6px;margin-bottom:10px}
+  .dr-title{font-size:19px;font-weight:720;line-height:1.3;letter-spacing:-.02em;font-family:var(--font-display)}
+  .dr-controls{display:flex;gap:9px;margin-top:13px;flex-wrap:wrap;align-items:center}
+  .dr-body{flex:1;overflow-y:auto;display:grid;grid-template-columns:1fr 200px;gap:0}
+  .dr-main{padding:20px 22px;border-right:1px solid var(--hairline-soft)}
+  .dr-side{padding:20px 18px;display:flex;flex-direction:column;gap:15px}
+  .dr-side .f .k{color:var(--text-low);text-transform:uppercase;letter-spacing:.05em;font-size:9.5px;margin-bottom:4px;font-weight:640}
+  .dr-side .f .v{color:var(--text-hi);font-size:12px}
+  .sec-t{font-size:11px;color:var(--text-low);text-transform:uppercase;letter-spacing:.07em;font-weight:680;margin:20px 0 10px}
+  .sec-t:first-child{margin-top:0}
+  .desc{color:var(--text-mid);font-size:12.5px;line-height:1.6}
+  .check-item{display:flex;align-items:center;gap:10px;padding:9px 0;font-size:12.5px;border-bottom:1px solid var(--hairline-soft)}
+  .cbox{width:18px;height:18px;border-radius:6px;border:1.5px solid var(--border);flex:0 0 18px;transition:transform .25s var(--spring)}
+  .check-item:hover .cbox{transform:scale(1.1)}
+  .cbox.on{background:var(--st-done);border-color:var(--st-done);position:relative}
+  .cbox.on::after{content:"✓";position:absolute;inset:0;display:grid;place-items:center;color:#021509;font-size:12px;font-weight:800}
+  .cbox.req{border-color:var(--st-late)}
+  .check-item.req-empty{color:var(--st-late)}
+  .req-tag{margin-left:auto;font-size:9px;color:var(--st-late);background:rgba(255,94,122,.12);padding:2px 8px;border-radius:6px;font-weight:680}
+  .evidence{background:rgba(255,255,255,.04);border:1px dashed var(--border);border-radius:var(--radius-sm);padding:13px;color:var(--text-low);font-size:11.5px;margin-top:6px}
+  .tabs{display:flex;gap:4px;margin:20px 0 0;border-bottom:1px solid var(--hairline-soft)}
+  .tab{padding:9px 13px;color:var(--text-low);font-size:11.5px;cursor:pointer;border-bottom:2px solid transparent;font-weight:560}
+  .tab.active{color:var(--brand-strong);border-bottom-color:var(--brand)}
+  .activity-row{display:flex;gap:9px;padding:10px 0;font-size:11.5px;color:var(--text-mid);border-bottom:1px solid var(--hairline-soft)}
+  .activity-row .when{margin-left:auto;color:var(--text-low);font-family:var(--font-mono);font-size:10px}
+  .dr-foot{padding:14px 22px;border-top:1px solid var(--hairline);display:flex;align-items:center;gap:10px;
+    background:var(--glass-strong)}
+  .dr-foot .hint{color:var(--st-late);font-size:11px;margin-right:auto}
+  .btn-done{background:linear-gradient(180deg,#46d98a,var(--st-done));color:#021509}
+  .btn-done.disabled{background:rgba(255,255,255,.06);color:var(--text-low);cursor:not-allowed;box-shadow:none}
+
+  .hidden{display:none}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;padding:18px 4px 0;color:var(--text-low);font-size:11px;align-items:center}
+  .swatch{display:inline-flex;align-items:center;gap:7px}
+  .sw{width:13px;height:13px;border-radius:5px}
+  .float-note{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:30;
+    background:var(--glass-strong);backdrop-filter:blur(24px);border:1px solid var(--hairline);
+    border-radius:14px;padding:10px 16px;font-size:11.5px;color:var(--text-mid);box-shadow:var(--shadow-pop)}
+  .float-note b{color:var(--brand-strong)}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">A</div>
+      <div><b>Arkza</b><span>Central Operacional</span></div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-item active"><span class="ico">◆</span> Meu Dia <span class="count alert">5</span></div>
+      <div class="nav-item"><span class="ico">▦</span> Minha Semana</div>
+      <div class="nav-item"><span class="ico">☰</span> Central de Tarefas</div>
+      <div class="nav-item"><span class="ico">◳</span> Cockpit</div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Áreas</div>
+      <div class="nav-item"><span class="ico">▸</span> Tráfego <span class="count">12</span></div>
+      <div class="nav-tree">
+        <div class="nav-item"><span class="ico">·</span> Check-ins da semana <span class="count alert">3</span></div>
+        <div class="nav-item"><span class="ico">·</span> Prestações de contas</div>
+        <div class="nav-item"><span class="ico">·</span> Auditorias técnicas</div>
+      </div>
+      <div class="nav-item"><span class="ico">▸</span> Sucesso do Cliente <span class="count">8</span></div>
+      <div class="nav-item"><span class="ico">▸</span> War Room <span class="count alert">2</span></div>
+      <div class="nav-item"><span class="ico">▸</span> Comercial <span class="count">15</span></div>
+      <div class="nav-item"><span class="ico">▸</span> Financeiro <span class="count">6</span></div>
+      <div class="nav-item"><span class="ico">▸</span> Onboarding <span class="count">4</span></div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Visões por papel</div>
+      <div class="nav-item"><span class="ico">◈</span> Visão CS</div>
+      <div class="nav-item"><span class="ico">◈</span> Visão Gestor</div>
+      <div class="nav-item"><span class="ico">◈</span> Visão CEO</div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div class="search">⌕ Buscar tarefas, clientes, POPs… <kbd>⌘K</kbd></div>
+      <button class="btn btn-ghost">⊟ Filtros</button>
+      <button class="btn btn-primary" onclick="openDrawer()">+ Nova tarefa</button>
+      <div class="avatar" style="background:linear-gradient(145deg,#54e0ee,#0f7d8c)">ML</div>
+    </div>
+
+    <div class="content">
+      <div class="header">
+        <h1>Central de Tarefas</h1>
+        <p>Tráfego · Check-ins da semana — 30 clientes ativos</p>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi"><div class="v">47</div><div class="l">Abertas</div></div>
+        <div class="kpi late"><div class="v">7</div><div class="l">Atrasadas</div></div>
+        <div class="kpi"><div class="v">12</div><div class="l">Aguardando</div></div>
+        <div class="kpi done"><div class="v">83%</div><div class="l">No prazo</div></div>
+        <div class="kpi crit"><div class="v">2</div><div class="l">War Room</div></div>
+      </div>
+
+      <div class="viewbar">
+        <div class="segmented" id="segmented">
+          <div class="seg-thumb" id="segThumb"></div>
+          <div class="vtab active" onclick="showView('list',this)">☰ Lista</div>
+          <div class="vtab" onclick="showView('kanban',this)">▦ Kanban</div>
+          <div class="vtab" onclick="showView('cal',this)">▤ Calendário</div>
+          <div class="vtab" onclick="showView('client',this)">◈ Por Cliente</div>
+          <div class="vtab" onclick="showView('manager',this)">◈ Por Gestor</div>
+        </div>
+      </div>
+
+      <!-- LIST VIEW -->
+      <div id="view-list">
+        <div class="group">
+          <div class="group-h"><span class="chev">▼</span><span class="name">Atrasado</span><span class="gc">3</span></div>
+          <div class="panel">
+          <table class="tbl">
+            <thead><tr><th>Tarefa</th><th>Cliente</th><th>Responsável</th><th>Status</th><th>Prioridade</th><th>Prazo</th><th>SLA</th></tr></thead>
+            <tbody>
+              <tr class="row crit" onclick="openDrawer()">
+                <td class="t-title">Check-in semanal — análise de queda de ROAS</td>
+                <td><span class="client-pill"><span class="health h-bad"></span>Jack Modas</span></td>
+                <td><div class="avgrp"><div class="avatar" style="background:#4d96ff">LE</div></div></td>
+                <td><span class="badge b-late"><span class="dot"></span>Atrasado</span></td>
+                <td><span class="prio"><span class="flag p-crit"></span>Crítica</span></td>
+                <td class="due over">há 2 dias</td>
+                <td><span class="sla over">-18h</span></td>
+              </tr>
+              <tr class="row" onclick="openDrawer()">
+                <td class="t-title">Prestação de contas semanal</td>
+                <td><span class="client-pill"><span class="health h-warn"></span>Bambola</span></td>
+                <td><div class="avgrp"><div class="avatar" style="background:#a98cff">RA</div></div></td>
+                <td><span class="badge b-late"><span class="dot"></span>Atrasado</span></td>
+                <td><span class="prio"><span class="flag p-high"></span>Alta</span></td>
+                <td class="due over">há 1 dia</td>
+                <td><span class="sla over">-6h</span></td>
+              </tr>
+              <tr class="row" onclick="openDrawer()">
+                <td class="t-title">Cobrança — fatura vencida</td>
+                <td><span class="client-pill"><span class="health h-warn"></span>Lavinny</span></td>
+                <td><div class="avgrp"><div class="avatar" style="background:#34c97a">FI</div></div></td>
+                <td><span class="badge b-late"><span class="dot"></span>Atrasado</span></td>
+                <td><span class="prio"><span class="flag p-mid"></span>Média</span></td>
+                <td class="due over">há 4 dias</td>
+                <td><span class="sla over">-72h</span></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="group-h"><span class="chev">▼</span><span class="name">Em andamento</span><span class="gc">4</span></div>
+          <div class="panel">
+          <table class="tbl">
+            <thead><tr><th>Tarefa</th><th>Cliente</th><th>Responsável</th><th>Status</th><th>Prioridade</th><th>Prazo</th><th>SLA</th></tr></thead>
+            <tbody>
+              <tr class="row" onclick="openDrawer()">
+                <td class="t-title">Check-in semanal</td>
+                <td><span class="client-pill"><span class="health h-good"></span>My Muse</span></td>
+                <td><div class="avgrp"><div class="avatar" style="background:#4d96ff">LE</div></div></td>
+                <td><span class="badge b-doing"><span class="dot"></span>Em andamento</span></td>
+                <td><span class="prio"><span class="flag p-mid"></span>Média</span></td>
+                <td class="due">hoje 12h</td>
+                <td><span class="sla warn">3h</span></td>
+              </tr>
+              <tr class="row" onclick="openDrawer()">
+                <td class="t-title">Auditoria técnica — frequência e criativos</td>
+                <td><span class="client-pill"><span class="health h-good"></span>Tayna Modas</span></td>
+                <td><div class="avgrp"><div class="avatar" style="background:#f0922b">LD</div></div></td>
+                <td><span class="badge b-doing"><span class="dot"></span>Em andamento</span></td>
+                <td><span class="prio"><span class="flag p-high"></span>Alta</span></td>
+                <td class="due">amanhã</td>
+                <td><span class="sla">28h</span></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="group-h"><span class="chev">▼</span><span class="name">Aguardando CS</span><span class="gc">2</span></div>
+          <div class="panel">
+          <table class="tbl">
+            <thead><tr><th>Tarefa</th><th>Cliente</th><th>Responsável</th><th>Status</th><th>Prioridade</th><th>Prazo</th><th>SLA</th></tr></thead>
+            <tbody>
+              <tr class="row" onclick="openDrawer()">
+                <td class="t-title">Prestação de contas — em revisão</td>
+                <td><span class="client-pill"><span class="health h-good"></span>New Man Store</span></td>
+                <td><div class="avgrp"><div class="avatar" style="background:#a98cff">LE</div></div></td>
+                <td><span class="badge b-valid"><span class="dot"></span>Em validação</span></td>
+                <td><span class="prio"><span class="flag p-mid"></span>Média</span></td>
+                <td class="due">sex 17h</td>
+                <td><span class="sla">12h</span></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- KANBAN VIEW -->
+      <div id="view-kanban" class="hidden">
+        <div class="kanban">
+          <div class="col">
+            <div class="col-h"><span class="badge b-todo"><span class="dot"></span>A fazer</span><span class="c">6</span></div>
+            <div class="cards">
+              <div class="card" onclick="openDrawer()">
+                <span class="badge b-todo"><span class="dot"></span>A fazer</span>
+                <div class="ct">Relatório mensal consolidado</div>
+                <div class="card-meta"><span class="client-pill"><span class="health h-good"></span>Lalluzi</span></div>
+                <div class="card-foot"><span class="chk">☑ 0/7</span><div class="avgrp"><div class="avatar" style="background:#4d96ff">LE</div></div></div>
+              </div>
+              <div class="card" onclick="openDrawer()">
+                <span class="badge b-todo"><span class="dot"></span>A fazer</span>
+                <div class="ct">Follow-up comercial — lojista inbound</div>
+                <div class="card-meta"><span class="m">📅 amanhã</span></div>
+                <div class="card-foot"><span class="prio"><span class="flag p-mid"></span></span><div class="avgrp"><div class="avatar" style="background:#22c2d6">CO</div></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="col-h"><span class="badge b-doing"><span class="dot"></span>Em andamento</span><span class="c">4</span></div>
+            <div class="cards">
+              <div class="card" onclick="openDrawer()">
+                <span class="badge b-doing"><span class="dot"></span>Em andamento</span>
+                <div class="ct">Check-in semanal</div>
+                <div class="card-meta"><span class="client-pill"><span class="health h-good"></span>My Muse</span></div>
+                <div class="card-foot"><span class="chk">☑ 5/9</span><div class="avgrp"><div class="avatar" style="background:#4d96ff">LE</div></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="col-h"><span class="badge b-valid"><span class="dot"></span>Em validação</span><span class="c">2</span></div>
+            <div class="cards">
+              <div class="card" onclick="openDrawer()">
+                <span class="badge b-valid"><span class="dot"></span>Em validação</span>
+                <div class="ct">Prestação de contas — revisão CS</div>
+                <div class="card-meta"><span class="client-pill"><span class="health h-good"></span>New Man</span></div>
+                <div class="card-foot"><span class="chk">☑ 7/7</span><div class="avgrp"><div class="avatar" style="background:#a98cff">LE</div></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="col critical">
+            <div class="col-h"><span class="badge b-crit"><span class="dot"></span>War Room</span><span class="c">2</span></div>
+            <div class="cards">
+              <div class="card" onclick="openDrawer()">
+                <span class="badge b-crit"><span class="dot"></span>Crítico</span>
+                <div class="ct">War Room — queda de 40% no faturamento</div>
+                <div class="card-meta"><span class="client-pill"><span class="health h-bad"></span>Jack Modas</span></div>
+                <div class="card-foot"><span class="chk">☑ 2/8</span><div class="avgrp"><div class="avatar" style="background:#4d96ff">LE</div><div class="avatar" style="background:#a98cff">LT</div><div class="avatar" style="background:#22c2d6">ML</div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-cal" class="hidden"><div class="evidence" style="margin-top:24px">Visão Calendário — recorrências fixas marcadas (seg = check-in · sex = prestação · qui = war room · dia 1 = relatório mensal).</div></div>
+      <div id="view-client" class="hidden"><div class="evidence" style="margin-top:24px">Visão Por Cliente — agrupa todas as tarefas, check-ins, prestações, war rooms e histórico operacional por cliente.</div></div>
+      <div id="view-manager" class="hidden"><div class="evidence" style="margin-top:24px">Visão Por Gestor — carga de trabalho, clientes sem check-in, SLA por gestor.</div></div>
+
+      <div class="legend">
+        <b style="color:var(--text-mid)">Paleta:</b>
+        <span class="swatch"><span class="sw" style="background:var(--brand)"></span>Marca (ciano-petróleo)</span>
+        <span class="swatch"><span class="sw" style="background:var(--st-late)"></span>Atrasado</span>
+        <span class="swatch"><span class="sw" style="background:var(--st-critical)"></span>Crítico</span>
+        <span class="swatch"><span class="sw" style="background:var(--st-done)"></span>Concluído</span>
+        <span class="swatch"><span class="sw" style="background:var(--st-wait)"></span>Aguardando</span>
+        <span class="swatch"><span class="sw" style="background:var(--st-valid)"></span>Validação</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DRAWER -->
+<div class="scrim" id="scrim" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <div class="dr-top">
+    <div class="dr-crumb">Tráfego ▸ Check-ins da semana ▸ <span style="color:var(--brand-strong)">POP-OPE-06</span></div>
+    <div class="dr-title">Check-in semanal — análise de queda de ROAS</div>
+    <div class="dr-controls">
+      <span class="badge b-late"><span class="dot"></span>Atrasado</span>
+      <span class="prio"><span class="flag p-crit"></span>Crítica</span>
+      <span class="client-pill"><span class="health h-bad"></span>Jack Modas</span>
+    </div>
+  </div>
+  <div class="dr-body">
+    <div class="dr-main">
+      <div class="sec-t">Descrição</div>
+      <p class="desc">Cliente apresentou queda de ROAS de 3,1 para 1,8 na última semana. Investigar causa (criativo saturado, público, orçamento) e definir próxima ação antes do envio à CS.</p>
+
+      <div class="sec-t">Checklist obrigatório</div>
+      <div class="check-item"><span class="cbox on"></span> Dados Meta Ads coletados</div>
+      <div class="check-item"><span class="cbox on"></span> Dados GA4 coletados</div>
+      <div class="check-item req-empty"><span class="cbox req"></span> Faturamento preenchido <span class="req-tag">obrigatório</span></div>
+      <div class="check-item req-empty"><span class="cbox req"></span> ROAS preenchido <span class="req-tag">obrigatório</span></div>
+      <div class="check-item req-empty"><span class="cbox req"></span> Análise causal preenchida <span class="req-tag">obrigatório</span></div>
+      <div class="check-item"><span class="cbox"></span> Próxima ação definida</div>
+
+      <div class="sec-t">Evidência de conclusão</div>
+      <div class="evidence">Anexe o print do dashboard ou cole o resumo do check-in. Obrigatório para tarefas críticas.</div>
+
+      <div class="tabs">
+        <div class="tab active">Comentários</div>
+        <div class="tab">Atividade</div>
+        <div class="tab">Anexos</div>
+      </div>
+      <div class="activity-row">Letícia (CS) devolveu para ajustes — "faltou análise causal" <span class="when">2d atrás</span></div>
+      <div class="activity-row">Leandro mudou status para Em andamento <span class="when">3d atrás</span></div>
+      <div class="activity-row">Tarefa gerada automaticamente por POP-OPE-06 <span class="when">seg 08:00</span></div>
+    </div>
+    <div class="dr-side">
+      <div class="f"><div class="k">Responsável</div><div class="v">Leandro (Gestor)</div></div>
+      <div class="f"><div class="k">Observadores</div><div class="v">Letícia (CS) · Marcos</div></div>
+      <div class="f"><div class="k">Data do pedido</div><div class="v">Seg, 08:00</div></div>
+      <div class="f"><div class="k">Prazo</div><div class="v" style="color:var(--st-late)">Seg, 12:00 (atrasado)</div></div>
+      <div class="f"><div class="k">SLA</div><div class="v"><span class="sla over">-18h</span></div></div>
+      <div class="f"><div class="k">Área</div><div class="v">Tráfego</div></div>
+      <div class="f"><div class="k">Tipo</div><div class="v">Recorrente</div></div>
+      <div class="f"><div class="k">Tags</div><div class="v">ROAS · risco-churn</div></div>
+    </div>
+  </div>
+  <div class="dr-foot">
+    <span class="hint">⚠ 3 campos obrigatórios pendentes</span>
+    <button class="btn btn-ghost">Enviar para CS</button>
+    <button class="btn btn-done disabled">Concluir</button>
+  </div>
+</aside>
+
+<div class="float-note">Protótipo de UX — direção <b>Apple/iOS</b> sobre o design system Arkza · clique numa tarefa para abrir o drawer</div>
+
+<script>
+  function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('scrim').classList.add('open');}
+  function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('scrim').classList.remove('open');}
+  function moveThumb(el){
+    var thumb=document.getElementById('segThumb');
+    thumb.style.width=el.offsetWidth+'px';
+    thumb.style.transform='translateX('+(el.offsetLeft-3)+'px)';
+  }
+  function showView(v,el){
+    ['list','kanban','cal','client','manager'].forEach(x=>document.getElementById('view-'+x).classList.add('hidden'));
+    document.getElementById('view-'+v).classList.remove('hidden');
+    document.querySelectorAll('.vtab').forEach(t=>t.classList.remove('active'));
+    el.classList.add('active');
+    moveThumb(el);
+  }
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();});
+  window.addEventListener('load',()=>moveThumb(document.querySelector('.vtab.active')));
+</script>
+</body>
+</html>
