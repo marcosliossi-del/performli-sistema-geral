@@ -16,6 +16,23 @@ export interface ClientRow {
   contractValue: number | null
   createdAt:     string
   businessType:  string
+  resultado:          string | null
+  etapa:              string | null
+  resultadoRoas:      number | null
+  resultadoUpdatedAt: string | null
+}
+
+const RESULTADO_CONFIG: Record<string, { label: string; color: string }> = {
+  OTIMO:   { label: 'Ótimo',   color: '#16a34a' },
+  BOM:     { label: 'Bom',     color: '#34c97a' },
+  REGULAR: { label: 'Regular', color: '#e3ad45' },
+  RUIM:    { label: 'Ruim',    color: '#ff5e6a' },
+  PESSIMO: { label: 'Péssimo', color: '#ff3b4e' },
+}
+const ETAPA_CONFIG: Record<string, { label: string; color: string }> = {
+  ESCALA:        { label: 'Escala',        color: '#34c97a' },
+  MONITORAMENTO: { label: 'Monitoramento', color: '#54e0ee' },
+  OTIMIZACAO:    { label: 'Otimização',    color: '#e3ad45' },
 }
 
 interface Props {
@@ -174,6 +191,8 @@ export function ClientesTable({ clients }: Props) {
               </th>
               <th className="text-left px-3 py-3 font-medium">NOME</th>
               <th className="text-left px-3 py-3 font-medium">TIPO</th>
+              <th className="text-left px-3 py-3 font-medium">RESULTADO</th>
+              <th className="text-left px-3 py-3 font-medium">ETAPA</th>
               <th className="text-left px-3 py-3 font-medium">ORIGEM</th>
               <th className="text-left px-3 py-3 font-medium">TELEFONE</th>
               <th className="text-left px-3 py-3 font-medium">CONTRATO</th>
@@ -185,7 +204,7 @@ export function ClientesTable({ clients }: Props) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center py-12 text-sm text-[#87919E]">
+                <td colSpan={11} className="text-center py-12 text-sm text-[#87919E]">
                   Nenhum cliente encontrado
                 </td>
               </tr>
@@ -228,6 +247,37 @@ export function ClientesTable({ clients }: Props) {
                         <TypeIcon size={9} />
                         {typ.label}
                       </span>
+                    </td>
+                    <td className="px-3 py-3">
+                      {client.resultado && RESULTADO_CONFIG[client.resultado] ? (
+                        <div title={client.resultadoUpdatedAt ? `Atualizado em ${new Date(client.resultadoUpdatedAt).toLocaleString('pt-BR')}` : undefined}>
+                          <span
+                            className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                            style={{ color: RESULTADO_CONFIG[client.resultado].color, background: `${RESULTADO_CONFIG[client.resultado].color}1f` }}
+                          >
+                            {RESULTADO_CONFIG[client.resultado].label}
+                          </span>
+                          {client.resultadoRoas != null && (
+                            <p className="text-[10px] text-[#87919E] mt-0.5 tabular">ROAS {client.resultadoRoas.toFixed(2)}</p>
+                          )}
+                        </div>
+                      ) : client.businessType === 'LOCAL' ? (
+                        <span className="text-[10px] text-[#576070]">manual</span>
+                      ) : (
+                        <span className="text-[10px] text-[#576070]">aguardando</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
+                      {client.etapa && ETAPA_CONFIG[client.etapa] ? (
+                        <span
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                          style={{ color: ETAPA_CONFIG[client.etapa].color, background: `${ETAPA_CONFIG[client.etapa].color}1f` }}
+                        >
+                          {ETAPA_CONFIG[client.etapa].label}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[#576070]">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-xs text-[#87919E]">
                       {client.source ?? <span className="text-[#38435C]">—</span>}

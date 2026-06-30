@@ -22,6 +22,7 @@ async function getClientesData(userId: string, role: string) {
         id: true, name: true, slug: true, source: true, phone: true,
         email: true, status: true, contractValue: true, createdAt: true,
         businessType: true,
+        resultado: true, etapa: true, resultadoRoas: true, resultadoUpdatedAt: true,
       },
       orderBy: { name: 'asc' },
     }),
@@ -48,6 +49,8 @@ async function getClientesData(userId: string, role: string) {
       ...c,
       contractValue: c.contractValue ? Number(c.contractValue) : null,
       createdAt:     c.createdAt.toISOString(),
+      resultadoRoas:      c.resultadoRoas != null ? Number(c.resultadoRoas) : null,
+      resultadoUpdatedAt: c.resultadoUpdatedAt ? c.resultadoUpdatedAt.toISOString() : null,
     })),
     kpis: {
       recorrentes:       active.length,
