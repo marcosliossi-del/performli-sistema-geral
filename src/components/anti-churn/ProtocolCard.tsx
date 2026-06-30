@@ -57,6 +57,8 @@ const TRIGGER_LABELS: Record<AlertType, string> = {
   WARROOM_NO_REVIEW:             'War Room sem revisão semanal',
   WARROOM_EXIT_CRITERIA_MET:     'Critério de saída atingido',
   WARROOM_REGRESSION:            'Critério de saída em regressão',
+  INVOICE_OVERDUE:               'Fatura vencida',
+  CLIENT_WITHOUT_BILLING:        'Cliente sem cobrança ativa',
 }
 
 const NEXT_STATUS: Partial<Record<CriticalProtocolStatus, { to: CriticalProtocolStatus; label: string }>> = {

@@ -1206,6 +1206,94 @@ export const getCockpitData = cache(
   },
 )
 
+// ─── FIN-19 — Contas a receber e inadimplência ─────────────────────────────────
+
+export type ReguaStep =
+  | 'Vencida'
+  | 'Cobrança (D+3)'
+  | 'Cobrança firme (D+7)'
+  | 'Pausa sugerida (D+15)'
+  | 'Escalar Marcos (D+30)'
+
+/** Passo da régua de cobrança a partir dos dias em atraso. */
+export function reguaStep(daysOverdue: number): ReguaStep {
+  if (daysOverdue >= 30) return 'Escalar Marcos (D+30)'
+  if (daysOverdue >= 15) return 'Pausa sugerida (D+15)'
+  if (daysOverdue >= 7) return 'Cobrança firme (D+7)'
+  if (daysOverdue >= 3) return 'Cobrança (D+3)'
+  return 'Vencida'
+}
+
+export type OverdueInvoiceRow = {
+  id: string
+  clientName: string
+  clientSlug: string | null
+  value: number
+  dueDate: Date
+  daysOverdue: number
+  regua: ReguaStep
+  invoiceUrl: string | null
+}
+
+/** Fila priorizada de faturas vencidas (mais atrasada primeiro). ADMIN/CS apenas. */
+export const getOverdueInvoices = cache(
+  async (role: string): Promise<OverdueInvoiceRow[]> => {
+    if (!canViewAll(role)) return []
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const payments = await prisma.asaasPayment.findMany({
+      where: { status: 'OVERDUE', dueDate: { lte: today } },
+      orderBy: { dueDate: 'asc' },
+      select: {
+        id: true,
+        value: true,
+        dueDate: true,
+        invoiceUrl: true,
+        customer: {
+          select: { name: true, client: { select: { name: true, slug: true } } },
+        },
+      },
+    })
+
+    return payments.map((p) => {
+      const days = Math.floor((today.getTime() - new Date(p.dueDate).getTime()) / 86_400_000)
+      return {
+        id: p.id,
+        clientName: p.customer?.client?.name ?? p.customer?.name ?? 'Sem cliente vinculado',
+        clientSlug: p.customer?.client?.slug ?? null,
+        value: Number(p.value),
+        dueDate: p.dueDate,
+        daysOverdue: days,
+        regua: reguaStep(days),
+        invoiceUrl: p.invoiceUrl,
+      }
+    })
+  },
+)
+
+export type ClientWithoutBillingRow = { id: string; name: string; slug: string }
+
+/** Clientes ativos sem assinatura ativa no Asaas (cobrança não configurada). ADMIN/CS. */
+export const getClientsWithoutBilling = cache(
+  async (role: string): Promise<ClientWithoutBillingRow[]> => {
+    if (!canViewAll(role)) return []
+
+    return prisma.client.findMany({
+      where: {
+        status: 'ACTIVE',
+        OR: [
+          { asaasCustomer: null },
+          { asaasCustomer: { subscriptions: { none: { status: 'ACTIVE' } } } },
+        ],
+      },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, slug: true },
+    })
+  },
+)
+
 // ─── Managers overview ────────────────────────────────────────────────────────
 
 export type ManagerClientRow = {

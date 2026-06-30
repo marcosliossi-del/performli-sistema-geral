@@ -14,6 +14,7 @@ import { syncAsaasData } from '@/services/asaas/sync'
 import { detectCriticalAccounts } from '@/services/critical-account-detector'
 import { escalateStaleWarRooms } from '@/services/warroom-escalation'
 import { monitorWarRooms } from '@/services/warroom-monitor'
+import { checkInadimplencia } from '@/services/inadimplencia-checker'
 import { syncWeeklyGoalsFromMonthly } from '@/app/actions/goals'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
 
@@ -51,6 +52,7 @@ async function runDailySync() {
     criticalAccounts: { ok: false },
     warRoomEscalation: { ok: false },
     warRoomMonitor: { ok: false },
+    inadimplencia: { ok: false },
     weeklyReports: isSunday ? { ok: false } : { ok: true, skipped: true },
     weeklyChecklists: isSunday ? { ok: false } : { ok: true, skipped: true },
     contractExpiry:   { ok: false },
@@ -164,6 +166,14 @@ async function runDailySync() {
     summary.asaas = { ok: true, ...asaasResult }
   } catch (err) {
     summary.asaas = { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+
+  // ── Step 5c: Inadimplência — régua de cobrança + cliente sem cobrança ─────
+  try {
+    const inadResult = await checkInadimplencia()
+    summary.inadimplencia = { ok: true, ...inadResult }
+  } catch (err) {
+    summary.inadimplencia = { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 
   // ── Step 6: Budget warnings ────────────────────────────────────────────────
