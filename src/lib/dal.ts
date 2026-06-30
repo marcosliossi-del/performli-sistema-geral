@@ -1367,6 +1367,128 @@ export const getAntiChurnQueue = cache(
   },
 )
 
+// ─── OPE-06 — Check-in semanal por cliente ─────────────────────────────────────
+
+export type CheckinStatusValue = 'PENDENTE' | 'PREENCHIDO' | 'APROVADO' | 'REPROVADO'
+
+export type CheckinRow = {
+  clientId: string
+  clientName: string
+  clientSlug: string
+  managerName: string | null
+  checkin: {
+    id: string
+    status: CheckinStatusValue
+    resultadoSemana: string | null
+    oQueFoiFeito: string | null
+    proximosPassos: string | null
+    reviewNote: string | null
+    submittedAt: Date | null
+  } | null
+}
+
+export type CheckinBoard = {
+  weekStart: Date
+  rows: CheckinRow[]
+}
+
+/**
+ * Quadro de check-ins da semana corrente: clientes ativos (role-scoped) com o
+ * check-in da semana (ou null). A página deriva fila de revisão (PREENCHIDO),
+ * sem check-in (null/PENDENTE) e reprovados.
+ */
+export const getCheckinBoard = cache(
+  async (userId: string, role: string): Promise<CheckinBoard> => {
+    const { start: weekStart } = getWeekRange()
+    const where: Prisma.ClientWhereInput = canViewAll(role)
+      ? { status: 'ACTIVE' }
+      : { status: 'ACTIVE', assignments: { some: { userId } } }
+
+    const clients = await prisma.client.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        assignments: {
+          where: { isPrimary: true },
+          select: { user: { select: { name: true } } },
+          take: 1,
+        },
+        weeklyCheckins: {
+          where: { weekStart },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            resultadoSemana: true,
+            oQueFoiFeito: true,
+            proximosPassos: true,
+            reviewNote: true,
+            submittedAt: true,
+          },
+        },
+      },
+      orderBy: { name: 'asc' },
+    })
+
+    const rows: CheckinRow[] = clients.map((c) => ({
+      clientId: c.id,
+      clientName: c.name,
+      clientSlug: c.slug,
+      managerName: c.assignments[0]?.user?.name ?? null,
+      checkin: c.weeklyCheckins[0]
+        ? {
+            id: c.weeklyCheckins[0].id,
+            status: c.weeklyCheckins[0].status as CheckinStatusValue,
+            resultadoSemana: c.weeklyCheckins[0].resultadoSemana,
+            oQueFoiFeito: c.weeklyCheckins[0].oQueFoiFeito,
+            proximosPassos: c.weeklyCheckins[0].proximosPassos,
+            reviewNote: c.weeklyCheckins[0].reviewNote,
+            submittedAt: c.weeklyCheckins[0].submittedAt,
+          }
+        : null,
+    }))
+
+    return { weekStart, rows }
+  },
+)
+
+export type CheckinStats = {
+  semCheckin: number
+  aguardandoRevisao: number
+  reprovados: number
+}
+
+/** Contagens de check-in da semana para o cockpit. Role-scoped. */
+export const getCheckinStats = cache(
+  async (userId: string, role: string): Promise<CheckinStats> => {
+    const { start: weekStart } = getWeekRange()
+    const clientScope: Prisma.ClientWhereInput = canViewAll(role)
+      ? { status: 'ACTIVE' }
+      : { status: 'ACTIVE', assignments: { some: { userId } } }
+
+    const [activeClients, submitted, aguardandoRevisao, reprovados] = await Promise.all([
+      prisma.client.count({ where: clientScope }),
+      prisma.clientWeeklyCheckin.count({
+        where: { weekStart, status: { not: 'PENDENTE' }, client: clientScope },
+      }),
+      prisma.clientWeeklyCheckin.count({
+        where: { weekStart, status: 'PREENCHIDO', client: clientScope },
+      }),
+      prisma.clientWeeklyCheckin.count({
+        where: { weekStart, status: 'REPROVADO', client: clientScope },
+      }),
+    ])
+
+    return {
+      semCheckin: Math.max(0, activeClients - submitted),
+      aguardandoRevisao,
+      reprovados,
+    }
+  },
+)
+
 // ─── Managers overview ────────────────────────────────────────────────────────
 
 export type ManagerClientRow = {

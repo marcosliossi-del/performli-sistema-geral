@@ -51,6 +51,7 @@ const navigation: NavSection[] = [
     items: [
       { name: 'Cockpit',       href: '/cockpit',   icon: Gauge },
       { name: 'Dashboard',     href: '/dashboard', icon: LayoutDashboard },
+      { name: 'Check-ins',     href: '/check-ins', icon: CheckSquare },
       { name: 'Alertas',       href: '/alerts',    icon: Bell },
       { name: 'Minhas Tarefas', href: '/tasks',    icon: CheckSquare },
     ],

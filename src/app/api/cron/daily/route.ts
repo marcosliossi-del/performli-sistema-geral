@@ -16,6 +16,7 @@ import { escalateStaleWarRooms } from '@/services/warroom-escalation'
 import { monitorWarRooms } from '@/services/warroom-monitor'
 import { checkInadimplencia } from '@/services/inadimplencia-checker'
 import { detectSilentAtRiskClients } from '@/services/antichurn-monitor'
+import { checkCheckins } from '@/services/checkin-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/app/actions/goals'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
 
@@ -50,6 +51,7 @@ async function runDailySync() {
     alerts: { ok: false },
     churnRisk: { ok: false },
     antiChurnSilent: { ok: false },
+    checkins: { ok: false },
     budgetWarnings: { ok: false },
     criticalAccounts: { ok: false },
     warRoomEscalation: { ok: false },
@@ -172,6 +174,21 @@ async function runDailySync() {
     }
   } catch (err) {
     summary.antiChurnSilent = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // ── Step 5b2: Check-ins — sem check-in + reprovado sem correção ───────────
+  try {
+    const checkinResult = await checkCheckins()
+    summary.checkins = {
+      ok: true,
+      missingAlerts: checkinResult.missingAlerts,
+      staleRejectedAlerts: checkinResult.staleRejectedAlerts,
+    }
+  } catch (err) {
+    summary.checkins = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     }

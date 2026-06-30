@@ -25,6 +25,8 @@ const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string
   INVOICE_OVERDUE:                { icon: AlertCircle,    color: 'text-[#EF4444]', label: 'Fatura vencida' },
   CLIENT_WITHOUT_BILLING:         { icon: AlertTriangle,  color: 'text-[#EAB308]', label: 'Cliente sem cobrança' },
   ANTICHURN_ACTION_NEEDED:        { icon: ShieldAlert,    color: 'text-[#EF4444]', label: 'Cliente em risco sem ação' },
+  CHECKIN_MISSING:                { icon: AlertTriangle,  color: 'text-[#EAB308]', label: 'Cliente sem check-in' },
+  CHECKIN_REJECTED_STALE:         { icon: AlertCircle,    color: 'text-[#EF4444]', label: 'Check-in reprovado sem correção' },
 }
 
 export default async function AlertsPage() {

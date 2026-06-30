@@ -60,6 +60,8 @@ const TRIGGER_LABELS: Record<AlertType, string> = {
   INVOICE_OVERDUE:               'Fatura vencida',
   CLIENT_WITHOUT_BILLING:        'Cliente sem cobrança ativa',
   ANTICHURN_ACTION_NEEDED:       'Cliente em risco sem ação',
+  CHECKIN_MISSING:               'Cliente sem check-in',
+  CHECKIN_REJECTED_STALE:        'Check-in reprovado sem correção',
 }
 
 const NEXT_STATUS: Partial<Record<CriticalProtocolStatus, { to: CriticalProtocolStatus; label: string }>> = {

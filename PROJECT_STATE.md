@@ -8,8 +8,8 @@
 
 ## FASE_ATUAL
 Fase 2 (build) — fatias mescladas no `main` (deploy de produção):
-- #16 docs/agentes/CLAUDE.md(ClickUp) · #17 WAR-14 · #18 WAR-16 · #19 Cockpit — **MERGED**.
-- Fatia #4 (FIN-19) — entregue ao guardião (branch feat/pop-fin-19, PR a abrir).
+- #16 docs · #17 WAR-14 · #18 WAR-16 · #19 Cockpit · #20 FIN-19 · #21 CSX-13 — **MERGED**.
+- Fatia #7 (OPE-06) — entregue ao guardião (branch feat/pop-ope-06, PR a abrir).
 Fórmula de score confirmada pelo usuário: **0.30** (mantida). Agentes .md: não sincronizar.
 
 ## POPS_MAPEADOS (21 — ranking 0.30)
@@ -23,8 +23,14 @@ OPE-06 (4.39) · CSX-12 (4.32) · CRM-18 (4.19) · ONB-05 (4.09). Detalhe em
 | WAR-16 | **EM PRODUÇÃO (merged #18)** |
 | Cockpit | **EM PRODUÇÃO (merged #19)** |
 | FIN-19 | **EM PRODUÇÃO (merged #20)** |
-| CSX-13 | **EM REVISÃO (branch feat/pop-csx-13)** |
-| demais 16 | mapeados, aguardando fatia |
+| CSX-13 | **EM PRODUÇÃO (merged #21)** |
+| OPE-06 | **EM REVISÃO (branch feat/pop-ope-06)** |
+| demais 15 | mapeados, aguardando fatia |
+
+## MODELS NOVOS (cumulativo)
+- `AuditLog` (WAR-14) · `WarRoomOutcome` enum (WAR-14)
+- `ClientWeeklyCheckin` + `CheckinStatus` enum (OPE-06) — check-in por cliente
+  com workflow de validação da CS. Justificativa: `WeeklyChecklist` é por-gestor.
 
 ## LACUNAS_IDENTIFICADAS
 `docs/mapa-lacunas.md`. 1 JÁ_EXISTE · 15 PARCIAL · 5 INEXISTENTE.
