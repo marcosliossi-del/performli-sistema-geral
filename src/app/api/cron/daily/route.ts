@@ -15,6 +15,7 @@ import { detectCriticalAccounts } from '@/services/critical-account-detector'
 import { escalateStaleWarRooms } from '@/services/warroom-escalation'
 import { monitorWarRooms } from '@/services/warroom-monitor'
 import { checkInadimplencia } from '@/services/inadimplencia-checker'
+import { detectSilentAtRiskClients } from '@/services/antichurn-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/app/actions/goals'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
 
@@ -48,6 +49,7 @@ async function runDailySync() {
     healthScores: { ok: false },
     alerts: { ok: false },
     churnRisk: { ok: false },
+    antiChurnSilent: { ok: false },
     budgetWarnings: { ok: false },
     criticalAccounts: { ok: false },
     warRoomEscalation: { ok: false },
@@ -155,6 +157,21 @@ async function runDailySync() {
     }
   } catch (err) {
     summary.churnRisk = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // ── Step 5a: Anti-churn — clientes em risco e silenciosos ─────────────────
+  try {
+    const silentResult = await detectSilentAtRiskClients()
+    summary.antiChurnSilent = {
+      ok: true,
+      checked: silentResult.checked,
+      alerts: silentResult.alerts,
+    }
+  } catch (err) {
+    summary.antiChurnSilent = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     }

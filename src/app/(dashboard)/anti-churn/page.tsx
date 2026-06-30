@@ -1,4 +1,4 @@
-import { requireSession, getAtRiskClients, getClientChurnHistory, getWarRoomResponsibleOptions } from '@/lib/dal'
+import { requireSession, getAtRiskClients, getClientChurnHistory, getWarRoomResponsibleOptions, getAntiChurnQueue } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { ChurnRiskChart } from '@/components/anti-churn/ChurnRiskChart'
 import { ProtocolCard } from '@/components/anti-churn/ProtocolCard'
 import { WarRoomPlanPanel } from '@/components/anti-churn/WarRoomPlanPanel'
+import { AntiChurnQueue } from '@/components/anti-churn/AntiChurnQueue'
 
 export default async function AntiChurnPage() {
   const session = await requireSession()
@@ -81,6 +82,9 @@ export default async function AntiChurnPage() {
   // WAR-14: plano da War Room (critério de saída, responsável, prazo)
   const responsibleOptions = await getWarRoomResponsibleOptions()
   const canEditWarRoom = role === 'ADMIN' || role === 'CS' || role === 'MANAGER'
+
+  // CSX-13: fila de ação anti-churn proativo
+  const antiChurnQueue = await getAntiChurnQueue(userId, role)
 
   return (
     <div className="space-y-8">
@@ -166,6 +170,9 @@ export default async function AntiChurnPage() {
             Score de risco 0–100 · semanas consecutivas em RUIM · tendência de evolução
           </p>
         </div>
+
+        {/* CSX-13: fila de ação proativa */}
+        <AntiChurnQueue rows={antiChurnQueue} canEdit={canEditWarRoom} />
 
         <div className="grid grid-cols-3 gap-4">
           <Card className="border-l-4 border-l-[#EF4444]">

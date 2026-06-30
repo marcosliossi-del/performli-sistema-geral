@@ -405,6 +405,8 @@ enum AlertType {
   // ── FIN-19: contas a receber e inadimplência ─────────────────────────────
   INVOICE_OVERDUE              // Fatura vencida — régua de cobrança
   CLIENT_WITHOUT_BILLING       // Cliente ativo sem cobrança ativa no Asaas
+  // ── CSX-13: anti-churn proativo ──────────────────────────────────────────
+  ANTICHURN_ACTION_NEEDED      // Cliente em risco e silencioso — ação proativa necessária
 }
 
 model Alert {
