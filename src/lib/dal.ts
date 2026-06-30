@@ -1109,6 +1109,103 @@ export const getWarRoomResponsibleOptions = cache(
   },
 )
 
+// ─── Cockpit — visão única da agência (incremental) ────────────────────────────
+
+export type CockpitData = {
+  clientesOk: number
+  clientesAtencao: number
+  clientesCriticos: number
+  warRoomsAtivas: number
+  warRoomsSemCriterio: number
+  demandasAtrasadas: number
+  contratosVencendo30d: number
+  alertasNaoLidos: number
+  // Financeiro — apenas ADMIN/CS (null para os demais papéis)
+  faturasVencidas: { count: number; total: number } | null
+  ultimaAtualizacao: Date | null
+}
+
+/**
+ * Cockpit: agrega os sinais que JÁ têm dado confiável. Cada novo POP pluga seu
+ * bloco aqui conforme as fatias entram. Role-scoped; financeiro só p/ ADMIN/CS.
+ */
+export const getCockpitData = cache(
+  async (userId: string, role: string): Promise<CockpitData> => {
+    const viewAll = canViewAll(role)
+    const clientScope: Prisma.ClientWhereInput = viewAll
+      ? { status: 'ACTIVE' }
+      : { status: 'ACTIVE', assignments: { some: { userId } } }
+
+    const now = new Date()
+    const in30d = new Date(now.getTime() + 30 * 86_400_000)
+
+    const taskScope: Prisma.TaskWhereInput = viewAll
+      ? {}
+      : { OR: [{ client: { assignments: { some: { userId } } } }, { assignedTo: userId }] }
+
+    const [
+      clientesOk,
+      clientesAtencao,
+      clientesCriticos,
+      warRoomsAtivas,
+      warRoomsSemCriterio,
+      demandasAtrasadas,
+      contratosVencendo30d,
+      alertasNaoLidos,
+      faturasAgg,
+      lastSync,
+    ] = await Promise.all([
+      prisma.clientStatusStreak.count({ where: { status: 'OTIMO', client: clientScope } }),
+      prisma.clientStatusStreak.count({ where: { status: 'REGULAR', client: clientScope } }),
+      prisma.clientStatusStreak.count({ where: { status: 'RUIM', client: clientScope } }),
+      prisma.criticalProtocol.count({
+        where: { status: { not: 'ENCERRADO' }, client: clientScope },
+      }),
+      prisma.criticalProtocol.count({
+        where: { status: { not: 'ENCERRADO' }, exitCriteria: null, client: clientScope },
+      }),
+      prisma.task.count({
+        where: {
+          status: { in: ['PENDING', 'IN_PROGRESS'] },
+          dueDate: { lt: now },
+          ...taskScope,
+        },
+      }),
+      prisma.contract.count({
+        where: { status: 'VIGENTE', endDate: { gte: now, lte: in30d }, client: clientScope },
+      }),
+      prisma.alert.count({ where: { read: false, client: clientScope } }),
+      viewAll
+        ? prisma.asaasPayment.aggregate({
+            where: { status: 'OVERDUE' },
+            _count: true,
+            _sum: { value: true },
+          })
+        : Promise.resolve(null),
+      prisma.syncLog.findFirst({
+        where: { status: 'SUCCESS', completedAt: { not: null } },
+        orderBy: { completedAt: 'desc' },
+        select: { completedAt: true },
+      }),
+    ])
+
+    return {
+      clientesOk,
+      clientesAtencao,
+      clientesCriticos,
+      warRoomsAtivas,
+      warRoomsSemCriterio,
+      demandasAtrasadas,
+      contratosVencendo30d,
+      alertasNaoLidos,
+      faturasVencidas: faturasAgg
+        ? { count: faturasAgg._count, total: Number(faturasAgg._sum.value ?? 0) }
+        : null,
+      ultimaAtualizacao: lastSync?.completedAt ?? null,
+    }
+  },
+)
+
 // ─── Managers overview ────────────────────────────────────────────────────────
 
 export type ManagerClientRow = {
