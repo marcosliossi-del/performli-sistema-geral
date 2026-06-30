@@ -1,6 +1,7 @@
 # PERFORMLI — Sistema Operacional Interno da Arkza
 
 > **Frase-guia do projeto:** "Arkza em processo, não em memória."
+> **Visão final:** Marcos abre UMA única tela e entende a agência inteira.
 
 Este arquivo define as regras transversais que **todos** os agentes herdam.
 Nenhum agente pode violar o que está aqui, independente da tarefa.
@@ -26,7 +27,7 @@ CEO/comercial sem que processos críticos quebrem.
 - Prisma 7 · PostgreSQL
 - Auth: JWT em cookie httpOnly
 - Integrações: Meta Ads, Google Ads, GA4, Nuvemshop, Asaas, Z-API/Evolution,
-  Windsor, base de conhecimento (RAG)
+  Windsor, base de conhecimento (RAG), ClickUp
 - Cron diário já existente
 - Repositório: `marcosliossi-del/performli-sistema-geral`
 
@@ -116,6 +117,70 @@ Cada fator é pontuado de 0 a 5. Soma dos pesos = 1.0.
 - **WAR** — War Room e Contas Críticas (WAR-14, WAR-15, WAR-16)
 - **CRM** — Automação e CRM (CRM-17, CRM-18)
 - **FIN** — Financeiro (FIN-19, FIN-20, FIN-21)
+
+---
+
+## DIRETRIZ ESTRATÉGICA SOBRE O CLICKUP (orienta TODA decisão de arquitetura)
+
+O objetivo do sistema **não é apenas integrar** com o ClickUp. A intenção
+estratégica é que o Performli evolua para se tornar a **principal central
+operacional da Arkza, substituindo gradualmente o ClickUp** nas rotinas
+críticas da agência.
+
+Hoje o ClickUp é usado para tarefas, CRM, financeiro, gestão de clientes,
+recorrências e acompanhamento operacional. Mas muitos processos ainda dependem
+de memória, disciplina manual, planilhas paralelas e WhatsApp.
+
+O Performli deve nascer como **fonte única da verdade da operação**. No começo,
+o ClickUp pode ser **referência, fonte de dados ou apoio temporário**. Mas a
+arquitetura deve ser pensada para que, no futuro, os processos principais rodem
+**dentro do Performli, sem depender do ClickUp como sistema central**.
+
+### O Performli deve substituir, gradualmente:
+Gestão de tarefas recorrentes · Check-ins semanais · Validação da CS ·
+CRM comercial · Follow-ups · Onboarding de clientes · Gestão de clientes ativos ·
+Controle de demandas · War Room e contas críticas · Financeiro interno ·
+Contas a receber · Contas a pagar · Gestão de contratos · Comissões comerciais ·
+Visão geral da agência.
+
+### A pergunta-guia da arquitetura
+NÃO é "como replicar o ClickUp dentro do Performli?", e SIM:
+**"Como criar um sistema mais inteligente que o ClickUp para a realidade
+específica da Arkza?"**
+
+O Performli deve ser **menos genérico e mais operacional**. Precisa mostrar com
+clareza o que o ClickUp não mostra:
+- O que está atrasado
+- O que está crítico
+- Quem precisa agir
+- Qual processo falhou
+- Qual cliente está em risco
+- Qual dinheiro está em risco
+- Qual tarefa não tem evidência
+- Qual gestor está acumulando gargalos
+- Qual rotina não rodou
+- Qual cliente está sem acompanhamento
+- Qual lead foi esquecido
+- Qual contrato está irregular
+- Qual indicador piorou
+- Qual decisão precisa ser tomada hoje
+
+### Implicações práticas para os agentes
+1. **Ownership do dado no Performli.** Para cada processo que vira sistema, o
+   Performli é a fonte da verdade. O ClickUp pode alimentar dados de origem
+   numa fase de transição, mas o estado canônico vive no PostgreSQL.
+2. **Direção da sincronização.** Toda integração ClickUp deve ser classificada
+   como `clickup→performli` (leitura/migração), `performli→clickup` (espelho
+   temporário) ou `bidirecional` (transição). O alvo de longo prazo é reduzir
+   a dependência, não aumentá-la — evite criar acoplamentos que dificultem o
+   desligamento futuro do ClickUp.
+3. **Estratégia de saída (exit strategy).** Cada model/feature que substitui
+   uma função do ClickUp deve registrar de qual rotina do ClickUp ele assume o
+   lugar, e em que fase o ClickUp deixa de ser necessário para aquela rotina.
+4. **Inteligência, não cópia.** Não replicar campos genéricos do ClickUp.
+   Modelar para responder às perguntas operacionais acima (atraso, criticidade,
+   responsável, evidência, gargalo, dinheiro em risco), que o ClickUp não
+   responde com clareza.
 
 ---
 
