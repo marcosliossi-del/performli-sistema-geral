@@ -73,3 +73,6 @@ com `WarRoomPlanPanel`.
   campos personalizados, atividade, dependências, aprovação) + enums novos +
   troca TaskStatus/TaskPriority (backfill) + seed 7 áreas/21 POPs + TaskActivity nas actions.
 - Próximos: BLOCO 2 (UI Central), 3 (templates+recorrência+cron), 4 (integração), 5 (POPs), 6 (automações), 7 (IA+KPIs).
+
+- **BLOCO 1** — MERGED (#24, em produção). Migration aplicada (enum swap + 24 models + seed). Build com retry de migrate (cold-start Neon).
+- **BLOCO 2** (Central de Tarefas / UI) — branch feat/bloco2-central-tarefas: página /operacional (KPIs + 4 views Lista/Kanban/Responsável/Cliente + filtros), NovaTarefaModal (autofill do cliente, área/POP, checklist), TaskDrawer (status/checklist/comentários/atividade). DAL getOperacionalBoard + getNovaTarefaContext; actions createOperacionalTask/addTaskComment/toggleChecklistItem/loadTaskDetail.

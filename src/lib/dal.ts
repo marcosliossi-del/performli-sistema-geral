@@ -1076,6 +1076,148 @@ export const getTasks = cache(async (userId: string, role: string) => {
   })
 })
 
+// ─── BLOCO 2 — Central Operacional (board de tarefas) ──────────────────────────
+
+export type OperacionalTask = {
+  id: string
+  title: string
+  status: string
+  priority: string
+  type: string
+  dueDate: Date | null
+  requestedAt: Date | null
+  createdAt: Date
+  clientName: string | null
+  clientSlug: string | null
+  assigneeName: string
+  areaName: string | null
+  popCode: string | null
+}
+
+export type OperacionalBoard = {
+  tasks: OperacionalTask[]
+  kpis: { total: number; concluidas: number; atrasadas: number; taxaConclusao: number }
+}
+
+/** Board da Central Operacional: tarefas role-scoped + KPIs. */
+export const getOperacionalBoard = cache(
+  async (userId: string, role: string): Promise<OperacionalBoard> => {
+    const where: Prisma.TaskWhereInput = canViewAll(role)
+      ? {}
+      : { OR: [{ assignedTo: userId }, { client: { assignments: { some: { userId } } } }] }
+
+    const rows = await prisma.task.findMany({
+      where,
+      orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        priority: true,
+        type: true,
+        dueDate: true,
+        requestedAt: true,
+        createdAt: true,
+        client: { select: { name: true, slug: true } },
+        user: { select: { name: true } },
+        area: { select: { name: true } },
+        pop: { select: { code: true } },
+      },
+    })
+
+    const now = Date.now()
+    const tasks: OperacionalTask[] = rows.map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      priority: t.priority,
+      type: t.type,
+      dueDate: t.dueDate,
+      requestedAt: t.requestedAt,
+      createdAt: t.createdAt,
+      clientName: t.client?.name ?? null,
+      clientSlug: t.client?.slug ?? null,
+      assigneeName: t.user?.name ?? '—',
+      areaName: t.area?.name ?? null,
+      popCode: t.pop?.code ?? null,
+    }))
+
+    const total = tasks.length
+    const concluidas = tasks.filter((t) => t.status === 'CONCLUIDO').length
+    const atrasadas = tasks.filter(
+      (t) =>
+        t.status !== 'CONCLUIDO' &&
+        t.status !== 'CANCELADO' &&
+        t.dueDate != null &&
+        new Date(t.dueDate).getTime() < now,
+    ).length
+    const taxaConclusao = total > 0 ? Math.round((concluidas / total) * 100) : 0
+
+    return { tasks, kpis: { total, concluidas, atrasadas, taxaConclusao } }
+  },
+)
+
+export type NovaTarefaCliente = {
+  id: string
+  name: string
+  managerName: string | null
+  openTasks: number
+  overdueTasks: number
+}
+export type NovaTarefaContext = {
+  clientes: NovaTarefaCliente[]
+  areas: { id: string; code: string; name: string }[]
+  pops: { id: string; code: string; name: string; areaId: string }[]
+  usuarios: { id: string; name: string; role: string }[]
+}
+
+/** Contexto para criar tarefa: clientes (com gestor + tarefas abertas), áreas, POPs, usuários. */
+export const getNovaTarefaContext = cache(
+  async (userId: string, role: string): Promise<NovaTarefaContext> => {
+    const clientWhere: Prisma.ClientWhereInput = canViewAll(role)
+      ? { status: 'ACTIVE' }
+      : { status: 'ACTIVE', assignments: { some: { userId } } }
+    const now = new Date()
+
+    const [clients, areas, pops, usuarios] = await Promise.all([
+      prisma.client.findMany({
+        where: clientWhere,
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          assignments: {
+            where: { isPrimary: true },
+            select: { user: { select: { name: true } } },
+            take: 1,
+          },
+          tasks: {
+            where: { status: { notIn: ['CONCLUIDO', 'CANCELADO'] } },
+            select: { id: true, dueDate: true },
+          },
+        },
+      }),
+      prisma.taskArea.findMany({ orderBy: { order: 'asc' }, select: { id: true, code: true, name: true } }),
+      prisma.pOPProcess.findMany({ orderBy: { code: 'asc' }, select: { id: true, code: true, name: true, areaId: true } }),
+      prisma.user.findMany({
+        where: { active: true },
+        orderBy: [{ role: 'asc' }, { name: 'asc' }],
+        select: { id: true, name: true, role: true },
+      }),
+    ])
+
+    const clientes: NovaTarefaCliente[] = clients.map((c) => ({
+      id: c.id,
+      name: c.name,
+      managerName: c.assignments[0]?.user?.name ?? null,
+      openTasks: c.tasks.length,
+      overdueTasks: c.tasks.filter((t) => t.dueDate != null && new Date(t.dueDate).getTime() < now.getTime()).length,
+    }))
+
+    return { clientes, areas, pops: pops.map((p) => ({ ...p })), usuarios }
+  },
+)
+
 // ─── Team ─────────────────────────────────────────────────────────────────────
 
 export const getTeamMembers = cache(async () => {
