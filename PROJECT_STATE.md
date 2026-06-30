@@ -102,3 +102,10 @@ com `WarRoomPlanPanel`.
     (painel "Validação da CS" com evidência, botões por papel, histórico de decisões).
     loadTaskDetail estendido (status/evidence/requiredOpen/canSubmit/canValidate/approvals).
     Reaproveitável para CSX-10 (validação da CS). /check-ins antigo mantido (regra 12).
+
+  - **OPE-07 Prestação de contas semanal**: seed do template TPL-OPE-07
+    (recorrência semanal quarta-feira, 5 passos — consolidar, gerar relatório,
+    enviar ao cliente, confirmar recebimento, registrar próxima ação;
+    evidência obrigatória, SLA 24h). Roda no motor de recorrência existente
+    (fan-out por cliente, idempotente) e usa o mesmo fluxo de validação da CS
+    do OPE-06. Migration aditiva (só INSERT idempotente).
