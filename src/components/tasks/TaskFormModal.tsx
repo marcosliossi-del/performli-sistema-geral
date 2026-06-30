@@ -69,12 +69,13 @@ export function TaskFormModal({ clients }: Props) {
                   <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">Prioridade</label>
                   <select
                     name="priority"
-                    defaultValue="MEDIUM"
+                    defaultValue="MEDIA"
                     className="w-full h-10 px-3 rounded-lg bg-[#05141C] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2] transition-colors"
                   >
-                    <option value="LOW">Baixa</option>
-                    <option value="MEDIUM">Média</option>
-                    <option value="HIGH">Alta</option>
+                    <option value="BAIXA">Baixa</option>
+                    <option value="MEDIA">Média</option>
+                    <option value="ALTA">Alta</option>
+                    <option value="CRITICA">Crítica</option>
                   </select>
                 </div>
 

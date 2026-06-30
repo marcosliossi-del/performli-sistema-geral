@@ -12,10 +12,10 @@ export default async function TasksPage() {
     getClientsForSelect(userId, role),
   ])
 
-  const done    = tasks.filter((t) => t.status === 'DONE').length
-  const pending = tasks.filter((t) => t.status !== 'DONE').length
+  const done    = tasks.filter((t) => t.status === 'CONCLUIDO').length
+  const pending = tasks.filter((t) => t.status !== 'CONCLUIDO').length
   const overdue = tasks.filter(
-    (t) => t.status !== 'DONE' && t.dueDate !== null && t.dueDate < new Date()
+    (t) => t.status !== 'CONCLUIDO' && t.dueDate !== null && t.dueDate < new Date()
   ).length
   const completionPct = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0
 

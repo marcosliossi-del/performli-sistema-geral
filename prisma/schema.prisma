@@ -435,33 +435,469 @@ model Alert {
 
 // ─── TASKS ───────────────────────────────────────────────────────────────────
 
+// ─── CENTRAL OPERACIONAL (BLOCO 1) — Task como entidade central ──────────────
+// Enums substituídos (backfill na migration): PENDING→A_FAZER, IN_PROGRESS→
+// EM_ANDAMENTO, DONE→CONCLUIDO, CANCELLED→CANCELADO; LOW→BAIXA, MEDIUM→MEDIA, HIGH→ALTA.
+
 enum TaskStatus {
-  PENDING
-  IN_PROGRESS
-  DONE
-  CANCELLED
+  A_FAZER
+  EM_ANDAMENTO
+  AGUARDANDO_CLIENTE
+  AGUARDANDO_GESTOR
+  AGUARDANDO_CS
+  EM_VALIDACAO
+  AJUSTES_SOLICITADOS
+  BLOQUEADO
+  ATRASADO
+  CONCLUIDO
+  CANCELADO
 }
 
 enum TaskPriority {
-  LOW
-  MEDIUM
-  HIGH
+  BAIXA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum TaskType {
+  SIMPLES
+  RECORRENTE
+  CHECKLIST_OPERACIONAL
+  APROVACAO
+  VALIDACAO
+  FOLLOWUP
+  REUNIAO
+  COBRANCA
+  AUDITORIA
+  RELATORIO
+  DEMANDA_CLIENTE
+  DEMANDA_INTERNA
+  MELHORIA_PROCESSO
+  BUG_OPERACIONAL
+  WAR_ROOM
+  ONBOARDING
+  FINANCEIRA
+  COMERCIAL
+  CS
+  GERADA_POR_ALERTA
+  GERADA_POR_POP
+  GERADA_POR_IA
+}
+
+enum TaskOrigin {
+  MANUAL
+  TEMPLATE
+  RECORRENCIA
+  AUTOMACAO
+  ALERTA
+  IA
+  WHATSAPP
+}
+
+enum AreaCode {
+  COMERCIAL
+  ONBOARDING
+  TRAFEGO
+  SUCESSO_CLIENTE
+  WAR_ROOM
+  CRM_AUTOMACAO
+  FINANCEIRO
+  JURIDICO
+  GESTAO_INTERNA
+  CONTEUDO
+}
+
+enum RecurrenceFrequency {
+  DIARIA
+  DIA_UTIL
+  SEMANAL
+  QUINZENAL
+  MENSAL
+  DIA_DO_MES
+  DIA_DA_SEMANA
+  POR_CLIENTE_ATIVO
+  POR_STATUS_CLIENTE
+  POR_MUDANCA_ETAPA
+  POR_EVENTO
+  POR_CONDICAO
+}
+
+enum AutomationLogStatus {
+  SUCESSO
+  FALHA
+  DUPLICIDADE_EVITADA
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  CURRENCY
+  PERCENT
+  DATE
+  BOOLEAN
+  SELECT
+  MULTISELECT
+  URL
+  USER_REF
+  CLIENT_REF
+}
+
+model TaskArea {
+  id        String   @id @default(cuid())
+  code      AreaCode @unique
+  name      String
+  order     Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pops      POPProcess[]
+  lists     TaskList[]
+  templates TaskTemplate[]
+  tasks     Task[]
+}
+
+model POPProcess {
+  id        String   @id @default(cuid())
+  code      String   @unique // ex.: OPE-06
+  name      String
+  objective String?
+  areaId    String
+  area      TaskArea @relation(fields: [areaId], references: [id])
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  steps     POPStep[]
+  frictions POPFriction[]
+  templates TaskTemplate[]
+  tasks     Task[]
+}
+
+model POPStep {
+  id          String     @id @default(cuid())
+  popId       String
+  pop         POPProcess @relation(fields: [popId], references: [id], onDelete: Cascade)
+  order       Int        @default(0)
+  description String
+  required    Boolean    @default(true)
+}
+
+model POPFriction {
+  id          String     @id @default(cuid())
+  popId       String
+  pop         POPProcess @relation(fields: [popId], references: [id], onDelete: Cascade)
+  description String
+}
+
+model TaskList {
+  id        String    @id @default(cuid())
+  name      String
+  areaId    String?
+  area      TaskArea? @relation(fields: [areaId], references: [id])
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  tasks     Task[]
 }
 
 model Task {
   id          String       @id @default(cuid())
   title       String
   description String?
-  status      TaskStatus   @default(PENDING)
-  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus   @default(A_FAZER)
+  priority    TaskPriority @default(MEDIA)
   dueDate     DateTime?
   clientId    String?
   assignedTo  String
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
+  // ── Central Operacional (aditivo) ──────────────────────────────────────────
+  type          TaskType   @default(SIMPLES)
+  origin        TaskOrigin @default(MANUAL)
+
+  areaId        String?
+  area          TaskArea?    @relation(fields: [areaId], references: [id])
+  popId         String?
+  pop           POPProcess?  @relation(fields: [popId], references: [id])
+  listId        String?
+  list          TaskList?    @relation(fields: [listId], references: [id])
+
+  leadId        String?     // AgencyLead vinculado (id, sem FK)
+  contractId    String?     // Contract vinculado (id, sem FK)
+
+  requesterId   String?
+  requestedAt   DateTime?   // data do pedido (obrigatória via validação)
+  startDate     DateTime?
+  completedAt   DateTime?
+  completedById String?
+
+  slaHours      Int?
+  slaBreached   Boolean     @default(false)
+
+  templateId    String?
+  template      TaskTemplate?       @relation(fields: [templateId], references: [id])
+  recurrenceId  String?
+  recurrence    TaskRecurrenceRule? @relation(fields: [recurrenceId], references: [id])
+  idempotencyKey String?    @unique // (template+cliente+janela)
+
+  evidence      String?
+  blockReason   String?
+  delayReason   String?
+
+  tags          String[]    @default([])
+
+  parentId      String?
+  parent        Task?       @relation("Subtasks", fields: [parentId], references: [id])
+  subtasks      Task[]      @relation("Subtasks")
+
+  checklist    TaskChecklistItem[]
+  comments     TaskComment[]
+  attachments  TaskAttachment[]
+  activities   TaskActivity[]
+  watchers     TaskWatcher[]
+  approvals    TaskApproval[]
+  customValues TaskCustomFieldValue[]
+  auxAssignees TaskAuxAssignee[]
+
+  dependsOn TaskDependency[] @relation("DependentTask")
+  blocks    TaskDependency[] @relation("BlockingTask")
+
   client Client? @relation(fields: [clientId], references: [id])
   user   User    @relation(fields: [assignedTo], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([assignedTo])
+  @@index([status])
+  @@index([dueDate])
+  @@index([areaId])
+  @@index([popId])
+}
+
+model TaskAuxAssignee {
+  id     String @id @default(cuid())
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId String
+  @@unique([taskId, userId])
+}
+
+model TaskWatcher {
+  id     String @id @default(cuid())
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId String
+  @@unique([taskId, userId])
+}
+
+model TaskChecklistItem {
+  id       String  @id @default(cuid())
+  taskId   String
+  task     Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label    String
+  done     Boolean @default(false)
+  required Boolean @default(false)
+  order    Int     @default(0)
+}
+
+model TaskComment {
+  id       String   @id @default(cuid())
+  taskId   String
+  task     Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId String
+  body     String
+  mentions String[] @default([])
+  internal Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model TaskAttachment {
+  id           String   @id @default(cuid())
+  taskId       String
+  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  url          String
+  filename     String?
+  uploadedById String?
+  createdAt    DateTime @default(now())
+}
+
+model TaskActivity {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actorId   String?
+  action    String
+  fromValue String?
+  toValue   String?
+  createdAt DateTime @default(now())
+  @@index([taskId])
+}
+
+model TaskDependency {
+  id          String @id @default(cuid())
+  dependentId String
+  dependent   Task   @relation("DependentTask", fields: [dependentId], references: [id], onDelete: Cascade)
+  blockingId  String
+  blocking    Task   @relation("BlockingTask", fields: [blockingId], references: [id], onDelete: Cascade)
+  @@unique([dependentId, blockingId])
+}
+
+model TaskApproval {
+  id         String    @id @default(cuid())
+  taskId     String
+  task       Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  approverId String?
+  approved   Boolean?
+  note       String?
+  decidedAt  DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model TaskCustomFieldDefinition {
+  id        String          @id @default(cuid())
+  key       String          @unique
+  label     String
+  type      CustomFieldType
+  areaId    String?
+  popId     String?
+  options   String[]        @default([])
+  required  Boolean         @default(false)
+  createdAt DateTime        @default(now())
+
+  values    TaskCustomFieldValue[]
+}
+
+model TaskCustomFieldValue {
+  id      String @id @default(cuid())
+  taskId  String
+  task    Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fieldId String
+  field   TaskCustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  value   String?
+  @@unique([taskId, fieldId])
+}
+
+model TaskTemplate {
+  id                  String       @id @default(cuid())
+  code                String       @unique
+  name                String
+  description         String?
+  areaId              String?
+  area                TaskArea?    @relation(fields: [areaId], references: [id])
+  popId               String?
+  pop                 POPProcess?  @relation(fields: [popId], references: [id])
+  defaultType         TaskType     @default(SIMPLES)
+  defaultPriority     TaskPriority @default(MEDIA)
+  defaultStatus       TaskStatus   @default(A_FAZER)
+  defaultAssigneeRole String?
+  relativeDueDays     Int?
+  slaHours            Int?
+  evidenceRequired    Boolean      @default(false)
+  active              Boolean      @default(true)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  steps      TaskTemplateStep[]
+  fields     TaskTemplateField[]
+  recurrence TaskRecurrenceRule?
+  tasks      Task[]
+}
+
+model TaskTemplateStep {
+  id         String       @id @default(cuid())
+  templateId String
+  template   TaskTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  label      String
+  required   Boolean      @default(true)
+  order      Int          @default(0)
+}
+
+model TaskTemplateField {
+  id         String          @id @default(cuid())
+  templateId String
+  template   TaskTemplate    @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  key        String
+  label      String
+  type       CustomFieldType
+  required   Boolean         @default(false)
+  options    String[]        @default([])
+}
+
+model TaskRecurrenceRule {
+  id         String              @id @default(cuid())
+  templateId String?             @unique
+  template   TaskTemplate?       @relation(fields: [templateId], references: [id])
+  frequency  RecurrenceFrequency
+  dayOfWeek  Int?
+  dayOfMonth Int?
+  hour       Int?
+  minute     Int?                @default(0)
+  active     Boolean             @default(true)
+  lastRunAt  DateTime?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  tasks Task[]
+  logs  AutomationLog[]
+}
+
+model TaskAutomationRule {
+  id         String   @id @default(cuid())
+  name       String
+  trigger    String
+  condition  String?
+  actionType String
+  templateId String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  logs AutomationLog[]
+}
+
+model AutomationLog {
+  id            String              @id @default(cuid())
+  ruleId        String?
+  rule          TaskAutomationRule? @relation(fields: [ruleId], references: [id])
+  recurrenceId  String?
+  recurrence    TaskRecurrenceRule? @relation(fields: [recurrenceId], references: [id])
+  clientId      String?
+  assigneeId    String?
+  createdTaskId String?
+  status        AutomationLogStatus
+  reason        String?
+  createdAt     DateTime            @default(now())
+  @@index([status])
+  @@index([clientId])
+  @@index([createdAt])
+}
+
+model TaskSavedView {
+  id        String   @id @default(cuid())
+  ownerId   String?
+  name      String
+  config    Json
+  createdAt DateTime @default(now())
+}
+
+model OperationalRoutine {
+  id        String   @id @default(cuid())
+  name      String
+  areaId    String?
+  cadence   String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model TaskSLA {
+  id        String @id @default(cuid())
+  scopeType String
+  scopeKey  String
+  hours     Int
+  @@unique([scopeType, scopeKey])
 }
 
 // ─── OPERATIONS (Registro de Operações) ──────────────────────────────────────
