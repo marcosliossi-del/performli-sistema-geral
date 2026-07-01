@@ -51,7 +51,8 @@ export async function sendWhatsApp(
     })
 
     if (!res.ok) {
-      console.error(`[whatsapp] Erro ao enviar para ${phone}: HTTP ${res.status} — ${await res.text()}`)
+      // Não loga o corpo bruto da resposta do Z-API (pode conter dados sensíveis).
+      console.error(`[whatsapp] Erro ao enviar para ${phone}: HTTP ${res.status}`)
       return false
     }
     return true

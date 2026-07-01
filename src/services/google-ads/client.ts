@@ -133,6 +133,12 @@ export class GoogleAdsClient {
     const token = await getAccessToken()
     const clean = customerId.replace(/-/g, '')
 
+    // Defesa em profundidade: só aceita datas YYYY-MM-DD antes de montar a GAQL.
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+    if (!DATE_RE.test(since) || !DATE_RE.test(until)) {
+      throw new Error('Intervalo de datas inválido para o relatório Google Ads')
+    }
+
     const query = `
       SELECT
         segments.date,
