@@ -127,7 +127,7 @@ export default async function ClientDetailPage({
   const activeFrom = from ?? defaultFrom
   const activeTo = to ?? defaultTo
 
-  const [metricHistory, kpis, paceGoals, chat, weeklyReport, monthlyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel, activeContract, clienteTarefas] = await Promise.all([
+  const [metricHistory, kpis, paceGoals, chat, weeklyReport, monthlyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel, activeContract, clienteTarefas, resultadoInfo] = await Promise.all([
     getClientMetricHistory(client.id, 14),
     getClientKPIs(client.id, activeFrom, activeTo),
     getGoalPaceMetrics(client.id),
@@ -154,6 +154,10 @@ export default async function ClientDetailPage({
       },
     }),
     getClienteTarefas(client.id, session.userId, session.role),
+    prisma.client.findUnique({
+      where: { id: client.id },
+      select: { resultado: true, etapa: true, resultadoRoas: true, resultadoUpdatedAt: true },
+    }),
   ])
 
   const contractData = activeContract ? {
@@ -251,6 +255,16 @@ export default async function ClientDetailPage({
           <GoalFormModal clientId={client.id} businessType={client.businessType} />
         </div>
       </div>
+
+      {/* Resultado da semana (automação ROAS/GA4) */}
+      {resultadoInfo?.resultado && (
+        <ResultadoStrip
+          resultado={resultadoInfo.resultado}
+          etapa={resultadoInfo.etapa}
+          roas={resultadoInfo.resultadoRoas != null ? Number(resultadoInfo.resultadoRoas) : null}
+          atualizadoEm={resultadoInfo.resultadoUpdatedAt ? resultadoInfo.resultadoUpdatedAt.toISOString() : null}
+        />
+      )}
 
       {/* Info cards */}
       <div className="grid grid-cols-4 gap-4">
@@ -743,6 +757,47 @@ export default async function ClientDetailPage({
       <div className="card p-5">
         <InteractionTimeline clientId={client.id} interactions={interactions} />
       </div>
+    </div>
+  )
+}
+
+const RESULTADO_COLORS: Record<string, string> = {
+  OTIMO: '#16a34a', BOM: '#34c97a', REGULAR: '#e3ad45', RUIM: '#ff5e6a', PESSIMO: '#ff3b4e',
+}
+const RESULTADO_TXT: Record<string, string> = {
+  OTIMO: 'Ótimo', BOM: 'Bom', REGULAR: 'Regular', RUIM: 'Ruim', PESSIMO: 'Péssimo',
+}
+const ETAPA_TXT: Record<string, string> = {
+  ESCALA: 'Escala', MONITORAMENTO: 'Monitoramento', OTIMIZACAO: 'Otimização',
+}
+
+function ResultadoStrip({ resultado, etapa, roas, atualizadoEm }: { resultado: string; etapa: string | null; roas: number | null; atualizadoEm: string | null }) {
+  const cor = RESULTADO_COLORS[resultado] ?? '#647488'
+  return (
+    <div className="card p-4 flex flex-wrap items-center gap-x-6 gap-y-2">
+      <div>
+        <p className="text-[10px] uppercase tracking-wider text-[#87919E] mb-1">Resultado da semana</p>
+        <span className="text-sm font-semibold px-2.5 py-1 rounded-full" style={{ color: cor, background: `${cor}1f` }}>
+          {RESULTADO_TXT[resultado] ?? resultado}
+        </span>
+      </div>
+      {etapa && (
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-[#87919E] mb-1">Etapa</p>
+          <span className="text-sm text-[#EBEBEB]">{ETAPA_TXT[etapa] ?? etapa}</span>
+        </div>
+      )}
+      {roas != null && (
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-[#87919E] mb-1">ROAS</p>
+          <span className="text-sm font-mono text-[#EBEBEB] tabular">{roas.toFixed(2)}</span>
+        </div>
+      )}
+      {atualizadoEm && (
+        <p className="text-[10px] text-[#576070] ml-auto">
+          Atualizado em {new Date(atualizadoEm).toLocaleString('pt-BR')} · automático
+        </p>
+      )}
     </div>
   )
 }

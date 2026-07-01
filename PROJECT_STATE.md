@@ -274,3 +274,9 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
 - Duplicidades removidas: "Minhas Tarefas" (/tasks) — coberto por Meu Dia+Central;
   "Dashboard" demovido p/ "Painel Analítico" em Inteligência (Cockpit é o comando);
   "War Room" e "Anti Churn" unificados em um item. Logo aponta p/ /cockpit.
+
+## PENDÊNCIAS MENORES
+- **(A) Resultado na página do cliente** — branch feat/resultado-cliente-page:
+  query própria leve (resultado/etapa/resultadoRoas/resultadoUpdatedAt) no
+  Promise.all da página; strip "Resultado da semana" (badge colorido + Etapa +
+  ROAS + data automática) perto do topo, só quando há resultado calculado.
