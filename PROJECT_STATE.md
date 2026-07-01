@@ -287,3 +287,12 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
   (pulso crítico); campos com raio consistente; foco visível ciano (a11y).
 - OperacionalBoard StatusBadge: pontos com glow, pulso nos status críticos
   (BLOQUEADO/ATRASADO).
+
+## TAREFA FINAL (quando a fila zerar) — AUDITORIA + DOSSIÊ MÃE
+Rodar o prompt docs/prompt_auditoria_dossie_mae.md via WORKFLOW (auditores em
+paralelo: stack, arquitetura, frontend, backend, DB, integrações, segurança,
+performance, testes, docs → síntese). Gerar 4 arquivos na raiz:
+AUDITORIA_SISTEMA.md · MAPA_ARQUITETURA.md · HANDOFF_PROXIMA_SESSAO.md ·
+DOSSIE_MAE_PROJETO.md. Prioridade: documentar (não alterar). Só depois de
+concluir: polimento #45, ficha de CS, e inovações funcionais (⌘K, toasts,
+calendário, DnD, skeletons).
