@@ -240,7 +240,7 @@ async function getCashflowData() {
 
 export default async function FinanceiroPage({ searchParams }: PageProps) {
   const session = await requireSession()
-  if (!['ADMIN', 'CS'].includes(session.role)) redirect('/dashboard')
+  if (session.role !== 'ADMIN') redirect('/dashboard')
 
   const params = await searchParams
   const today  = new Date()
