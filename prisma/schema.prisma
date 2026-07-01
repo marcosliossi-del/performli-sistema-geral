@@ -49,6 +49,7 @@ model User {
   contracts            Contract[]           @relation("ContractResponsible")
   responsibleWarRooms  CriticalProtocol[]   @relation("WarRoomResponsible")
   auditLogs            AuditLog[]
+  workspaceMemberships WorkspaceMember[]
 }
 
 // ─── CLIENTS ─────────────────────────────────────────────────────────────────
@@ -554,6 +555,78 @@ model Alert {
   @@index([createdAt])
 }
 
+// ─── WORKSPACE / TENANCY (D-007) ─────────────────────────────────────────────
+// Tenancy multi-workspace introduzida de forma aditiva. Tabelas NOVAS nascem com
+// workspaceId; tabelas legadas (Task/Client/TaskList) ficam para fase posterior.
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  members    WorkspaceMember[]
+  statusSets StatusSet[]
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+// ─── STATUS CUSTOMIZÁVEL (D-004 etapa 1) ─────────────────────────────────────
+// Pipeline de status por StatusSet. Convive com o enum TaskStatus (espelho).
+
+enum StatusGroup {
+  NOT_STARTED
+  ACTIVE
+  DONE
+  CLOSED
+}
+
+model StatusSet {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  isDefault   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  statuses Status[]
+  lists    TaskList[]
+
+  @@index([workspaceId])
+}
+
+model Status {
+  id          String      @id @default(cuid())
+  statusSetId String
+  statusSet   StatusSet   @relation(fields: [statusSetId], references: [id], onDelete: Cascade)
+  name        String
+  color       String
+  group       StatusGroup
+  orderIndex  String
+  createdAt   DateTime    @default(now())
+
+  tasks Task[]
+
+  @@index([statusSetId])
+}
+
 // ─── TASKS ───────────────────────────────────────────────────────────────────
 
 // ─── CENTRAL OPERACIONAL (BLOCO 1) — Task como entidade central ──────────────
@@ -733,6 +806,8 @@ model TaskList {
   externalId String?   @unique   // id da lista no ClickUp
   clientId   String?              // quando a lista representa um cliente (recorrentes)
   client     Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  statusSetId String?             // pipeline de status da lista (default: Pipeline Arkza)
+  statusSet   StatusSet? @relation(fields: [statusSetId], references: [id], onDelete: SetNull)
   active     Boolean   @default(true)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -747,6 +822,11 @@ model Task {
   title       String
   description String?
   status      TaskStatus   @default(A_FAZER)
+  // ── Status customizável (D-004): FK aditiva, enum acima é espelho ──────────
+  statusId    String?
+  statusRef   Status?      @relation(fields: [statusId], references: [id])
+  // ── Ordenação manual fractional (D-003): NULL cai p/ dueDate na leitura ────
+  orderIndex  String?
   priority    TaskPriority @default(MEDIA)
   dueDate     DateTime?
   clientId    String?
@@ -830,6 +910,12 @@ model Task {
   @@index([dueDate])
   @@index([areaId])
   @@index([popId])
+  @@index([assignedTo, status, dueDate])
+  @@index([status, dueDate])
+  @@index([isSupport, status])
+  @@index([updatedAt])
+  @@index([clientId, status])
+  @@index([statusId])
 }
 
 model TaskAuxAssignee {
