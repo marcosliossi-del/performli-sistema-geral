@@ -169,6 +169,48 @@ async function syncTransfers() {
   return transfers.length
 }
 
+// ─── Sync Expenses (saídas) a partir do extrato do Asaas ───────────────────────
+// Assim como as entradas vêm de /payments, as saídas vêm dos DÉBITOS do extrato
+// financeiro (pagamentos/PIX que saem da conta). Cada débito vira um Expense com
+// source=ASAAS, idempotente por externalId. Categoria default OUTROS — o usuário
+// pode recategorizar (não sobrescrevemos a categoria em re-syncs).
+
+async function syncExpensesFromAsaas() {
+  const client = await getAsaasClient()
+  const sixMonthsAgo = new Date()
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+  const startDate = sixMonthsAgo.toISOString().split('T')[0]
+
+  const debits = await client.getFinancialTransactions({ startDate, type: 'DEBIT' })
+
+  let count = 0
+  await Promise.all(debits.map(async (t) => {
+    const value = Math.abs(Number(t.value))
+    if (!(value > 0)) return
+    await prisma.expense.upsert({
+      where:  { externalId: t.id },
+      update: {
+        // Não sobrescreve a categoria (usuário pode ter recategorizado)
+        value,
+        date:        new Date(t.date),
+        description: t.description ?? 'Saída Asaas',
+        updatedAt:   new Date(),
+      },
+      create: {
+        description: t.description ?? 'Saída Asaas',
+        category:    'OUTROS',
+        value,
+        date:        new Date(t.date),
+        source:      'ASAAS',
+        externalId:  t.id,
+      },
+    })
+    count++
+  }))
+
+  return count
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export async function syncAsaasData(): Promise<{
@@ -176,6 +218,7 @@ export async function syncAsaasData(): Promise<{
   payments: number
   subscriptions: number
   transfers: number
+  expenses: number
   errors: string[]
 }> {
   const errors: string[] = []
@@ -185,21 +228,23 @@ export async function syncAsaasData(): Promise<{
   try { customers = await syncCustomers() }
   catch (e) { errors.push(`customers: ${e instanceof Error ? e.message : String(e)}`) }
 
-  const [paymentsResult, subscriptionsResult, transfersResult] = await Promise.allSettled([
+  const [paymentsResult, subscriptionsResult, transfersResult, expensesResult] = await Promise.allSettled([
     syncPayments(),
     syncSubscriptions(),
     syncTransfers(),
+    syncExpensesFromAsaas(),
   ])
 
   const payments      = paymentsResult.status      === 'fulfilled' ? paymentsResult.value      : (errors.push(`payments: ${(paymentsResult.reason as Error)?.message ?? paymentsResult.reason}`), 0)
   const subscriptions = subscriptionsResult.status === 'fulfilled' ? subscriptionsResult.value : (errors.push(`subscriptions: ${(subscriptionsResult.reason as Error)?.message ?? subscriptionsResult.reason}`), 0)
   const transfers     = transfersResult.status     === 'fulfilled' ? transfersResult.value     : (errors.push(`transfers: ${(transfersResult.reason as Error)?.message ?? transfersResult.reason}`), 0)
+  const expenses      = expensesResult.status      === 'fulfilled' ? expensesResult.value      : (errors.push(`expenses: ${(expensesResult.reason as Error)?.message ?? expensesResult.reason}`), 0)
 
   if (errors.length > 0 && customers === 0 && payments === 0) {
     throw new Error(errors.join(' | '))
   }
 
-  return { customers, payments, subscriptions, transfers, errors }
+  return { customers, payments, subscriptions, transfers, expenses, errors }
 }
 
 /** Called by Asaas webhook: update a single payment status in real-time */
