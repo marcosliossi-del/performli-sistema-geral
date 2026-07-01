@@ -312,6 +312,11 @@ calendário, DnD, skeletons).
 - Workflow de auditoria de paridade rodou (8 comparadores ok; síntese estourou
   retry) — pente-fino feito inline.
 
+- **Paridade topbar** — branch feat/paridade-topnav: busca no estilo do protótipo
+  (pílula translúcida bg white/5, hairline, raio 11, magnifier + placeholder
+  "Buscar tarefas, clientes, POPs…" + kbd ⌘K mono); avatar do usuário com gradiente
+  ciano. Mantidos: view-mode ADMIN/GESTOR, sino de alertas, menu do usuário
+  (funcionalidades reais). ⌘K funcional fica pra fatia de inovação (command palette).
 - **Paridade sidebar** — branch feat/paridade-sidebar: estrutura igual ao protótipo iOS.
   Seções: (topo sem label) Meu Dia · Minha Semana · Central de Tarefas · Cockpit ·
   Aceite; ÁREAS com ITENS EXPANSÍVEIS + sub-menu aninhado (nav-tree): Tráfego

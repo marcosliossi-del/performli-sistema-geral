@@ -33,15 +33,16 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
 
   return (
     <header className="ak-topbar h-16 flex items-center justify-between px-6 bg-[#05141C] border-b border-[#38435C] sticky top-0 z-40">
-      {/* Search */}
-      <div className="flex-1 max-w-md">
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#87919E]" />
+      {/* Search — estilo protótipo (pílula translúcida + ⌘K) */}
+      <div className="flex-1 max-w-[440px]">
+        <div className="flex items-center gap-2.5 h-9 px-3 rounded-[11px] bg-white/[0.05] border border-white/[0.09] hover:bg-white/[0.07] transition-colors">
+          <Search size={14} className="text-[#647488] flex-shrink-0" />
           <input
             type="text"
-            placeholder="Buscar clientes, documentos..."
-            className="w-full h-9 pl-9 pr-3 rounded-lg bg-[#0A1E2C] border border-[#38435C] text-sm text-[#EBEBEB] placeholder-[#87919E] focus:outline-none focus:border-[#95BBE2] transition-colors"
+            placeholder="Buscar tarefas, clientes, POPs…"
+            className="flex-1 min-w-0 bg-transparent text-[12.5px] text-[#EBEBEB] placeholder-[#647488] focus:outline-none"
           />
+          <kbd className="font-mono text-[10.5px] text-[#a3b2c2] bg-white/[0.08] rounded-md px-1.5 py-0.5 flex-shrink-0">⌘K</kbd>
         </div>
       </div>
 
@@ -94,7 +95,7 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
             onClick={() => setUserMenuOpen(!userMenuOpen)}
             className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-lg hover:bg-[#38435C] transition-colors"
           >
-            <div className="w-8 h-8 rounded-full bg-[#38435C] flex items-center justify-center text-[#95BBE2] text-xs font-bold">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#54e0ee] to-[#0f7d8c] flex items-center justify-center text-[#021015] text-xs font-bold shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
               {initials}
             </div>
             <div className="text-left hidden sm:block">
