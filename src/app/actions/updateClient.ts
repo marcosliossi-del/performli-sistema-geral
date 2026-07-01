@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
+import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { slugify } from '@/lib/utils'
 import { BusinessType } from '@prisma/client'
 
@@ -25,10 +26,16 @@ export async function updateClient(
     businessType?: BusinessType | null
   }
 ): Promise<UpdateClientState> {
-  await requireSession()
+  const session = await requireSession()
 
   const client = await prisma.client.findUnique({ where: { id: clientId }, select: { slug: true, name: true } })
   if (!client) return { error: 'Cliente não encontrado.' }
+
+  try {
+    await assertClientMutationAccess(session, clientId)
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
 
   const updateData: Record<string, unknown> = {}
 
@@ -55,6 +62,16 @@ export async function updateClient(
 
   const updated = await prisma.client.update({ where: { id: clientId }, data: updateData })
 
+  await writeAuditLog({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: 'client.update',
+    entityType: 'Client',
+    entityId: clientId,
+    clientId,
+    metadata: { fields: Object.keys(updateData) },
+  })
+
   revalidatePath(`/clients/${updated.slug}`)
   revalidatePath('/clients')
   return { success: true, slug: updated.slug }
@@ -64,12 +81,30 @@ export async function bulkSetBusinessType(
   clientIds: string[],
   businessType: BusinessType
 ): Promise<{ updated: number; error?: string }> {
-  await requireSession()
+  const session = await requireSession()
   if (clientIds.length === 0) return { updated: 0 }
+
+  // Posse: só altera clientes que o papel permite mutar (ADMIN todos; MANAGER só atribuídos).
+  try {
+    for (const id of clientIds) {
+      await assertClientMutationAccess(session, id)
+    }
+  } catch (e) {
+    return { updated: 0, error: (e as Error).message }
+  }
 
   await prisma.client.updateMany({
     where: { id: { in: clientIds } },
     data:  { businessType },
+  })
+
+  await writeAuditLog({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: 'client.bulk_business_type',
+    entityType: 'Client',
+    entityId: clientIds.join(','),
+    metadata: { businessType, count: clientIds.length },
   })
 
   revalidatePath('/clients')
