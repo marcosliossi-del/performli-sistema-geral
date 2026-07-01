@@ -79,6 +79,20 @@
   --color-brand: var(--ak-brand);
   --color-brand-strong: var(--ak-brand-2);
 
+  /* ─── Tokens SEMÂNTICOS (cor = sinal) — usar nas telas novas ───
+     Geram utilitários: bg-danger, text-warning, border-success, text-info,
+     bg-surface, bg-surface-raised, text-text-hi/mid/low, etc.
+     Mapeiam os --ak-* existentes (NÃO criam cores novas). */
+  --color-danger:         var(--ak-red);
+  --color-warning:        var(--ak-amber);
+  --color-success:        var(--ak-green);
+  --color-info:           var(--ak-brand);
+  --color-surface:        var(--ak-s2);
+  --color-surface-raised: var(--ak-s3);
+  --color-text-hi:        var(--ak-hi);
+  --color-text-mid:       var(--ak-mid);
+  --color-text-low:       var(--ak-low);
+
   /* Fonte do sistema = San Francisco (iOS) via -apple-system, sem download (rápido).
      Inter é o fallback quase idêntico em quem não é Apple. Vira o padrão do Tailwind. */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, "Segoe UI", system-ui, sans-serif;
@@ -184,6 +198,12 @@ body::before {
 /* ═══════════════════════════════════════════════════════════════════════════
    OVERRIDES DE PALETA (regras sem @layer vencem as utilities do Tailwind)
    Remapeia as cores antigas (azul-marinho + sky) para a paleta Arkza (Apple).
+
+   ⚠️ LISTA CONGELADA (Fase 4 da auditoria UX). Não adicionar novos overrides de
+   hex cru aqui. Telas NOVAS devem usar os utilitários SEMÂNTICOS do @theme
+   (bg-danger, text-warning, text-success, text-info, bg-surface,
+   bg-surface-raised, text-text-hi/mid/low, ...). Esta allow-list existe só para
+   retematizar as telas legadas que ainda carregam hex antigos.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Superfícies */

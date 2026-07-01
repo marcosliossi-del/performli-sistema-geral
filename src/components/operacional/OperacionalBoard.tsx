@@ -106,7 +106,7 @@ function Avatar({ name }: { name: string }) {
   )
 }
 function HealthDot({ h }: { h: OperacionalTask['clientHealth'] }) {
-  const c = h === 'OTIMO' ? 'bg-[#34c97a]' : h === 'REGULAR' ? 'bg-[#e3ad45]' : h === 'RUIM' ? 'bg-[#ff3b4e]' : 'bg-[#647488]'
+  const c = h === 'OTIMO' ? 'bg-success' : h === 'REGULAR' ? 'bg-warning' : h === 'RUIM' ? 'bg-danger' : 'bg-[#647488]'
   return <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${c}`} />
 }
 function StatusBadge({ s }: { s: string }) {
