@@ -18,6 +18,7 @@ import { toast } from '@/lib/toast'
 import {
   STATUS_LABELS, STATUS_COLORS, STATUS_OPTIONS, PRIORITY_LABELS, PRIORITY_COLORS, TYPE_LABELS, label,
 } from './labels'
+import { useModalA11y } from '@/lib/useModalA11y'
 
 type Tab = 'comentarios' | 'atividade' | 'anexos'
 
@@ -36,6 +37,7 @@ export function TaskDrawer({
   const [actionError, setActionError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('comentarios')
   const [isPending, startTransition] = useTransition()
+  const dialogRef = useModalA11y<HTMLElement>(onClose)
 
   useEffect(() => {
     if (!task) { setDetail(null); return }
@@ -96,7 +98,13 @@ export function TaskDrawer({
   return (
     <>
       <div className="ak-scrim fixed inset-0 bg-black/55 z-40" onClick={onClose} />
-      <aside className="ak-drawer ak-glass-strong fixed right-0 top-0 h-screen w-full max-w-[580px] border-l border-[#38435C] z-50 flex flex-col shadow-[-20px_0_60px_rgba(0,0,0,0.4)]">
+      <aside
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Tarefa: ${task.title}`}
+        className="ak-drawer ak-glass-strong fixed right-0 top-0 h-screen w-full max-w-[580px] border-l border-[#38435C] z-50 flex flex-col shadow-[-20px_0_60px_rgba(0,0,0,0.4)]"
+      >
         {/* ── Topo: breadcrumb + título + controles ── */}
         <div className="px-5 py-4 border-b border-[#38435C]">
           <div className="flex items-start justify-between gap-3">

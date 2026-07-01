@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Plus, X, Target, Calendar } from 'lucide-react'
 import { createGoal } from '@/app/actions/goals'
 import { BusinessType } from '@prisma/client'
+import { useModalA11y } from '@/lib/useModalA11y'
 
 const ECOMMERCE_WEEKLY = [
   { value: 'ROAS',          label: 'ROAS',                      hint: 'ex: 4.0'   },
@@ -80,16 +81,6 @@ function getMonthBounds() {
 
 export function GoalFormModal({ clientId, businessType, label, icon }: GoalFormModalProps) {
   const [open, setOpen] = useState(false)
-  const [period, setPeriod] = useState<'WEEKLY' | 'MONTHLY'>('MONTHLY')
-  const [state, formAction, pending] = useActionState(createGoal, initialState)
-
-  if (state.success && open) setOpen(false)
-
-  const isLocal = businessType === 'LOCAL'
-  const metrics = period === 'MONTHLY'
-    ? (isLocal ? LOCAL_MONTHLY : ECOMMERCE_MONTHLY)
-    : (isLocal ? LOCAL_WEEKLY  : ECOMMERCE_WEEKLY)
-  const { start: monthStart, end: monthEnd } = getMonthBounds()
 
   return (
     <>
@@ -109,17 +100,43 @@ export function GoalFormModal({ clientId, businessType, label, icon }: GoalFormM
       )}
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
+        <GoalFormDialog clientId={clientId} businessType={businessType} onClose={() => setOpen(false)} />
+      )}
+    </>
+  )
+}
 
-          <div className="relative w-full max-w-md bg-[#0A1E2C] border border-[#38435C] rounded-2xl shadow-2xl">
+function GoalFormDialog({ clientId, businessType, onClose }: { clientId: string; businessType?: BusinessType; onClose: () => void }) {
+  const [period, setPeriod] = useState<'WEEKLY' | 'MONTHLY'>('MONTHLY')
+  const [state, formAction, pending] = useActionState(createGoal, initialState)
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose)
+
+  if (state.success) onClose()
+
+  const isLocal = businessType === 'LOCAL'
+  const metrics = period === 'MONTHLY'
+    ? (isLocal ? LOCAL_MONTHLY : ECOMMERCE_MONTHLY)
+    : (isLocal ? LOCAL_WEEKLY  : ECOMMERCE_WEEKLY)
+  const { start: monthStart, end: monthEnd } = getMonthBounds()
+
+  return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Nova Meta"
+            className="relative w-full max-w-md bg-[#0A1E2C] border border-[#38435C] rounded-2xl shadow-2xl"
+          >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#38435C]">
               <div className="flex items-center gap-2">
                 <Target size={16} className="text-[#95BBE2]" />
                 <h2 className="text-sm font-semibold text-[#EBEBEB]">Nova Meta</h2>
               </div>
-              <button onClick={() => setOpen(false)} className="text-[#87919E] hover:text-[#EBEBEB] transition-colors">
+              <button onClick={onClose} className="text-[#87919E] hover:text-[#EBEBEB] transition-colors">
                 <X size={16} />
               </button>
             </div>
@@ -228,7 +245,7 @@ export function GoalFormModal({ clientId, businessType, label, icon }: GoalFormM
               )}
 
               <div className="flex gap-2 pt-1">
-                <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
+                <Button type="button" variant="outline" className="flex-1" onClick={onClose}>
                   Cancelar
                 </Button>
                 <Button type="submit" disabled={pending} className="flex-1">
@@ -238,7 +255,5 @@ export function GoalFormModal({ clientId, businessType, label, icon }: GoalFormM
             </form>
           </div>
         </div>
-      )}
-    </>
   )
 }

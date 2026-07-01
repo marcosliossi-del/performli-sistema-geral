@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from 'react'
 import { X, Loader2 } from 'lucide-react'
 import { createContract, updateContract, ContractRow } from '@/app/actions/contracts'
 import { ContractStatus, ContractType } from '@prisma/client'
+import { useModalA11y } from '@/lib/useModalA11y'
 
 type Client = { id: string; name: string }
 type User   = { id: string; name: string }
@@ -43,6 +44,7 @@ export function ContractFormModal({ clients, users, contract, defaultClientId, o
   const [durationMonths, setDurationMonths] = useState<string>('')
   const [startDate, setStartDate] = useState(toDateInput(contract?.startDate) || '')
   const [endDate, setEndDate]     = useState(toDateInput(contract?.endDate)   || '')
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose)
 
   useEffect(() => {
     if (state.ok) onSaved()
@@ -68,8 +70,17 @@ export function ContractFormModal({ clients, users, contract, defaultClientId, o
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={isEdit ? 'Editar Contrato' : 'Novo Contrato'}
+        className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#38435C]">
           <h2 className="text-base font-semibold text-[#EBEBEB]">

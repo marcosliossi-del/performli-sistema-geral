@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { Plus, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { linkGA4Account } from '@/app/actions/platformAccounts'
 import { useRouter } from 'next/navigation'
+import { useModalA11y } from '@/lib/useModalA11y'
 
 interface LinkGA4ModalProps {
   clientId: string
@@ -13,6 +14,23 @@ type Step = 'form' | 'linking' | 'done'
 
 export function LinkGA4Modal({ clientId }: LinkGA4ModalProps) {
   const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 text-xs text-[#E37400] hover:text-[#E37400]/80 transition-colors"
+      >
+        <Plus size={13} />
+        Vincular GA4
+      </button>
+
+      {open && <LinkGA4Dialog clientId={clientId} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+function LinkGA4Dialog({ clientId, onClose }: { clientId: string; onClose: () => void }) {
   const [step, setStep] = useState<Step>('form')
   const [propertyId, setPropertyId] = useState('')
   const [name, setName] = useState('')
@@ -20,18 +38,10 @@ export function LinkGA4Modal({ clientId }: LinkGA4ModalProps) {
   const [successName, setSuccessName] = useState<string | null>(null)
   const [, startTransition] = useTransition()
   const router = useRouter()
-
-  function reset() {
-    setStep('form')
-    setPropertyId('')
-    setName('')
-    setError(null)
-    setSuccessName(null)
-  }
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose)
 
   function close() {
-    setOpen(false)
-    reset()
+    onClose()
   }
 
   function handleLink() {
@@ -63,18 +73,17 @@ export function LinkGA4Modal({ clientId }: LinkGA4ModalProps) {
   }
 
   return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 text-xs text-[#E37400] hover:text-[#E37400]/80 transition-colors"
-      >
-        <Plus size={13} />
-        Vincular GA4
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) close() }}
+        >
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Vincular propriedade GA4"
+            className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl"
+          >
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#38435C]">
               <div>
                 <h2 className="text-[#EBEBEB] font-semibold">Vincular propriedade GA4</h2>
@@ -166,7 +175,5 @@ export function LinkGA4Modal({ clientId }: LinkGA4ModalProps) {
             </div>
           </div>
         </div>
-      )}
-    </>
   )
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { X, Loader2, UserCheck, Building2, Calendar, DollarSign, Target, User } from 'lucide-react'
 import type { Lead } from './types'
+import { useModalA11y } from '@/lib/useModalA11y'
 
 interface Member { id: string; name: string; role: string }
 
@@ -19,6 +20,7 @@ export function ConvertToClientModal({ lead, onClose, onConverted }: Props) {
   const [members,  setMembers]  = useState<Member[]>([])
   const [saving,   setSaving]   = useState(false)
   const [error,    setError]    = useState<string | null>(null)
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose)
 
   const today = new Date().toISOString().split('T')[0]
 
@@ -81,6 +83,10 @@ export function ConvertToClientModal({ lead, onClose, onConverted }: Props) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Converter em cliente"
         className="relative w-full max-w-lg bg-[#0D2137] border border-[#38435C] rounded-2xl shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
       >

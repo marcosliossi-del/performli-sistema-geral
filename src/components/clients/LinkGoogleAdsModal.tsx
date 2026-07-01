@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { validateGoogleAdsAccount, linkGoogleAdsAccount } from '@/app/actions/platformAccounts'
 import { useRouter } from 'next/navigation'
 import { Plus, Loader2, CheckCircle2, AlertCircle, X } from 'lucide-react'
+import { useModalA11y } from '@/lib/useModalA11y'
 
 interface Props {
   clientId: string
@@ -12,7 +13,24 @@ interface Props {
 type Step = 'form' | 'verifying' | 'done'
 
 export function LinkGoogleAdsModal({ clientId }: Props) {
-  const [open,        setOpen]        = useState(false)
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 text-xs bg-[#4285F4]/10 hover:bg-[#4285F4]/20 text-[#4285F4] border border-[#4285F4]/30 px-3 py-1.5 rounded-lg transition-colors"
+      >
+        <Plus size={12} />
+        Google Ads
+      </button>
+
+      {open && <LinkGoogleAdsDialog clientId={clientId} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+function LinkGoogleAdsDialog({ clientId, onClose }: { clientId: string; onClose: () => void }) {
   const [step,        setStep]        = useState<Step>('form')
   const [customerId,  setCustomerId]  = useState('')
   const [accountName, setAccountName] = useState('')
@@ -20,9 +38,9 @@ export function LinkGoogleAdsModal({ clientId }: Props) {
   const [successName, setSuccessName] = useState<string | null>(null)
   const [,            startTransition] = useTransition()
   const router = useRouter()
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose)
 
-  function reset() { setStep('form'); setCustomerId(''); setAccountName(''); setError(null); setSuccessName(null) }
-  function close()  { setOpen(false); reset() }
+  function close()  { onClose() }
 
   function handleLink() {
     const id = customerId.trim()
@@ -52,18 +70,17 @@ export function LinkGoogleAdsModal({ clientId }: Props) {
   }
 
   return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 text-xs bg-[#4285F4]/10 hover:bg-[#4285F4]/20 text-[#4285F4] border border-[#4285F4]/30 px-3 py-1.5 rounded-lg transition-colors"
-      >
-        <Plus size={12} />
-        Google Ads
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#0A1E2C] border border-[#38435C] rounded-xl w-full max-w-sm shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) close() }}
+        >
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Vincular Google Ads"
+            className="bg-[#0A1E2C] border border-[#38435C] rounded-xl w-full max-w-sm shadow-2xl"
+          >
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#38435C]">
               <div className="flex items-center gap-2">
                 <div className="w-5 h-5 rounded bg-[#4285F4]/20 flex items-center justify-center">
@@ -129,7 +146,5 @@ export function LinkGoogleAdsModal({ clientId }: Props) {
             </div>
           </div>
         </div>
-      )}
-    </>
   )
 }
