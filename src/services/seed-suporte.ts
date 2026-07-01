@@ -61,7 +61,7 @@ const ITEMS: SuporteItem[] = [
   { clickupId: '868k05w0t', title: 'CRIAR ESTRATÉGIA CRM - MICHELLE', clientAliases: ['Michelle Rossi'], assigneeExternalId: '81525390', dueDateMs: 1782889200000, priority: 'CRITICA', category: 'DEMANDA_DA_AGENCIA' },
   { clickupId: '868jxzegd', title: 'ENTREGA DO CALENDÁRIO DE DATAS SAZONAIS', clientAliases: null, assigneeExternalId: '87373550', dueDateMs: 1783234800000, priority: 'CRITICA', category: 'TRAFEGO' },
   { clickupId: '868jpak36', title: 'DR AUYBER - ENVIAR SALDO MENSAL', clientAliases: ['Dr. Auyber', 'Dr Auyber'], assigneeExternalId: '254576012', dueDateMs: 1783321200000, priority: 'CRITICA', category: 'TRAFEGO' },
-  { clickupId: '868jpajw5', title: 'DONNA SÔ - PIX', clientAliases: ['Donna Sô', 'Donna So', 'DonnaSo', 'Donna Sô Pastelaria'], assigneeExternalId: '254576012', dueDateMs: 1783321200000, priority: 'CRITICA', category: 'TRAFEGO' },
+  { clickupId: '868jpajw5', title: 'DONNA SÔ - PIX', clientAliases: ['Donna Sô', 'Donna So', 'DonnaSo', 'Donna Sô Pastelaria', 'DonnaSo Pastelaria'], assigneeExternalId: '254576012', dueDateMs: 1783321200000, priority: 'CRITICA', category: 'TRAFEGO' },
   { clickupId: '868jpajtn', title: 'BRAZOLLI - PIX', clientAliases: ['Brazolli', 'Brazolli Pizza & Burger'], assigneeExternalId: '254576012', dueDateMs: 1783321200000, priority: 'CRITICA', category: 'TRAFEGO' },
 ]
 
@@ -113,12 +113,8 @@ export async function importarSuporteClickUp(): Promise<ImportSuporteResult> {
 
       const existing = await prisma.task.findUnique({
         where: { idempotencyKey },
-        select: { id: true },
+        select: { id: true, clientId: true },
       })
-      if (existing) {
-        result.puladas++
-        continue
-      }
 
       // Cliente por matching de nome (aliases).
       let clientId: string | null = null
@@ -128,6 +124,16 @@ export async function importarSuporteClickUp(): Promise<ImportSuporteResult> {
           if (hit) { clientId = hit; break }
         }
         if (!clientId) result.semCliente.push(`${item.title} (${item.clientAliases[0]})`)
+      }
+
+      if (existing) {
+        // Cura re-execuções: se a demanda foi importada sem cliente e agora o
+        // nome casa (alias corrigido / cliente criado depois), vincula.
+        if (!existing.clientId && clientId) {
+          await prisma.task.update({ where: { id: existing.id }, data: { clientId } })
+        }
+        result.puladas++
+        continue
       }
 
       // Responsável: externalId → CS do cliente → Marcos (ADMIN).

@@ -66,8 +66,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (phase === 'carteiras') {
-      const carteiras = await seedCarteiras()
+      // Novos clientes ANTES do preenchimento — assim a mesma rodada já
+      // preenche gestor/metas dos recém-criados (Tayna, Duplo Varejo etc.).
       const novos = await createNovosClientes()
+      const carteiras = await seedCarteiras()
       const candidates = await getCancelCandidates()
       return NextResponse.json({ ok: true, phase, carteiras, novos, candidates })
     }
