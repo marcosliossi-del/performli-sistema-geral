@@ -17,6 +17,7 @@ export function SeedOperacaoCard() {
   const [progress, setProgress] = useState<string | null>(null)
   const [seed, setSeed] = useState<SeedCounts | null>(null)
   const [tally, setTally] = useState<{ created: number; skipped: number; failed: number } | null>(null)
+  const [semGestor, setSemGestor] = useState<{ name: string; slug: string }[] | null>(null)
 
   async function post(qs: string) {
     const res = await fetch(`/api/admin/seed-operacao${qs}`, { method: 'POST' })
@@ -29,6 +30,7 @@ export function SeedOperacaoCard() {
     setLoading(true)
     setProgress(null)
     setTally(null)
+    setSemGestor(null)
     try {
       // Fase 1 — seed (rápido): time + templates + recorrências.
       const seedRes = await post('?phase=seed')
@@ -56,6 +58,14 @@ export function SeedOperacaoCard() {
         setProgress(total ? `${Math.min(processed, total)}/${total} clientes` : `${processed} clientes`)
         setTally({ ...acc })
         if (r.done) break
+      }
+
+      // Se houve falhas, mostra quais clientes estão sem gestor (causa comum).
+      if (acc.failed > 0) {
+        try {
+          const diag = await post('?phase=diagnostico')
+          setSemGestor(diag.semGestor ?? [])
+        } catch { /* diagnóstico é best-effort */ }
       }
 
       toast('Tarefas geradas nos clientes ativos.', 'ok')
@@ -115,6 +125,28 @@ export function SeedOperacaoCard() {
               {' · '}falhas: <span className="text-[#EBEBEB]">{tally.failed}</span>
             </p>
           )}
+        </div>
+      )}
+
+      {semGestor && semGestor.length > 0 && (
+        <div className="mt-4 border border-[#F59E0B]/30 bg-[#F59E0B]/5 rounded-lg p-3">
+          <p className="text-xs font-semibold text-[#F59E0B] mb-1">
+            {semGestor.length} cliente{semGestor.length > 1 ? 's' : ''} sem gestor atribuído
+          </p>
+          <p className="text-[11px] text-[#87919E] mb-2">
+            As tarefas de tráfego desses clientes falham até um gestor ser definido no card do cliente.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {semGestor.map((c) => (
+              <a
+                key={c.slug}
+                href={`/clients/${c.slug}`}
+                className="text-[11px] px-2 py-0.5 rounded-full bg-[#38435C]/60 text-[#EBEBEB] hover:bg-[#38435C] transition-colors"
+              >
+                {c.name}
+              </a>
+            ))}
+          </div>
         </div>
       )}
     </div>

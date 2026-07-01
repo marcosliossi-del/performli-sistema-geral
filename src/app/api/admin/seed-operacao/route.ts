@@ -63,6 +63,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, phase, processed: clients.length, created, skipped, failed, lastId, done })
     }
 
+    if (phase === 'diagnostico') {
+      // Clientes ativos sem gestor resolvível (nem gestorId, nem atribuição
+      // primária) — são a causa das falhas dos templates de gestor.
+      const clients = await prisma.client.findMany({
+        where: {
+          status: 'ACTIVE',
+          gestorId: null,
+          assignments: { none: { isPrimary: true } },
+        },
+        orderBy: { name: 'asc' },
+        select: { name: true, slug: true },
+      })
+      return NextResponse.json({ ok: true, phase, semGestor: clients })
+    }
+
     // phase === 'seed'
     const seed = await seedOperacaoArkza()
     const totalActiveClients = await prisma.client.count({ where: { status: 'ACTIVE' } })
