@@ -301,3 +301,12 @@ input, select, textarea { border-radius: 10px; }
 a:focus-visible, button:focus-visible, [role="button"]:focus-visible {
   outline: 2px solid rgba(var(--ak-brand-rgb), .55); outline-offset: 2px; border-radius: 8px;
 }
+
+/* Skeleton shimmer (carregamento) */
+@keyframes ak-shimmer { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
+.ak-skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,.04) 25%, rgba(255,255,255,.09) 37%, rgba(255,255,255,.04) 63%);
+  background-size: 200% 100%;
+  animation: ak-shimmer 1.4s ease infinite;
+  border-radius: 8px;
+}
