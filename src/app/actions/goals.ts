@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
+import { assertClientMutationAccess } from '@/lib/audit'
 import { MetricType } from '@prisma/client'
 import { getWeekRange, getMonthRange } from '@/lib/utils'
 
@@ -202,7 +203,7 @@ export type GoalState = {
 }
 
 export async function createGoal(prevState: GoalState, formData: FormData): Promise<GoalState> {
-  await requireSession()
+  const session = await requireSession()
 
   const clientId   = formData.get('clientId') as string
   const metric     = formData.get('metric') as string
@@ -232,6 +233,12 @@ export async function createGoal(prevState: GoalState, formData: FormData): Prom
     select: { slug: true },
   })
   if (!client) return { error: 'Cliente não encontrado.' }
+
+  try {
+    await assertClientMutationAccess(session, clientId)
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
 
   const period = periodRaw === 'MONTHLY' ? 'MONTHLY' : 'WEEKLY'
 
