@@ -51,3 +51,22 @@ export async function escalateOverdueTasks(): Promise<{ checked: number; escalat
 
   return { checked: tasks.length, escalated, failed }
 }
+
+/**
+ * Marca como ATRASADO tarefas vencidas que ainda não foram iniciadas nem
+ * concluídas. Conservador: só transiciona A_FAZER e AJUSTES_SOLICITADOS (sinal
+ * claro de "deveria estar feita e não está"), sem tocar em tarefas EM_ANDAMENTO,
+ * EM_VALIDACAO, AGUARDANDO_* ou BLOQUEADO (estados intencionais). Roda no cron
+ * diário ANTES da escalação. Idempotente (updateMany por condição).
+ */
+export async function markOverdueTasks(): Promise<{ marked: number }> {
+  const now = new Date()
+  const res = await prisma.task.updateMany({
+    where: {
+      dueDate: { lt: now },
+      status: { in: ['A_FAZER', 'AJUSTES_SOLICITADOS'] },
+    },
+    data: { status: 'ATRASADO' },
+  })
+  return { marked: res.count }
+}

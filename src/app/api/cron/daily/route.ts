@@ -16,7 +16,7 @@ import { escalateStaleWarRooms } from '@/services/warroom-escalation'
 import { monitorWarRooms } from '@/services/warroom-monitor'
 import { checkInadimplencia } from '@/services/inadimplencia-checker'
 import { checkLeadFollowups } from '@/services/lead-followup-checker'
-import { escalateOverdueTasks } from '@/services/task-escalation'
+import { escalateOverdueTasks, markOverdueTasks } from '@/services/task-escalation'
 import { detectSilentAtRiskClients } from '@/services/antichurn-monitor'
 import { checkCheckins } from '@/services/checkin-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/app/actions/goals'
@@ -218,6 +218,14 @@ async function runDailySync() {
     summary.leadFollowups = { ok: true, ...followupResult }
   } catch (err) {
     summary.leadFollowups = { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+
+  // ── Step 5d.5: Marca tarefas vencidas como ATRASADO (antes de escalar) ─────
+  try {
+    const overdueResult = await markOverdueTasks()
+    summary.markOverdue = { ok: true, ...overdueResult }
+  } catch (err) {
+    summary.markOverdue = { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 
   // ── Step 5e: Escalonamento de tarefas atrasadas (2+ dias) ──────────────────
