@@ -1,5 +1,19 @@
 import { APP_URL } from './email'
 
+/**
+ * Escapa caracteres perigosos antes de interpolar dados dinâmicos (nome de
+ * cliente, mensagem de erro, plataforma) no HTML do e-mail — evita HTML/CSS
+ * injection a partir de valores vindos de integrações ou cadastro.
+ */
+function esc(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 const BRAND = {
   meianoite: '#05141C',
   classico: '#38435C',
@@ -70,7 +84,7 @@ export function alertDroppedEmail(opts: {
       Alerta de saúde do cliente
     </h2>
     <p style="margin:0 0 24px;font-size:14px;color:${BRAND.nanquim};">
-      ${opts.clientName} · ${opts.metricLabel}
+      ${esc(opts.clientName)} · ${esc(opts.metricLabel)}
     </p>
 
     <div style="background-color:${statusColor}18;border:1px solid ${statusColor}40;border-radius:12px;padding:16px 20px;margin-bottom:24px;">
@@ -126,7 +140,7 @@ export function alertImprovedEmail(opts: {
       Meta atingida! 🎉
     </h2>
     <p style="margin:0 0 24px;font-size:14px;color:${BRAND.nanquim};">
-      ${opts.clientName} · ${opts.metricLabel}
+      ${esc(opts.clientName)} · ${esc(opts.metricLabel)}
     </p>
 
     <div style="background-color:#22C55E18;border:1px solid #22C55E40;border-radius:12px;padding:16px 20px;margin-bottom:24px;text-align:center;">
@@ -158,12 +172,12 @@ export function syncFailedEmail(opts: {
       Falha na sincronização
     </h2>
     <p style="margin:0 0 24px;font-size:14px;color:${BRAND.nanquim};">
-      ${opts.clientName} · ${opts.platform}
+      ${esc(opts.clientName)} · ${esc(opts.platform)}
     </p>
 
     <div style="background-color:#EF444418;border:1px solid #EF444440;border-radius:12px;padding:16px 20px;margin-bottom:24px;">
       <p style="margin:0 0 6px;font-size:12px;color:${BRAND.nanquim};">Erro</p>
-      <p style="margin:0;font-size:13px;color:#EF4444;font-family:monospace;">${opts.errorMessage}</p>
+      <p style="margin:0;font-size:13px;color:#EF4444;font-family:monospace;">${esc(opts.errorMessage)}</p>
     </div>
 
     <a href="${clientUrl}" style="display:block;background-color:${BRAND.ceu};color:${BRAND.meianoite};text-decoration:none;text-align:center;font-weight:700;font-size:14px;padding:14px;border-radius:12px;">

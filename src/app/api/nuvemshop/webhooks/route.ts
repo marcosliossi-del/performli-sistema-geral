@@ -196,6 +196,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`Nuvemshop webhook error (${event}):`, msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    // Não vaza detalhes internos na resposta HTTP; o log guarda o erro real.
+    return NextResponse.json({ error: 'Erro ao processar webhook' }, { status: 500 })
   }
 }

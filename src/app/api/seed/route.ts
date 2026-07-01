@@ -118,6 +118,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, message: 'Seed concluído com sucesso!' })
   } catch (err) {
     console.error('[seed]', err)
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    // Não vaza detalhes internos; o log guarda o erro real.
+    return NextResponse.json({ error: 'Erro ao executar seed' }, { status: 500 })
   }
 }
