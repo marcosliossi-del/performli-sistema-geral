@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && npm run migrate:deploy && next build",
-    "migrate:deploy": "prisma migrate deploy || (echo 'retry migrate em 12s (cold-start do banco)' && sleep 12 && prisma migrate deploy) || (echo 'retry migrate em 25s' && sleep 25 && prisma migrate deploy)",
+    "migrate:deploy": "npm run migrate:unblock && (prisma migrate deploy || (echo 'retry migrate em 12s (cold-start do banco)' && sleep 12 && prisma migrate deploy) || (echo 'retry migrate em 25s' && sleep 25 && prisma migrate deploy))",
+    "migrate:unblock": "prisma migrate resolve --rolled-back 20260702000000_tasks_clickup_class || true",
     "start": "next start",
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts"
