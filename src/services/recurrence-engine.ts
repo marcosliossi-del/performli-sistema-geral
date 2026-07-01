@@ -17,6 +17,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getWeekRange } from '@/lib/utils'
+import type { TaskType, TaskPriority, TaskStatus } from '@prisma/client'
 
 // Papéis suportados pelo fan-out por cliente ativo.
 const CLIENT_FANOUT_ROLES = new Set(['GESTOR', 'MANAGER', 'CS', 'CRM', 'SUPERVISOR', 'HEAD'])
@@ -129,9 +130,9 @@ type RuleWithTemplate = {
     name: string
     active: boolean
     defaultAssigneeRole: string | null
-    defaultType: any
-    defaultPriority: any
-    defaultStatus: any
+    defaultType: TaskType
+    defaultPriority: TaskPriority
+    defaultStatus: TaskStatus
     relativeDueDays: number | null
     slaHours: number | null
     areaId: string | null
