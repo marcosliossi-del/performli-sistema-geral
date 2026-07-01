@@ -121,24 +121,27 @@ function resolveAssignee(role: string, c: FanoutClient, fb: RoleFallbacks): stri
   }
 }
 
-// Tipos mínimos compartilhados pelo helper de criação. Aceita o template com steps.
-type RuleWithTemplate = {
+// Tipos mínimos compartilhados pelo helper de criação. O helper recebe rule e
+// template SEPARADOS (o template já não-nulo, garantido pelo chamador), então o
+// tipo da regra só precisa de id + frequency (evita o mismatch com template anulável).
+type RuleRef = {
   id: string
   frequency: string
-  template: {
-    id: string
-    name: string
-    active: boolean
-    defaultAssigneeRole: string | null
-    defaultType: TaskType
-    defaultPriority: TaskPriority
-    defaultStatus: TaskStatus
-    relativeDueDays: number | null
-    slaHours: number | null
-    areaId: string | null
-    popId: string | null
-    steps: { label: string; required: boolean; order: number }[]
-  }
+}
+
+type TemplateWithSteps = {
+  id: string
+  name: string
+  active: boolean
+  defaultAssigneeRole: string | null
+  defaultType: TaskType
+  defaultPriority: TaskPriority
+  defaultStatus: TaskStatus
+  relativeDueDays: number | null
+  slaHours: number | null
+  areaId: string | null
+  popId: string | null
+  steps: { label: string; required: boolean; order: number }[]
 }
 
 /**
@@ -148,8 +151,8 @@ type RuleWithTemplate = {
  * os desfechos (sucesso / duplicidade evitada / falha). NÃO lança.
  */
 async function createTaskForClientRule(
-  rule: RuleWithTemplate,
-  tpl: RuleWithTemplate['template'],
+  rule: RuleRef,
+  tpl: TemplateWithSteps,
   client: FanoutClient,
   fallbacks: RoleFallbacks,
   now: Date,
