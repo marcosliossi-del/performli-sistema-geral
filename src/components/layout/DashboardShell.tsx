@@ -13,9 +13,11 @@ interface DashboardShellProps {
   session: SessionPayload
   unreadAlerts: number
   counts?: SidebarCounts
+  /** Destino do logo — home do perfil (pouso). */
+  homeHref: string
 }
 
-export function DashboardShell({ children, session, unreadAlerts, counts }: DashboardShellProps) {
+export function DashboardShell({ children, session, unreadAlerts, counts, homeHref }: DashboardShellProps) {
   const [viewMode, setViewMode] = useState<'ADMIN' | 'GESTOR'>(
     session.role === 'ADMIN' ? 'ADMIN' : 'GESTOR'
   )
@@ -36,7 +38,7 @@ export function DashboardShell({ children, session, unreadAlerts, counts }: Dash
   return (
     <div className="ak-app-bg flex h-screen overflow-hidden bg-[#05141C] print:block print:h-auto print:bg-white">
       <div className="print:hidden">
-        <Sidebar role={session.role} counts={counts} />
+        <Sidebar role={session.role} counts={counts} homeHref={homeHref} />
       </div>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden print:block print:overflow-visible">
         <div className="print:hidden">

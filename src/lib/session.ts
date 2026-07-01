@@ -1,12 +1,16 @@
 import 'server-only'
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
+import type { OperationalRole } from '@prisma/client'
 
 export type SessionPayload = {
   userId: string
   name: string
   email: string
   role: 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS'
+  // Papel operacional (rotina Arkza) — só para roteamento/pouso por perfil.
+  // Opcional: sessões antigas não têm o campo e caem no fallback por role.
+  operationalRole?: OperationalRole | null
   expiresAt: string
 }
 

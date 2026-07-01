@@ -162,16 +162,18 @@ type Counts = Partial<Record<CountKey, number>>
 interface SidebarProps {
   role: Role
   counts?: Counts
+  /** Destino do logo — home do perfil (pouso). Default defensivo: /cockpit. */
+  homeHref?: string
 }
 
-export function Sidebar({ role, counts }: SidebarProps) {
+export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
   const pathname = usePathname()
 
   return (
     <aside className="ak-sidebar w-60 flex-shrink-0 h-screen sticky top-0 bg-[#0A1E2C] border-r border-[#38435C] flex flex-col">
       {/* Logo */}
       <div className="h-16 flex items-center px-5 border-b border-[#38435C]">
-        <Link href="/cockpit" className="flex items-center gap-2.5">
+        <Link href={homeHref} className="flex items-center gap-2.5">
           <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M50 5L90 28V72L50 95L10 72V28L50 5Z" fill="none" stroke="#54e0ee" strokeWidth="6"/>
             <path d="M50 5L50 50M50 50L90 28M50 50L10 28" stroke="#54e0ee" strokeWidth="4"/>

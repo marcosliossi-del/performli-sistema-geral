@@ -36,7 +36,9 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isPublic && isAuthenticated) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+    // Manda p/ a raiz — a page.tsx decide o pouso por perfil (não buscar
+    // banco aqui: middleware roda no edge).
+    return NextResponse.redirect(new URL('/', request.url))
   }
 
   return NextResponse.next()

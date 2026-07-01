@@ -5,6 +5,7 @@ import { headers } from 'next/headers'
 import { verifyCredentials } from '@/lib/auth'
 import { createSession, deleteSession } from '@/lib/session'
 import { checkRateLimit } from '@/lib/rate-limit'
+import { homeForUser } from '@/lib/home'
 
 export type LoginState = {
   error?: string
@@ -36,9 +37,11 @@ export async function login(prevState: LoginState, formData: FormData): Promise<
     name: result.user.name,
     email: result.user.email,
     role: result.user.role,
+    operationalRole: result.user.operationalRole,
   })
 
-  redirect('/dashboard')
+  // Pouso por perfil: cada papel entra na SUA tela.
+  redirect(homeForUser(result.user.role, result.user.operationalRole))
 }
 
 export async function logout() {
