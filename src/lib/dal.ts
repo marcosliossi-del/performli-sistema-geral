@@ -3308,3 +3308,93 @@ export const getSidebarCounts = cache(
     return { meuDia, abertas, checkins, validacoes, warRooms, alertas }
   },
 )
+
+// ─── BLOCO 7 — Aceite operacional (integridade: o que pode quebrar silenciosamente) ──
+
+export type AceiteSignal = {
+  key: string
+  label: string          // o que é
+  count: number
+  problema: string       // o que está errado / o porquê
+  acao: string           // o que fazer agora
+  href: string
+  severity: 'critico' | 'atencao' | 'ok'
+}
+
+export type AceiteOperacional = {
+  signals: AceiteSignal[]
+  geradoEm: Date
+}
+
+const HOT_LEAD_STATUSES = ['EM_CONTATO', 'REUNIAO_AGENDADA', 'PROPOSTA_ENVIADA', 'PROPOSTA_ACEITA'] as const
+
+/**
+ * Aceite operacional: cruza os sinais que indicam processo quebrando sem ninguém
+ * ver — atraso, falta de dono, falta de evidência, War Room sem critério, rotina
+ * que não rodou, lead esquecido. Role-scoped.
+ */
+export const getAceiteOperacional = cache(
+  async (userId: string, role: string): Promise<AceiteOperacional> => {
+    const viewAll = canViewAll(role)
+    const now = new Date()
+    const taskScope: Prisma.TaskWhereInput = viewAll
+      ? {}
+      : { OR: [{ assignedTo: userId }, { client: { assignments: { some: { userId } } } }] }
+    const clientScope: Prisma.ClientWhereInput = viewAll ? {} : { assignments: { some: { userId } } }
+    const openStatus: Prisma.TaskWhereInput['status'] = { notIn: ['CONCLUIDO', 'CANCELADO'] }
+    const d30 = new Date(now.getTime() - 30 * 86_400_000)
+    const d8 = new Date(now.getTime() - 8 * 86_400_000)
+    const d1 = new Date(now.getTime() - 86_400_000)
+    const d3 = new Date(now.getTime() - 3 * 86_400_000)
+
+    const [
+      atrasadas, semGestor, semEvidencia, warRoomSemCriterio, rotinasParadas, automacaoFalhas, leadsParados,
+    ] = await Promise.all([
+      prisma.task.count({ where: { ...taskScope, status: openStatus, dueDate: { lt: now } } }),
+      viewAll
+        ? prisma.client.count({ where: { status: 'ACTIVE', assignments: { none: {} } } })
+        : Promise.resolve(0),
+      prisma.task.count({
+        where: { ...taskScope, status: 'CONCLUIDO', evidence: null, completedAt: { gte: d30 }, pop: { code: { in: ['OPE-06', 'OPE-07'] } } },
+      }),
+      prisma.criticalProtocol.count({ where: { status: { not: 'ENCERRADO' }, exitCriteria: null, client: clientScope } }),
+      viewAll
+        ? prisma.taskRecurrenceRule.count({ where: { active: true, OR: [{ lastRunAt: null }, { lastRunAt: { lt: d8 } }] } })
+        : Promise.resolve(0),
+      viewAll
+        ? prisma.automationLog.count({ where: { status: 'FALHA', createdAt: { gte: d1 } } })
+        : Promise.resolve(0),
+      viewAll
+        ? prisma.agencyLead.count({
+            where: {
+              status: { in: [...HOT_LEAD_STATUSES] },
+              deletedAt: null,
+              convertedClientId: null,
+              activities: { none: { occurredAt: { gte: d3 } } },
+            },
+          })
+        : Promise.resolve(0),
+    ])
+
+    const sev = (n: number, crit = 1): AceiteSignal['severity'] => (n === 0 ? 'ok' : n >= crit ? 'critico' : 'atencao')
+
+    const signals: AceiteSignal[] = [
+      { key: 'atrasadas', label: 'Tarefas atrasadas', count: atrasadas, severity: atrasadas > 0 ? 'critico' : 'ok',
+        problema: 'Passaram do prazo e seguem abertas', acao: 'Resolver ou repactuar o prazo', href: '/operacional' },
+      { key: 'semEvidencia', label: 'Concluídas sem evidência', count: semEvidencia, severity: semEvidencia > 0 ? 'atencao' : 'ok',
+        problema: 'Check-in/prestação marcado como pronto sem comprovação', acao: 'Cobrar a evidência do responsável', href: '/operacional' },
+      { key: 'warRoomSemCriterio', label: 'War Room sem critério de saída', count: warRoomSemCriterio, severity: sev(warRoomSemCriterio),
+        problema: 'Conta crítica sem definição de quando sai do vermelho', acao: 'Definir critério de saída mensurável', href: '/anti-churn' },
+      { key: 'leadsParados', label: 'Leads quentes parados', count: leadsParados, severity: leadsParados > 0 ? 'atencao' : 'ok',
+        problema: 'Em negociação e sem contato há 3+ dias', acao: 'Fazer o próximo follow-up', href: '/comercial' },
+      { key: 'semGestor', label: 'Clientes sem gestor', count: semGestor, severity: sev(semGestor),
+        problema: 'Cliente ativo sem responsável atribuído', acao: 'Atribuir um gestor primário', href: '/clients' },
+      { key: 'rotinasParadas', label: 'Rotinas que não rodaram', count: rotinasParadas, severity: sev(rotinasParadas),
+        problema: 'Recorrência ativa sem execução recente', acao: 'Verificar o cron de recorrências', href: '/processos' },
+      { key: 'automacaoFalhas', label: 'Falhas de automação (24h)', count: automacaoFalhas, severity: automacaoFalhas > 0 ? 'atencao' : 'ok',
+        problema: 'Automações falharam nas últimas 24h', acao: 'Revisar os logs de automação', href: '/processos' },
+    ]
+
+    return { signals, geradoEm: now }
+  },
+)
