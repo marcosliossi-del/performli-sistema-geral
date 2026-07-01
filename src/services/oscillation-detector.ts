@@ -189,6 +189,7 @@ export async function detectOscillationsForClient(clientId: string): Promise<num
 export async function detectOscillationsForAll(): Promise<{
   clientsProcessed: number
   totalAlerts: number
+  failed: number
 }> {
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
@@ -196,10 +197,17 @@ export async function detectOscillationsForAll(): Promise<{
   })
 
   let totalAlerts = 0
+  let failed = 0
+  // Resiliência (CLAUDE.md regra 7): isola cada cliente; falha de um não derruba a rotina.
   for (const client of clients) {
-    const alerts = await detectOscillationsForClient(client.id)
-    totalAlerts += alerts
+    try {
+      const alerts = await detectOscillationsForClient(client.id)
+      totalAlerts += alerts
+    } catch (err) {
+      failed++
+      console.error(`[oscillation-detector] falha no cliente ${client.id}:`, err)
+    }
   }
 
-  return { clientsProcessed: clients.length, totalAlerts }
+  return { clientsProcessed: clients.length, totalAlerts, failed }
 }

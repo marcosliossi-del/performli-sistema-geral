@@ -20,6 +20,7 @@ import { AlertType } from '@prisma/client'
 export async function detectCriticalAccounts(): Promise<{
   clientsChecked: number
   alertsFired: number
+  failed: number
 }> {
   const today = new Date()
   const dayOfMonth = today.getDate()
@@ -42,8 +43,11 @@ export async function detectCriticalAccounts(): Promise<{
   })
 
   let alertsFired = 0
+  let failed = 0
 
+  // Resiliência (CLAUDE.md regra 7): isola cada cliente; falha de um não derruba a rotina.
   for (const client of clients) {
+   try {
     const managerName = client.assignments[0]?.user?.name ?? 'Sem Gestor'
 
     // ── Gatilho 1: ROAS abaixo da meta por 2 semanas consecutivas ─────────
@@ -113,9 +117,13 @@ export async function detectCriticalAccounts(): Promise<{
         if (fired) alertsFired++
       }
     }
+   } catch (err) {
+     failed++
+     console.error(`[critical-account-detector] falha no cliente ${client.id}:`, err)
+   }
   }
 
-  return { clientsChecked: clients.length, alertsFired }
+  return { clientsChecked: clients.length, alertsFired, failed }
 }
 
 function buildWhatsAppMessage(
