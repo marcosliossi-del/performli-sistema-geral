@@ -606,6 +606,12 @@ enum TaskType {
   GERADA_POR_IA
 }
 
+// Direção de uma demanda do Hub de Suporte (quem pediu para quem).
+enum SupportDirection {
+  CLIENTE_PARA_NOS
+  NOS_PARA_CLIENTE
+}
+
 enum TaskOrigin {
   MANUAL
   TEMPLATE
@@ -787,6 +793,10 @@ model Task {
   generatedByAgentName String?
 
   tags          String[]    @default([])
+
+  // ── Hub de Suporte (aditivo) ───────────────────────────────────────────────
+  isSupport        Boolean           @default(false)
+  supportDirection SupportDirection?
 
   parentId      String?
   parent        Task?       @relation("Subtasks", fields: [parentId], references: [id])
