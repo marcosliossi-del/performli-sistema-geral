@@ -347,3 +347,42 @@ calendário, DnD, skeletons).
 - **Fluidez: Skeletons** — branch feat/skeletons: Skeleton + PageSkeleton (shimmer
   .ak-skeleton no globals) + loading.tsx em /operacional /clients /cockpit
   /financeiro /meu-dia — transição suave durante o fetch (percepção de rapidez).
+
+---
+
+# MÓDULO TASKS CLICKUP-CLASS (PROMPT_MESTRE_TASKS.md) — estado do A0
+
+> Seção mantida pelo A0-ORQUESTRADOR. Fases do BLOCO 5.
+
+## Fase atual: Fase 0 — Auditoria & Decisões (em execução)
+
+| Fase | Status | Gate |
+|---|---|---|
+| 0 — Auditoria & Decisões (A0) | 🔄 em execução | audit-fase0.md + DECISIONS.md |
+| 1 — Fundação de dados (A1) | ⏳ aguardando gate 0 | migrations limpas + seed + índices |
+| 2 — Núcleo de negócio (A2) | ⏳ | testes verdes + tenancy + recorrência on-complete |
+| 3 — Vocabulário visual (A3) | ⏳ (pode iniciar na Fase 2) | playground aprovado |
+| 4 — Experiência (A4) | ⏳ | fluxo completo sem reload; 500 tasks |
+| 5 — Automação & Segurança (A5+A6) | ⏳ | cron idempotente; security sem ❌ |
+| 6 — Qualidade (A7) | ⏳ | fluxos críticos verdes; sem P0/P1 |
+| 7 — Docs & Migração (A8) | ⏳ | teste do usuário virgem |
+
+## Decisões travadas
+D-001…D-009 em `DECISIONS.md` (estado do cliente = server actions + optimistic local; DnD = @hello-pangea/dnd; fractional-indexing; convergência de status em 2 etapas com espelho do enum; multi-assignee com assignedTo espelho; TZ America/Sao_Paulo; tenancy gradual com Workspace único; WIP `wip/task-edit-inline` preservado; painel /t/[taskId] slide-over).
+
+## Pendências (arbitragem A0)
+- (nenhuma)
+
+## Riscos ativos
+- R1: enum TaskStatus → Status FK sem quebrar Hub de Suporte/recorrência/counts em produção (D-004).
+- R2: dupla fonte de verdade ClickUp↔Performli — data de corte por lista/cliente; 21 demandas do Suporte já importadas.
+- R3: sem build local — gates com `migrate dev`/testes locais adaptados para: migration idempotente + Vercel verde + revisão do guardião.
+
+## Particularidades do repositório (para todos os agentes)
+- Verificação SOMENTE via build Vercel; eslint no-explicit-any quebra o build.
+- Fluxo por fatia: branch → PR → Vercel verde → squash merge.
+- Produção com dados reais: 30 clientes, 510 recorrentes, Hub de Suporte ativo.
+- CLAUDE.md continua valendo (auth+papel+posse, AuditLog, migrations aditivas).
+
+## Handoffs arquivados
+- (nenhum — docs/handoffs/)
