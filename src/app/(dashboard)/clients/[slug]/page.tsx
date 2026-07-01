@@ -45,6 +45,7 @@ import { RevenuePaceChart } from '@/components/clients/RevenuePaceChart'
 import { MonthlyComparisonChart } from '@/components/clients/MonthlyComparisonChart'
 import { InteractionTimeline } from '@/components/clients/InteractionTimeline'
 import { EditClientButton } from '@/components/clients/ClientHeader'
+import { PlanoAcaoPanel } from '@/components/clients/PlanoAcaoPanel'
 import { RemovePlatformButton } from '@/components/clients/RemovePlatformButton'
 import { HealthScoreHistoryChart } from '@/components/clients/HealthScoreHistoryChart'
 import { PillarBenchmarkPanel } from '@/components/clients/PillarBenchmarkPanel'
@@ -731,6 +732,9 @@ export default async function ClientDetailPage({
           </div>
         </div>
       )}
+
+      {/* ── Plano de ação por IA ──────────────────────────────────────────── */}
+      <PlanoAcaoPanel clientId={client.id} destaque={streakStatus === 'RUIM'} />
 
       {/* ── Tarefas operacionais do cliente ───────────────────────────────── */}
       <ClientTasksCard tarefas={clienteTarefas} />

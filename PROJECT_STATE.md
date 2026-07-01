@@ -254,3 +254,11 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
   lastRunAt > 8d/null), falhas de automação (24h). Página /aceite com agrupamento
   Crítico/Atenção/Sob controle — cada sinal responde o quê/porquê/ação/link.
   Nav (PRINCIPAL, ADMIN/CS/MANAGER) + middleware.
+
+- **Slice 7.2 — IA operacional (plano de ação)** — branch feat/bloco7-ia-plano:
+  action generatePlanoAcao(clientId) reusa getClientAIContext (dados reais) +
+  resultado/etapa/War Room, chama Anthropic (claude-sonnet-4-6), retorna
+  diagnóstico + causa provável + risco + 3-5 ações concretas com prazo (JSON,
+  sem inventar métrica). Valida papel+posse. Componente PlanoAcaoPanel (botão
+  "Sugerir plano de ação") na página do cliente (destaque quando saúde RUIM).
+  Depende de ANTHROPIC_API_KEY em runtime (não bloqueia build).
