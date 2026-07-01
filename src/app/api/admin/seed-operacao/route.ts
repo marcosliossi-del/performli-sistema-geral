@@ -1,16 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
+import { prisma } from '@/lib/prisma'
 import { seedOperacaoArkza } from '@/services/seed-operacao'
-import { runTaskRecurrences } from '@/services/recurrence-engine'
+import { materializeRecurringTasksForClient } from '@/services/recurrence-engine'
+
+// Backfill pode processar vários clientes — dá folga ao tempo de execução.
+export const maxDuration = 60
+export const dynamic = 'force-dynamic'
 
 /**
- * POST /api/admin/seed-operacao[?backfill=1]
+ * POST /api/admin/seed-operacao
  *
- * ADMIN-only. Semeia (idempotente) o time real + os 15 templates recorrentes
- * fixos + regras de recorrência. Com ?backfill=1, também materializa a janela
- * atual de tarefas nos clientes ATIVOS (runTaskRecurrences force).
+ * ADMIN-only. Dois modos (para não estourar o tempo-limite serverless):
+ *   - phase=seed (padrão): semeia (idempotente) o time real + 15 templates +
+ *     recorrências. Rápido. Retorna as contagens + total de clientes ativos.
+ *   - phase=backfill&cursor=<clientId>&batch=<n>: materializa as tarefas
+ *     recorrentes de um LOTE de clientes ativos (id > cursor). Retorna o
+ *     agregado, o último id processado e se terminou. O cliente repete até done.
  *
- * Segurança: exige sessão com role ADMIN. Não vaza err.message cru ao cliente.
+ * Segurança: exige sessão ADMIN. Não vaza err.message cru.
  */
 export async function POST(req: NextRequest) {
   const session = await getSession()
@@ -21,16 +29,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Acesso restrito ao administrador' }, { status: 403 })
   }
 
+  const phase = req.nextUrl.searchParams.get('phase') ?? 'seed'
+
   try {
+    if (phase === 'backfill') {
+      const cursor = req.nextUrl.searchParams.get('cursor') || undefined
+      const batch = Math.min(Math.max(Number(req.nextUrl.searchParams.get('batch') ?? '6'), 1), 20)
+
+      const clients = await prisma.client.findMany({
+        where: { status: 'ACTIVE', ...(cursor ? { id: { gt: cursor } } : {}) },
+        orderBy: { id: 'asc' },
+        take: batch,
+        select: { id: true },
+      })
+
+      let created = 0
+      let skipped = 0
+      let failed = 0
+      for (const c of clients) {
+        try {
+          const r = await materializeRecurringTasksForClient(c.id)
+          created += r.created
+          skipped += r.skipped
+          failed += r.failed
+        } catch (err) {
+          console.error(`[seed-operacao] backfill falhou p/ cliente ${c.id}:`, err)
+          failed++
+        }
+      }
+
+      const lastId = clients.length ? clients[clients.length - 1].id : cursor ?? null
+      const done = clients.length < batch
+      return NextResponse.json({ ok: true, phase, processed: clients.length, created, skipped, failed, lastId, done })
+    }
+
+    // phase === 'seed'
     const seed = await seedOperacaoArkza()
-
-    const backfill = req.nextUrl.searchParams.get('backfill') === '1'
-    const recurrence = backfill ? await runTaskRecurrences({ force: true }) : null
-
-    return NextResponse.json({ ok: true, seed, backfill, recurrence })
+    const totalActiveClients = await prisma.client.count({ where: { status: 'ACTIVE' } })
+    return NextResponse.json({ ok: true, phase: 'seed', seed, totalActiveClients })
   } catch (err) {
-    // Log interno com detalhe; resposta genérica ao cliente.
-    console.error('[seed-operacao] falha ao semear operação:', err)
+    console.error('[seed-operacao] falha:', err)
     return NextResponse.json(
       { error: 'Falha ao semear a operação. Consulte os logs do servidor.' },
       { status: 500 },

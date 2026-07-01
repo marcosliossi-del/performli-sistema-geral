@@ -17,6 +17,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getWeekRange } from '@/lib/utils'
+import type { TaskType, TaskPriority, TaskStatus } from '@prisma/client'
 
 // Papéis suportados pelo fan-out por cliente ativo.
 const CLIENT_FANOUT_ROLES = new Set(['GESTOR', 'MANAGER', 'CS', 'CRM', 'SUPERVISOR', 'HEAD'])
@@ -120,6 +121,110 @@ function resolveAssignee(role: string, c: FanoutClient, fb: RoleFallbacks): stri
   }
 }
 
+// Tipos mínimos compartilhados pelo helper de criação. O helper recebe rule e
+// template SEPARADOS (o template já não-nulo, garantido pelo chamador), então o
+// tipo da regra só precisa de id + frequency (evita o mismatch com template anulável).
+type RuleRef = {
+  id: string
+  frequency: string
+}
+
+type TemplateWithSteps = {
+  id: string
+  name: string
+  active: boolean
+  defaultAssigneeRole: string | null
+  defaultType: TaskType
+  defaultPriority: TaskPriority
+  defaultStatus: TaskStatus
+  relativeDueDays: number | null
+  slaHours: number | null
+  areaId: string | null
+  popId: string | null
+  steps: { label: string; required: boolean; order: number }[]
+}
+
+/**
+ * Cria (idempotente) a tarefa recorrente de UMA regra para UM cliente na janela
+ * atual. Compartilhado por runTaskRecurrences (cron) e por
+ * materializeRecurringTasksForClient (onboarding). Grava AutomationLog em todos
+ * os desfechos (sucesso / duplicidade evitada / falha). NÃO lança.
+ */
+async function createTaskForClientRule(
+  rule: RuleRef,
+  tpl: TemplateWithSteps,
+  client: FanoutClient,
+  fallbacks: RoleFallbacks,
+  now: Date,
+): Promise<'created' | 'skipped' | 'failed'> {
+  const role = tpl.defaultAssigneeRole
+  try {
+    const assigneeId = role ? resolveAssignee(role, client, fallbacks) : null
+    if (!assigneeId) {
+      await prisma.automationLog.create({
+        data: {
+          recurrenceId: rule.id,
+          clientId: client.id,
+          status: 'FALHA',
+          reason: `Sem responsável para o papel ${role} (cliente sem ${String(role).toLowerCase()} e sem fallback global)`,
+        },
+      })
+      return 'failed'
+    }
+
+    const wkey = windowKey(rule.frequency, now)
+    const idempotencyKey = `${tpl.id}:${client.id}:${wkey}`
+    const existing = await prisma.task.findUnique({ where: { idempotencyKey }, select: { id: true } })
+    if (existing) {
+      await prisma.automationLog.create({
+        data: { recurrenceId: rule.id, clientId: client.id, status: 'DUPLICIDADE_EVITADA', reason: idempotencyKey },
+      })
+      return 'skipped'
+    }
+
+    const due = tpl.relativeDueDays != null
+      ? new Date(now.getTime() + tpl.relativeDueDays * 86_400_000)
+      : null
+
+    const task = await prisma.task.create({
+      data: {
+        title: `${tpl.name} — ${client.name}`,
+        type: tpl.defaultType,
+        priority: tpl.defaultPriority,
+        status: tpl.defaultStatus,
+        origin: 'RECORRENCIA',
+        clientId: client.id,
+        assignedTo: assigneeId,
+        areaId: tpl.areaId,
+        popId: tpl.popId,
+        templateId: tpl.id,
+        recurrenceId: rule.id,
+        slaHours: tpl.slaHours,
+        dueDate: due,
+        requestedAt: now,
+        idempotencyKey,
+        ...(tpl.steps.length
+          ? { checklist: { create: tpl.steps.map((s) => ({ label: s.label, required: s.required, order: s.order })) } }
+          : {}),
+        activities: { create: { actorId: null, action: 'created_by_recurrence' } },
+      },
+      select: { id: true },
+    })
+
+    await prisma.automationLog.create({
+      data: { recurrenceId: rule.id, clientId: client.id, assigneeId, createdTaskId: task.id, status: 'SUCESSO' },
+    })
+    return 'created'
+  } catch (err) {
+    await prisma.automationLog
+      .create({
+        data: { recurrenceId: rule.id, clientId: client.id, status: 'FALHA', reason: err instanceof Error ? err.message : String(err) },
+      })
+      .catch(() => {})
+    return 'failed'
+  }
+}
+
 export async function runTaskRecurrences(opts: { force?: boolean } = {}): Promise<{
   rulesProcessed: number
   created: number
@@ -154,8 +259,6 @@ export async function runTaskRecurrences(opts: { force?: boolean } = {}): Promis
     if (role && CLIENT_FANOUT_ROLES.has(role)) {
       if (!fallbacks) fallbacks = await loadRoleFallbacks()
 
-      const wkey = windowKey(rule.frequency, now)
-
       const clients = await prisma.client.findMany({
         where: { status: 'ACTIVE' },
         select: {
@@ -171,72 +274,10 @@ export async function runTaskRecurrences(opts: { force?: boolean } = {}): Promis
       })
 
       for (const c of clients) {
-        try {
-          const assigneeId = resolveAssignee(role, c, fallbacks)
-          if (!assigneeId) {
-            await prisma.automationLog.create({
-              data: {
-                recurrenceId: rule.id,
-                clientId: c.id,
-                status: 'FALHA',
-                reason: `Sem responsável para o papel ${role} (cliente sem ${role.toLowerCase()} e sem fallback global)`,
-              },
-            })
-            failed++
-            continue
-          }
-
-          const idempotencyKey = `${tpl.id}:${c.id}:${wkey}`
-          const existing = await prisma.task.findUnique({ where: { idempotencyKey }, select: { id: true } })
-          if (existing) {
-            await prisma.automationLog.create({
-              data: { recurrenceId: rule.id, clientId: c.id, status: 'DUPLICIDADE_EVITADA', reason: idempotencyKey },
-            })
-            skipped++
-            continue
-          }
-
-          const due = tpl.relativeDueDays != null
-            ? new Date(now.getTime() + tpl.relativeDueDays * 86_400_000)
-            : null
-
-          const task = await prisma.task.create({
-            data: {
-              title: `${tpl.name} — ${c.name}`,
-              type: tpl.defaultType,
-              priority: tpl.defaultPriority,
-              status: tpl.defaultStatus,
-              origin: 'RECORRENCIA',
-              clientId: c.id,
-              assignedTo: assigneeId,
-              areaId: tpl.areaId,
-              popId: tpl.popId,
-              templateId: tpl.id,
-              recurrenceId: rule.id,
-              slaHours: tpl.slaHours,
-              dueDate: due,
-              requestedAt: now,
-              idempotencyKey,
-              ...(tpl.steps.length
-                ? { checklist: { create: tpl.steps.map((s) => ({ label: s.label, required: s.required, order: s.order })) } }
-                : {}),
-              activities: { create: { actorId: null, action: 'created_by_recurrence' } },
-            },
-            select: { id: true },
-          })
-
-          await prisma.automationLog.create({
-            data: { recurrenceId: rule.id, clientId: c.id, assigneeId, createdTaskId: task.id, status: 'SUCESSO' },
-          })
-          created++
-        } catch (err) {
-          await prisma.automationLog
-            .create({
-              data: { recurrenceId: rule.id, clientId: c.id, status: 'FALHA', reason: err instanceof Error ? err.message : String(err) },
-            })
-            .catch(() => {})
-          failed++
-        }
+        const outcome = await createTaskForClientRule(rule, tpl, c, fallbacks, now)
+        if (outcome === 'created') created++
+        else if (outcome === 'skipped') skipped++
+        else failed++
       }
     }
 
@@ -244,4 +285,90 @@ export async function runTaskRecurrences(opts: { force?: boolean } = {}): Promis
   }
 
   return { rulesProcessed: rules.length, created, skipped, failed }
+}
+
+/**
+ * Materializa AGORA as tarefas recorrentes (fan-out por papel) de UM cliente —
+ * usado no onboarding para o cliente já nascer com todas as recorrentes da
+ * janela atual, sem esperar o cron. Reutiliza EXATAMENTE a mesma lógica de
+ * runTaskRecurrences (resolveAssignee, windowKey, idempotencyKey, criação de
+ * Task + checklist + AutomationLog) via createTaskForClientRule.
+ *
+ * Por padrão (onboarding) materializa a janela atual de TODAS as regras ativas
+ * (equivalente a `force` para aquele cliente). Se opts.onlyDueToday, respeita
+ * shouldRunToday.
+ *
+ * Idempotente: a idempotencyKey `${tpl.id}:${clientId}:${wkey}` garante que
+ * rodar de novo não duplica. Cliente não-ACTIVE não materializa (retorna zeros).
+ */
+export async function materializeRecurringTasksForClient(
+  clientId: string,
+  opts: { onlyDueToday?: boolean } = {},
+): Promise<{ created: number; skipped: number; failed: number }> {
+  const now = new Date()
+
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      gestorId: true,
+      csId: true,
+      supervisorId: true,
+      headId: true,
+      crmId: true,
+      assignments: { where: { isPrimary: true }, select: { userId: true }, take: 1 },
+    },
+  })
+
+  if (!client) {
+    return { created: 0, skipped: 0, failed: 0 }
+  }
+
+  if (client.status !== 'ACTIVE') {
+    await prisma.automationLog
+      .create({
+        data: {
+          clientId: client.id,
+          status: 'FALHA',
+          reason: `Materialização de recorrentes ignorada: cliente não está ACTIVE (status=${client.status})`,
+        },
+      })
+      .catch(() => {})
+    return { created: 0, skipped: 0, failed: 0 }
+  }
+
+  const rules = await prisma.taskRecurrenceRule.findMany({
+    where: { active: true },
+    include: { template: { include: { steps: true } } },
+  })
+
+  const fallbacks = await loadRoleFallbacks()
+
+  let created = 0
+  let skipped = 0
+  let failed = 0
+
+  for (const rule of rules) {
+    const tpl = rule.template
+    if (!tpl || !tpl.active) continue
+
+    const role = tpl.defaultAssigneeRole
+    if (!role || !CLIENT_FANOUT_ROLES.has(role)) continue
+
+    if (
+      opts.onlyDueToday &&
+      !shouldRunToday(rule.frequency, rule.dayOfWeek, rule.dayOfMonth, rule.anchorDate ?? null, now)
+    ) {
+      continue
+    }
+
+    const outcome = await createTaskForClientRule(rule, tpl, client, fallbacks, now)
+    if (outcome === 'created') created++
+    else if (outcome === 'skipped') skipped++
+    else failed++
+  }
+
+  return { created, skipped, failed }
 }

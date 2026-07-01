@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/session'
 import { z } from 'zod'
+import { runClientOnboarding } from '@/services/client-onboarding'
 
 const schema = z.object({
   // Client fields
@@ -139,6 +140,16 @@ export async function POST(
       userId: session.userId,
     },
   })
+
+  // ClientOnboardingAgent — materializa recorrentes + tarefas iniciais na hora.
+  // Best-effort: falha aqui NÃO quebra a conversão do lead. Só roda se ACTIVE.
+  if (client.status === 'ACTIVE') {
+    try {
+      await runClientOnboarding(client.id)
+    } catch (err) {
+      console.error('[onboarding] falha ao rodar runClientOnboarding (convert):', err)
+    }
+  }
 
   return NextResponse.json({ ok: true, clientId: client.id, clientSlug: client.slug })
 }
