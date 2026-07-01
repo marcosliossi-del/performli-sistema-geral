@@ -21,6 +21,7 @@ export function SeedOperacaoCard() {
   const [carteiras, setCarteiras] = useState<{ updated: number; notFound: string[] } | null>(null)
   const [novos, setNovos] = useState<{ created: string[]; skipped: string[] } | null>(null)
   const [candidates, setCandidates] = useState<{ name: string; slug: string }[] | null>(null)
+  const [suporte, setSuporte] = useState<{ criadas: number; puladas: number; semCliente: string[]; erros: string[] } | null>(null)
 
   async function post(qs: string) {
     const res = await fetch(`/api/admin/seed-operacao${qs}`, { method: 'POST' })
@@ -71,6 +72,21 @@ export function SeedOperacaoCard() {
       toast(`Carteiras preenchidas (${res.carteiras?.updated ?? 0} clientes) e tarefas geradas.`, 'ok')
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Não foi possível concluir.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function runSuporte() {
+    setLoading(true)
+    setSuporte(null)
+    try {
+      const res = await post('?phase=suporte')
+      setSuporte(res.suporte ?? null)
+      const s = res.suporte
+      toast(`Suporte importado: ${s?.criadas ?? 0} criada(s), ${s?.puladas ?? 0} já existiam.`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível importar o suporte.', 'err')
     } finally {
       setLoading(false)
     }
@@ -177,6 +193,15 @@ export function SeedOperacaoCard() {
           {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
           Preencher carteiras (gestor + metas + novos)
         </button>
+        <button
+          type="button"
+          onClick={runSuporte}
+          disabled={loading}
+          className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+        >
+          {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+          Importar Suporte (ClickUp)
+        </button>
       </div>
 
       {(loading && progress) && (
@@ -197,6 +222,21 @@ export function SeedOperacaoCard() {
               {' · '}puladas (já existiam): <span className="text-[#EBEBEB]">{tally.skipped}</span>
               {' · '}falhas: <span className="text-[#EBEBEB]">{tally.failed}</span>
             </p>
+          )}
+        </div>
+      )}
+
+      {suporte && (
+        <div className="mt-4 text-xs text-[#87919E] space-y-0.5 border-t border-[#38435C] pt-3">
+          <p>
+            Suporte importado: <span className="text-[#EBEBEB]">{suporte.criadas}</span> criada(s)
+            {' · '}já existiam: <span className="text-[#EBEBEB]">{suporte.puladas}</span>
+          </p>
+          {suporte.semCliente.length > 0 && (
+            <p className="text-[#F59E0B]">Sem cliente vinculado (conferir nome): {suporte.semCliente.join(', ')}</p>
+          )}
+          {suporte.erros.length > 0 && (
+            <p className="text-[#EF4444]">Erros: {suporte.erros.join(' | ')}</p>
           )}
         </div>
       )}

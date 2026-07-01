@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { seedOperacaoArkza } from '@/services/seed-operacao'
 import { seedCarteiras, createNovosClientes, getCancelCandidates, cancelarForaDaCarteira } from '@/services/seed-carteiras'
 import { materializeRecurringTasksForClient } from '@/services/recurrence-engine'
+import { importarSuporteClickUp } from '@/services/seed-suporte'
 
 // Backfill pode processar vários clientes — dá folga ao tempo de execução.
 export const maxDuration = 60
@@ -74,6 +75,11 @@ export async function POST(req: NextRequest) {
     if (phase === 'cancelar') {
       const result = await cancelarForaDaCarteira()
       return NextResponse.json({ ok: true, phase, ...result })
+    }
+
+    if (phase === 'suporte') {
+      const suporte = await importarSuporteClickUp()
+      return NextResponse.json({ ok: true, phase, suporte })
     }
 
     if (phase === 'diagnostico') {
