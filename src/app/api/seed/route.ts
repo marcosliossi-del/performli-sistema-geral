@@ -3,8 +3,12 @@ import { prisma } from '@/lib/prisma'
 import { hash } from 'bcryptjs'
 
 export async function POST(request: NextRequest) {
+  // Nunca em produção: cria usuários com senhas de exemplo. Só dev/homolog.
+  if (process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
   const secret = request.headers.get('x-seed-secret')
-  if (secret !== process.env.SEED_SECRET) {
+  if (!process.env.SEED_SECRET || secret !== process.env.SEED_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

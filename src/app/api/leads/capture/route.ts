@@ -114,10 +114,23 @@ export async function OPTIONS(req: NextRequest) {
   return new Response(null, { status: 204, headers: cors(origin) })
 }
 
+/**
+ * CORS por allowlist configurável. Se LEAD_CAPTURE_ALLOWED_ORIGINS estiver
+ * definida (lista separada por vírgula), só ecoa origins da lista; caso
+ * contrário mantém o comportamento aberto atual ('*') para não quebrar as
+ * landing pages já publicadas. Endpoint público sem credenciais/cookies.
+ */
 function cors(origin: string): HeadersInit {
+  const allowRaw = process.env.LEAD_CAPTURE_ALLOWED_ORIGINS
+  let allowOrigin = '*'
+  if (allowRaw) {
+    const allowed = allowRaw.split(',').map((o) => o.trim()).filter(Boolean)
+    allowOrigin = allowed.includes(origin) ? origin : allowed[0] ?? 'null'
+  }
   return {
-    'Access-Control-Allow-Origin':  origin,
+    'Access-Control-Allow-Origin':  allowOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
+    'Vary': 'Origin',
   }
 }
