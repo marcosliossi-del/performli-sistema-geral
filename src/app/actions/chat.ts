@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
+import { assertClientMutationAccess } from '@/lib/audit'
 
 export type ChatMessageState = {
   error?: string
@@ -56,6 +57,14 @@ export async function sendChatMessage(
 }
 
 export async function ensureClientChat(clientId: string): Promise<string | null> {
+  // Participantes do canal: ADMIN + CS + gestor atribuído. Valida antes de criar.
+  const session = await requireSession()
+  try {
+    await assertClientMutationAccess(session, clientId, { allowCS: true })
+  } catch {
+    return null
+  }
+
   const chat = await prisma.clientChat.upsert({
     where: { clientId },
     create: { clientId },
