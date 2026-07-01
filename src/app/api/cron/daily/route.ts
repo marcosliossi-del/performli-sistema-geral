@@ -21,6 +21,7 @@ import { detectSilentAtRiskClients } from '@/services/antichurn-monitor'
 import { checkCheckins } from '@/services/checkin-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/app/actions/goals'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
+import { renewExpiredContracts } from '@/services/contract-renewal'
 
 /**
  * GET /api/cron/daily  ← Vercel Cron triggers GET requests
@@ -335,6 +336,14 @@ async function runDailySync() {
     summary.contractExpiry = { ok: true, alertsFired: expiryResult.alertsFired }
   } catch (err) {
     summary.contractExpiry = { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+
+  // ── Step 7c: Renovação automática de contratos vencidos (cliente ativo) ───
+  try {
+    const renewResult = await renewExpiredContracts()
+    summary.contractRenewal = { ok: true, ...renewResult }
+  } catch (err) {
+    summary.contractRenewal = { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 
   // WhatsApp digest is sent by /api/cron/digest (runs at 08:30 BRT/São Paulo),

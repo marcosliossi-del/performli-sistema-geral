@@ -90,7 +90,6 @@ const CARTEIRAS: CarteiraRow[] = [
   { match: ['Lavinny', 'Lavinny Store', 'Contrato | Lavinny Store'], gestor: 'marcos', businessType: 'ECOMMERCE', plataformas: ['Meta', 'Google'], produtos: [TP, CRM, TRAQ], resultado: 'BOM', etapa: 'MONITORAMENTO', salaDeGuerra: false, relacionamento: 'REGULAR', nps: 'PROMOTOR', curva: 'B', investimentoMeta: 6000, investimentoGoogle: 500, investimentoTiktok: 0, roasMinimo: 8 },
   { match: ['New Man Store', 'New Man', 'Contrato | João', 'João', 'Joao'], gestor: 'marcos', businessType: 'ECOMMERCE', plataformas: ['Meta', 'Google'], produtos: [TP], resultado: 'BOM', etapa: 'MONITORAMENTO', salaDeGuerra: false, relacionamento: 'REGULAR', nps: 'PROMOTOR', curva: 'A', investimentoMeta: 10000, investimentoGoogle: 1000, investimentoTiktok: 0, roasMinimo: 7 },
   { match: ['My Muse', 'My Muse BR'], gestor: 'marcos', businessType: 'ECOMMERCE', plataformas: ['Meta', 'Google'], produtos: [TP, CRM, TRAQ], resultado: 'OTIMO', etapa: 'ESCALA', salaDeGuerra: false, relacionamento: 'REGULAR', nps: 'PROMOTOR', curva: 'B', investimentoMeta: 5000, investimentoGoogle: 0, investimentoTiktok: 0, roasMinimo: 8 },
-  { match: ['Arkza', 'Marcos Liossi'], gestor: 'marcos', businessType: 'B2B', plataformas: ['Meta'], produtos: [TP], resultado: 'OTIMO', etapa: 'ESCALA', salaDeGuerra: false, relacionamento: 'OTIMO', nps: 'PROMOTOR', curva: 'A', investimentoMeta: 2000, investimentoGoogle: null, investimentoTiktok: null, roasMinimo: null },
   { match: ['Tayna Moda Feminina', 'Contrato | Tayna Moda Feminina'], gestor: 'marcos', businessType: 'ECOMMERCE', plataformas: ['Meta', 'Google'], produtos: [TP, CRM, TRAQ], resultado: 'OTIMO', etapa: 'ESCALA', salaDeGuerra: false, relacionamento: 'REGULAR', nps: 'PROMOTOR', curva: 'A', investimentoMeta: 5000, investimentoGoogle: 500, investimentoTiktok: 0, roasMinimo: 7 },
 
   // ── Novos na carteira [TODOS] (gestor a definir) ────────────────────────────
@@ -228,11 +227,9 @@ export async function createNovosClientes(): Promise<{ created: string[]; skippe
   const created: string[] = []
   const skipped: string[] = []
 
-  const start = new Date('2026-06-26T00:00:00')
-  const end = new Date('2026-12-26T00:00:00')
-  const FEE = 2500 // fee mensal — igual para os dois (mesma empresa: Esj Confecções)
+  const d = (iso: string) => new Date(`${iso}T00:00:00`)
 
-  // Gestor dos dois Svn: Marcos (externalId ClickUp 152690431).
+  // Gestor dos novos: Marcos (externalId ClickUp 152690431).
   const marcos = await prisma.user.findUnique({ where: { externalId: '152690431' }, select: { id: true } })
   const marcosId = marcos?.id ?? null
 
@@ -251,43 +248,27 @@ export async function createNovosClientes(): Promise<{ created: string[]; skippe
     else await prisma.clientAssignment.create({ data: { clientId, userId: marcosId, isPrimary: true } })
   }
 
-  const novos = [
-    {
-      name: 'Svn Varejo',
-      slug: 'svn-varejo',
-      businessType: 'ECOMMERCE' as BusinessType,
-      plataformas: ['Meta', 'Google'],
-      email: 'adm@savannahbrand.com.br' as string | null,
-      resultado: 'OTIMO' as ClientResultado,
-      etapa: 'OTIMIZACAO' as ClientEtapa,
-      curva: 'B' as ClientCurva,
-      nps: 'PROMOTOR' as ClientNps,
-      relacionamento: 'OTIMO' as ClientRelacionamento,
-      // Fatura financeira (cobrança) fica APENAS neste, para não duplicar a
-      // cobrança da mesma empresa pagante.
-      fatura: true,
-      investimentoMeta: 2000 as number | null,
-    },
-    {
-      name: 'Svn Atacado',
-      slug: 'svn-atacado',
-      businessType: 'B2B' as BusinessType,
-      plataformas: ['Meta'],
-      email: 'adm@savannahbrand.com.br' as string | null,
-      resultado: 'OTIMO' as ClientResultado,
-      etapa: 'OTIMIZACAO' as ClientEtapa,
-      curva: 'B' as ClientCurva,
-      nps: 'PROMOTOR' as ClientNps,
-      relacionamento: 'OTIMO' as ClientRelacionamento,
-      fatura: false, // sem fatura financeira (evita duplicidade)
-      investimentoMeta: null as number | null,
-    },
+  type Novo = {
+    name: string; slug: string; businessType: BusinessType; plataformas: string[]; produtos: string[]
+    email: string | null; resultado: ClientResultado; etapa: ClientEtapa; salaDeGuerra: boolean
+    relacionamento: ClientRelacionamento; nps: ClientNps; curva: ClientCurva
+    investimentoMeta: number | null; investimentoGoogle: number | null; investimentoTiktok: number | null
+    roasMinimo: number | null; fee: number; start: Date; end: Date; billingDueDay: number | null
+  }
+
+  const novos: Novo[] = [
+    // ── Esj Confecções (marca Svn) — fatura só no Varejo ──────────────────────
+    { name: 'Svn Varejo', slug: 'svn-varejo', businessType: 'ECOMMERCE', plataformas: ['Meta', 'Google'], produtos: [TP], email: 'adm@savannahbrand.com.br', resultado: 'OTIMO', etapa: 'OTIMIZACAO', salaDeGuerra: false, relacionamento: 'OTIMO', nps: 'PROMOTOR', curva: 'B', investimentoMeta: 2000, investimentoGoogle: null, investimentoTiktok: null, roasMinimo: null, fee: 2500, start: d('2026-06-26'), end: d('2026-12-26'), billingDueDay: 5 },
+    { name: 'Svn Atacado', slug: 'svn-atacado', businessType: 'B2B', plataformas: ['Meta'], produtos: [TP], email: 'adm@savannahbrand.com.br', resultado: 'OTIMO', etapa: 'OTIMIZACAO', salaDeGuerra: false, relacionamento: 'OTIMO', nps: 'PROMOTOR', curva: 'B', investimentoMeta: null, investimentoGoogle: null, investimentoTiktok: null, roasMinimo: null, fee: 2500, start: d('2026-06-26'), end: d('2026-12-26'), billingDueDay: null },
+    // ── Tayna Andressa Mota de Oliveira ───────────────────────────────────────
+    { name: 'Tayna Moda Feminina', slug: 'tayna-moda-feminina', businessType: 'ECOMMERCE', plataformas: ['Meta', 'Google', 'Tiktok'], produtos: [TP, CRM, TRAQ], email: 'motatayna@icloud.com', resultado: 'OTIMO', etapa: 'ESCALA', salaDeGuerra: false, relacionamento: 'REGULAR', nps: 'PROMOTOR', curva: 'A', investimentoMeta: 5000, investimentoGoogle: 500, investimentoTiktok: 0, roasMinimo: 7, fee: 3500, start: d('2026-05-27'), end: d('2026-11-27'), billingDueDay: 25 },
+    // ── Duplo Sentido (mesma empresa do Atacado) — fatura só no Varejo ────────
+    { name: 'Duplo Sentido Varejo', slug: 'duplo-sentido-varejo', businessType: 'ECOMMERCE', plataformas: ['Meta', 'Google', 'Tiktok'], produtos: [TP], email: 'duplosentidodigital@gmail.com', resultado: 'BOM', etapa: 'MONITORAMENTO', salaDeGuerra: false, relacionamento: 'OTIMO', nps: 'PROMOTOR', curva: 'A', investimentoMeta: 1000, investimentoGoogle: 0, investimentoTiktok: 0, roasMinimo: 5, fee: 2200, start: d('2026-01-08'), end: d('2026-07-08'), billingDueDay: 8 },
   ]
 
   for (const n of novos) {
     const existing = await prisma.client.findUnique({ where: { slug: n.slug }, select: { id: true } })
     if (existing) {
-      // Já criado (talvez sem gestor): garante o gestor Marcos + atribuição.
       await ensureGestor(existing.id)
       skipped.push(n.name)
       continue
@@ -295,52 +276,48 @@ export async function createNovosClientes(): Promise<{ created: string[]; skippe
 
     const client = await prisma.client.create({
       data: {
-        name: n.name,
-        slug: n.slug,
-        status: 'ACTIVE',
-        pipelineStage: 'ATIVO',
+        name: n.name, slug: n.slug, status: 'ACTIVE', pipelineStage: 'ATIVO',
         ...(marcosId ? { gestorId: marcosId } : {}),
-        businessType: n.businessType,
-        plataformas: n.plataformas,
-        produtos: [TP],
-        email: n.email,
-        resultado: n.resultado,
-        etapa: n.etapa,
-        curva: n.curva,
-        nps: n.nps,
-        relacionamento: n.relacionamento,
-        // Dados de contrato IGUAIS para ambos.
-        feeAmount: FEE,
-        contractValue: FEE,
-        contractStart: start,
-        contractEndDate: end,
-        investimentoMeta: n.investimentoMeta,
-        // Fatura/cobrança (vencimento) só no que recebe a fatura financeira.
-        billingDueDay: n.fatura ? 5 : null,
+        businessType: n.businessType, plataformas: n.plataformas, produtos: n.produtos, email: n.email,
+        resultado: n.resultado, etapa: n.etapa, salaDeGuerra: n.salaDeGuerra,
+        relacionamento: n.relacionamento, nps: n.nps, curva: n.curva,
+        investimentoMeta: n.investimentoMeta, investimentoGoogle: n.investimentoGoogle,
+        investimentoTiktok: n.investimentoTiktok, roasMinimo: n.roasMinimo,
+        feeAmount: n.fee, contractValue: n.fee, contractStart: n.start, contractEndDate: n.end,
+        // Fatura/cobrança só onde há billingDueDay (evita duplicar a mesma empresa).
+        billingDueDay: n.billingDueDay,
       },
       select: { id: true },
     })
 
-    // Contrato formal (VIGENTE) — IGUAL para os dois.
     await prisma.contract.create({
-      data: {
-        clientId: client.id,
-        status: 'VIGENTE',
-        type: 'FEE_MENSAL',
-        feeValue: FEE,
-        startDate: start,
-        endDate: end,
-        noticeDays: 30,
-      },
+      data: { clientId: client.id, status: 'VIGENTE', type: 'FEE_MENSAL', feeValue: n.fee, startDate: n.start, endDate: n.end, noticeDays: 30 },
     })
 
-    // Gestor Marcos como atribuição primária (posse + roteamento das tarefas).
     await ensureGestor(client.id)
-
-    // Onboarding: nasce com a operação (15 recorrentes + tarefas iniciais).
     try { await runClientOnboarding(client.id) } catch { /* best-effort */ }
-
     created.push(n.name)
+  }
+
+  // ── Contrato do Duplo Sentido Atacado (cliente já existente) ────────────────
+  // Mesmo contrato do Varejo (fee R$2.200, 08/01→08/07/2026), SEM fatura para
+  // não duplicar a cobrança da mesma empresa. Idempotente (só cria Contract se
+  // ainda não houver um vigente).
+  const atacado = await prisma.client.findFirst({
+    where: { OR: [{ slug: 'duplo-sentido-atacado' }, { name: { equals: 'Duplo Sentido Atacado', mode: 'insensitive' } }] },
+    select: { id: true, contracts: { where: { status: 'VIGENTE' }, select: { id: true }, take: 1 } },
+  })
+  if (atacado) {
+    await prisma.client.update({
+      where: { id: atacado.id },
+      data: { feeAmount: 2200, contractValue: 2200, contractStart: d('2026-01-08'), contractEndDate: d('2026-07-08'), billingDueDay: null },
+    })
+    if (atacado.contracts.length === 0) {
+      await prisma.contract.create({
+        data: { clientId: atacado.id, status: 'VIGENTE', type: 'FEE_MENSAL', feeValue: 2200, startDate: d('2026-01-08'), endDate: d('2026-07-08'), noticeDays: 30 },
+      })
+    }
+    skipped.push('Duplo Sentido Atacado (contrato)')
   }
 
   return { created, skipped }
