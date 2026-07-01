@@ -14,6 +14,7 @@ import {
 } from '@/app/actions/operacional'
 import type { OperacionalTask } from '@/lib/dal'
 import type { TaskStatus } from '@prisma/client'
+import { toast } from '@/lib/toast'
 import {
   STATUS_LABELS, STATUS_COLORS, STATUS_OPTIONS, PRIORITY_LABELS, PRIORITY_COLORS, TYPE_LABELS, label,
 } from './labels'
@@ -57,7 +58,7 @@ export function TaskDrawer({
   }
   function handleComment() {
     if (!comment.trim()) return
-    startTransition(async () => { await addTaskComment(task!.id, comment); setComment(''); await reload() })
+    startTransition(async () => { await addTaskComment(task!.id, comment); setComment(''); await reload(); toast('Comentário adicionado') })
   }
   function handleToggle(itemId: string, done: boolean) {
     startTransition(async () => { await toggleChecklistItem(itemId, done); await reload() })
@@ -66,21 +67,23 @@ export function TaskDrawer({
     setActionError(null)
     startTransition(async () => {
       const r = await submitTaskForValidation(task!.id, evidence)
-      if ('error' in r) { setActionError(r.error); return }
+      if ('error' in r) { setActionError(r.error); toast(r.error, 'err'); return }
       await reload()
+      toast('Enviado para validação da CS')
     })
   }
   function handleDecide(approved: boolean) {
     setActionError(null)
     startTransition(async () => {
       const r = await decideTaskValidation(task!.id, approved, approved ? undefined : rejectNote)
-      if ('error' in r) { setActionError(r.error); return }
+      if ('error' in r) { setActionError(r.error); toast(r.error, 'err'); return }
       setRejectNote('')
       await reload()
+      toast(approved ? 'Validação aprovada' : 'Ajustes solicitados', approved ? 'ok' : 'info')
     })
   }
   function handleComplete() {
-    startTransition(async () => { await updateTaskStatus(task!.id, 'CONCLUIDO' as TaskStatus); await reload() })
+    startTransition(async () => { await updateTaskStatus(task!.id, 'CONCLUIDO' as TaskStatus); await reload(); toast('Tarefa concluída') })
   }
 
   const m = detail?.meta

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Sidebar } from './Sidebar'
 import { TopNav } from './TopNav'
 import { CommandPalette } from './CommandPalette'
+import { ToastViewport } from '@/components/ui/ToastViewport'
 import type { SessionPayload } from '@/lib/session'
 import type { SidebarCounts } from '@/lib/dal'
 
@@ -50,6 +51,7 @@ export function DashboardShell({ children, session, unreadAlerts, counts }: Dash
         <main className="flex-1 overflow-y-auto p-6 print:overflow-visible print:p-4">{children}</main>
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <ToastViewport />
     </div>
   )
 }

@@ -90,7 +90,7 @@ export function ClientesTable({ clients }: Props) {
   }
 
   return (
-    <div className="bg-[#0D2137] border border-[#38435C] rounded-2xl overflow-hidden">
+    <div className="card overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-[#38435C]">
         <div className="relative flex-1 max-w-sm">
