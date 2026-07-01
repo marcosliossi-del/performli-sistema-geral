@@ -72,7 +72,7 @@ export function DashboardAIChat({ context }: Props) {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="w-12 h-12 rounded-full bg-[#95BBE2] hover:bg-[#7AADD8] transition-colors flex items-center justify-center shadow-lg"
+          className="w-12 h-12 rounded-full bg-[#95BBE2] hover:bg-[#95BBE2]/90 transition-colors flex items-center justify-center shadow-lg"
           title="Perguntar ao assistente"
         >
           <MessageCircle size={20} className="text-[#05141C]" />

@@ -42,7 +42,7 @@ export default async function OperacionalPage({
 }
 
 function Kpi({ label, value, tone }: { label: string; value: number | string; tone?: 'late' | 'done' | 'crit' }) {
-  const vColor = tone === 'late' ? 'text-[#ff5e6a]' : tone === 'done' ? 'text-[#34c97a]' : tone === 'crit' ? 'text-[#ff3b4e]' : 'text-[#f2f6fa]'
+  const vColor = tone === 'late' ? 'text-danger' : tone === 'done' ? 'text-success' : tone === 'crit' ? 'text-danger' : 'text-[#f2f6fa]'
   return (
     <div className="ak-lift relative overflow-hidden bg-[#161d26] border border-[rgba(255,255,255,0.09)] rounded-[14px] px-4 py-3.5 min-w-[128px] shadow-[0_1px_1px_rgba(0,0,0,0.28),0_10px_28px_-16px_rgba(0,0,0,0.55)]">
       <span className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
