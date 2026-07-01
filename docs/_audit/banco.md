@@ -1,52 +1,65 @@
+# Auditoria — Dimensão Banco de Dados
+
+> Escopo: `prisma/schema.prisma` (64 models) e `prisma/migrations` (46 migrations).
+> Data: 2026-07-01. Read-only fora de `docs/`.
+
 ## Banco de Dados
 
-Auditoria da dimensão de dados do PERFORMLI. Base: `prisma/schema.prisma` (1582 linhas, 64 models) e 44 migrations em `prisma/migrations/`.
+### (a) Domínios de models
 
-### (a) Visão dos domínios de models
-
-- **Auth/Team:** `User`, enum `Role` (ADMIN/MANAGER/ANALYST/CS).
-- **Clientes:** `Client`, `ClientAssignment`, `ClientInteraction`, `ClientStatusStreak`, `ClientInsight`, `ClientChat`/`ClientChatMessage`. Client acumula muitos campos derivados (resultado, etapa, ficha CS).
-- **Plataformas/Métricas:** `PlatformAccount`, `MetricSnapshot`, `CampaignSnapshot`, `SyncLog`, `Goal`, `HealthScore`, `ChurnRiskScore`.
-- **Central Operacional (Task hub):** `Task` + 20 satélites (`TaskArea`, `POPProcess`, `POPStep`, `TaskTemplate`, `TaskRecurrenceRule`, `TaskAutomationRule`, `AutomationLog`, `TaskChecklistItem`, `TaskDependency`, `TaskCustomField*`, etc.). É o maior domínio, alinhado à estratégia de substituir o ClickUp.
-- **War Room:** `CriticalProtocol` (+ `AuditLog` transversal).
-- **CSX/Relatórios:** `WeeklyChecklist`, `ClientWeeklyCheckin`, `WeeklyReport`, `MonthlyReport`.
-- **Integrações:** `NuvemshopStore`/`NuvemshopOrder`, `IntegrationSetting`, `AIConversation`/`AIMessage`, `KnowledgeDocument`/`KnowledgeChunk`.
-- **Financeiro:** `AsaasCustomer/Payment/Subscription/Transfer`, `FinancialCategory`, `Expense`, `Contract`.
-- **CRM comercial:** `AgencyLead`, `AgencyActivity`.
+- **Auth/Team** — `User`, `Role`.
+- **Clientes** — `Client`, `ClientAssignment`, `ClientInteraction`, `ClientStatusStreak`, `ClientChat`, `ClientChatMessage`, `ClientInsight`. Enums: status, businessType, resultado/etapa, ficha CS (nps/relacionamento/curva).
+- **Plataformas/Métricas** — `PlatformAccount`, `MetricSnapshot`, `CampaignSnapshot`, `SyncLog`, `Goal`, `HealthScore`, `ChurnRiskScore`.
+- **Nuvemshop** — `NuvemshopStore`, `NuvemshopOrder`.
+- **Central Operacional (Task)** — `Task` + ~20 satélites (`TaskArea`, `POPProcess`, `POPStep`, `POPFriction`, `TaskList`, `TaskChecklistItem`, `TaskComment`, `TaskAttachment`, `TaskActivity`, `TaskDependency`, `TaskApproval`, `TaskCustomFieldDefinition/Value`, `TaskTemplate`+`Step`/`Field`, `TaskRecurrenceRule`, `TaskAutomationRule`, `AutomationLog`, `TaskWatcher`, `TaskAuxAssignee`, `TaskSavedView`, `TaskSLA`, `OperationalRoutine`).
+- **War Room** — `CriticalProtocol`, `AuditLog`, `Alert`.
+- **CSX/Relatórios** — `ClientWeeklyCheckin`, `WeeklyChecklist`, `WeeklyReport`, `MonthlyReport`.
+- **Financeiro/Asaas** — `AsaasCustomer`, `AsaasPayment`, `AsaasSubscription`, `AsaasTransfer`, `FinancialCategory`, `Expense`.
+- **Comercial/CRM** — `AgencyLead`, `AgencyActivity`.
+- **IA/RAG** — `AIConversation`, `AIMessage`, `KnowledgeDocument`, `KnowledgeChunk`.
+- **Config** — `IntegrationSetting`, `Contract`, `Operation`.
 
 ### (b) Pontos fortes
 
-- Migrations recentes (a partir de `20260630*`) são fortemente idempotentes: `ADD COLUMN IF NOT EXISTS`, `ALTER TYPE ... ADD VALUE IF NOT EXISTS`, `CREATE TYPE ... EXCEPTION WHEN duplicate_object` (ex.: `20260630170000_central_operacional_bloco1` com 101 guardas, `20260630140000_inadimplencia_alerts`).
-- `AuditLog` append-only bem indexado (4 índices compostos por entidade/cliente/ator/ação) — atende regra técnica #8.
-- Índices compostos consistentes em snapshots e relatórios (`@@unique([platformAccountId, date])`, `@@unique([clientId, weekStart])`), garantindo idempotência de sync/cron.
-- Uso disciplinado de `onDelete: Cascade` nos filhos de `Client`/`Task` e `SetNull` em referências fracas (`AuditLog.actor`, `CriticalProtocol.responsible`, `Contract.responsible`).
-- Truque anti-NULL em unique: `CampaignSnapshot.adSetId @default("")` evita furos de unicidade com NULL.
-- `idempotencyKey @unique` em `Task` e `lastRunAt` em `TaskRecurrenceRule` atendem regras #7/#9.
+- **Idempotência recente exemplar.** Migrations de 2026-06-30+ usam `DO $$ ... EXCEPTION WHEN duplicate_object` para enums, `ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `ALTER TYPE ... ADD VALUE IF NOT EXISTS` e `CREATE INDEX IF NOT EXISTS`. Ex.: `20260630120000_warroom_and_auditlog`, `20260701020000_add_query_indexes`.
+- **Integridade referencial coerente.** `onDelete: Cascade` em dados dependentes do `Client`; `SetNull` correto em vínculos opcionais (`AuditLog.actor/client`, `CriticalProtocol.responsible`, `AsaasCustomer.client`, `Contract.responsible`). AuditLog append-only preserva trilha mesmo com ator removido.
+- **Idempotência de negócio.** Uniques de janela em quase todos os snapshots/relatórios (`MetricSnapshot @@unique([platformAccountId,date])`, `ClientWeeklyCheckin @@unique([clientId,weekStart])`, `Task.idempotencyKey @unique`) — evita duplicidade em cron.
+- **Índices dedicados a filtros quentes** (status, dueDate, datas de vencimento) — `AsaasPayment` indexa `status`, `dueDate`, `paymentDate`; `Task` indexa 6 colunas.
+- **Truque anti-NULL em unique**: `CampaignSnapshot.adSetId @default("")` evita buraco de unicidade com NULL (linha 1155).
 
 ### (c) Riscos por severidade
 
-**ALTO**
-- **`AgencyLead` sem índice em `phone` apesar de lookup por telefone em hot path.** `src/app/api/webhooks/whatsapp/route.ts:47` e `leads/capture/route.ts:60` fazem `where: { phone: { contains: phone.slice(-9) }, deletedAt: null }` a cada mensagem recebida. `AgencyLead` (schema:1444) só tem `@@index([status])` e `@@index([createdAt])`. `contains` não usa índice B-tree comum, mas a ausência de qualquer índice de suporte + varredura em webhook é risco de latência. Mitigável parcialmente; ver Travas.
-- **Migrations antigas com `ALTER TYPE ADD VALUE` sem `IF NOT EXISTS`** (ex.: `20260324230442_add_cac_metric_type/migration.sql`: `ALTER TYPE "MetricType" ADD VALUE 'CAC';`). Se reaplicadas em banco já migrado, falham. Não corrigir migrations já aplicadas em produção (histórico imutável), mas é risco caso se recrie o banco do zero por replay — registrar.
+**ALTO — nenhum bloqueante encontrado.** Migrations aditivas, sem DROP destrutivo em produção.
 
 **MÉDIO**
-- **`Task.leadId` e `Task.contractId` são FKs lógicas sem constraint** (schema:678-679, comentado "sem FK"). Referências a `AgencyLead`/`Contract` podem ficar órfãs após exclusão. Usado em `src/app/actions/contracts.ts` e serviços de lead. Sem `onDelete`, deleção de lead/contrato deixa Task apontando para id inexistente.
-- **`Task.assignedTo` com `onDelete: Cascade` (schema:719):** deletar um `User` apaga TODAS as tasks atribuídas a ele — perda de histórico operacional. Regra técnica #12 (não remover funcionalidade/histórico) sugere `SetNull` ou bloqueio de exclusão.
-- **`AsaasSubscription.status`, `AsaasTransfer.status`, `Contract` usam `String` cru** onde enum caberia (`AsaasSubscription.status` schema:1382 "ACTIVE/INACTIVE/EXPIRED"; `FinancialCategory.type` "REVENUE|EXPENSE"). Sem enum, dados inconsistentes entram sem validação no banco.
-- **`SyncLog` sem índices** (schema:1181): consultado por serviços de sync e DAL, mas não tem `@@index` em `platformAccountId`/`status`/`startedAt`. Tabela cresce por sync diário de ~30 clientes × plataformas.
-- **`ClientResultado` e `ClientRelacionamento` são enums quase idênticos** (OTIMO/BOM/REGULAR/RUIM/PESSIMO) — duplicação semântica. Não é bug, mas gera confusão; documentar diferença de propósito (resultado automatizado vs. relacionamento manual).
+
+- **Migrations antigas não-idempotentes.** `20260321113638_init` e as de mar–mai/2026 usam `CREATE TYPE`, `CREATE INDEX` e `ADD COLUMN` crus (sem guarda). Evidência: 9 migrations sem `CREATE INDEX IF NOT EXISTS`; `init/migration.sql:2` `CREATE TYPE "Role"...` sem guarda. Risco só se um banco parcialmente migrado re-rodar essas migrations; em fluxo `migrate deploy` normal não afeta. Não reescrever migrations já aplicadas — apenas manter o padrão novo daqui pra frente.
+- **FKs "soltas" em `Task`.** `Task.leadId` e `Task.contractId` (linhas 681–682) são `String?` sem relação FK ("sem FK" comentado). Sem integridade referencial nem `ON DELETE`: apagar um `AgencyLead`/`Contract` deixa `Task` apontando para id inexistente. Ainda sem uso no código (`grep` 0 refs), então baixo impacto atual; travar antes de virar feature.
+- **Índice composto ausente em query quente de financeiro.** `inadimplencia-checker.ts:44` e `financeiro/summary/route.ts:102` filtram `AsaasPayment WHERE status='OVERDUE' AND dueDate<=today`. Existem índices separados de `status` e `dueDate`, mas não o composto `(status,dueDate)`. Volume baixo (~30 clientes) → otimização, não urgência.
+- **`AlertType` sobrecarregado.** Enum único acumula alertas de sync, KPI, War Room, financeiro, checkin e antichurn (linhas 444–468), reusado também como `CriticalProtocol.trigger`. Acoplamento crescente; monitorar antes que vire enum gigante difícil de particionar por domínio.
 
 **BAIXO**
-- **Models potencialmente órfãos/subutilizados:** `OperationalRoutine` (schema:935), `TaskSavedView` (927), `TaskSLA` (944), `TaskAutomationRule` — verificar se têm consumo real ou são scaffolding do bloco Central Operacional ainda não ligado.
-- **`Alert.triggeredBy` (User) sem `onDelete`** (schema:479) — default `Restrict` pode bloquear exclusão de usuário; provavelmente intencional, mas inconsistente com o resto (que usa SetNull para refs fracas).
-- **`NuvemshopOrder.rawData`/`MetricSnapshot.rawData` Json sem limite** — crescimento de armazenamento; monitorar.
+
+- **Models órfãos (0 refs em `src/`).** `TaskSavedView`, `OperationalRoutine`, `TaskSLA`, `TaskAutomationRule`, `AsaasTransfer`, `TaskCustomFieldDefinition`. São scaffolding da Central Operacional / Asaas ainda não ligados. Não remover (roadmap), mas registrar como "reservado, não implementado".
+- **`Client.tags`/`Task.tags` como `String[]`** sem índice GIN — busca por tag faz scan. Aceitável no volume atual.
+- **Campos de status como `String` em vez de enum.** `AsaasSubscription.status`/`cycle`, `AsaasTransfer.status`, `FinancialCategory.type`, `Contract`/`Expense.source` (linhas 1391–1392, 1410, 1432, 1539) — perde validação no banco; comentários documentam valores esperados.
+- **`AIMessage`, `ClientInsight`, `KnowledgeChunk`** sem índice na coluna de ordenação além do FK — leituras pequenas, ok.
 
 ### 🔒 Travas / Fluidez
 
-Foco em índices aditivos seguros e limpezas de baixo risco (todos aplicáveis via migration aditiva idempotente, sem alterar dados):
+**Índices aditivos seguros (aplicáveis agora, `CREATE INDEX IF NOT EXISTS`, risco baixo):**
 
-1. **Índice em `SyncLog(platformAccountId, startedAt)` e `SyncLog(status)`** — suporta telas de "última sincronização" (regra UX #10) e diagnóstico de sync falho. `CREATE INDEX IF NOT EXISTS`. Risco baixo.
-2. **Índice em `AgencyLead(createdAt)` já existe; adicionar `@@index([status, deletedAt])`** — o filtro recorrente `status IN (...) AND deletedAt IS NULL` (lead-followup e CRM) se beneficia de índice parcial `WHERE deletedAt IS NULL`. Aditivo, risco baixo.
-3. **Índice em `Client(status)` e `Client(pipelineStage)`** — 31 queries filtram Client por status/pipeline/businessType; nenhum índice em Client hoje além do PK/slug unique. Aditivo, risco baixo.
-4. **Trocar `Task.assignedTo` onDelete Cascade → SetNull** (requer tornar `assignedTo` nullable) — preserva histórico. NÃO puramente aditivo (altera coluna); risco médio, deixar para arquiteto-dados.
-5. **Formalizar FK em `Task.leadId`/`contractId` com `onDelete: SetNull`** — evita órfãos; requer backfill/validação de ids existentes antes. Risco médio.
+- `AsaasPayment(status, dueDate)` — acelera régua de inadimplência (FIN-19), query já existente.
+- `Task(status, dueDate)` composto — cockpit de tarefas atrasadas (hoje só índices simples).
+- `Alert(clientId, type)` — filtros de alerta por tipo/cliente sem índice hoje.
+
+**Travas (endereçar antes de virar feature):**
+
+- Definir `onDelete` para `Task.leadId`/`Task.contractId` — via FK real com `SetNull` ou limpeza aplicativa documentada. Enquanto sem uso, é trava barata.
+
+**Limpezas de baixo risco:**
+
+- Anotar models órfãos como reservados (comentário no schema), não dropar.
+- Migrar `String` → enum nos campos de status Asaas/Financeiro em migration aditiva futura (com backfill), quando houver janela.
+
+> Nenhuma ação de escrita aplicada. Migrations já aplicadas NÃO devem ser reescritas.

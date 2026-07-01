@@ -1,54 +1,64 @@
 ## Stack & Dependências
 
-Auditoria read-only da dimensão Stack & Dependências do PERFORMLI. Data: 2026-07-01.
+Data: 2026-07-01 · Escopo: read-only · Verificação: apenas via CI (build = `prisma generate && npm run migrate:deploy && next build`)
 
-### (a) O que existe e como funciona
+### (a) O que existe
 
-- **`package.json`** — App Next.js 16 (`next@16.2.1`, `react@19.2.4`), Prisma 7 (`prisma`/`@prisma/client`/`@prisma/adapter-pg@^7.5.0`, driver `pg@^8.20.0`), Tailwind v4 (`tailwindcss@^4`, `@tailwindcss/postcss@^4`), auth JWT via `jose@^6.2.2` + `bcryptjs@^3.0.3`, IA via `@anthropic-ai/sdk@^0.80.0`, e-mail via `resend@^6.9.4`, UI Radix + `lucide-react` + `recharts@^3.8.0` + `@hello-pangea/dnd`. PDF via `pdf-parse@^2.4.5`.
-- **Build script** (`package.json:7`): `prisma generate && npm run migrate:deploy && next build`. `migrate:deploy` (`package.json:8`) roda `prisma migrate deploy` com 2 retries (12s / 25s) para cold-start do banco Neon — resiliência boa.
-- **`next.config.ts`** — `compress`, `poweredByHeader:false`, e `optimizePackageImports` para `lucide-react` e `@anthropic-ai/sdk`. Minimalista.
-- **`tsconfig.json`** — `strict:true`, `moduleResolution:"bundler"`, `target:ES2017`, path alias `@/*`. Correto para Next 16.
-- **`vercel.json`** — 4 crons (daily 11h, digest 11h30, recurrences 10h, resultados seg 9h) e `maxDuration` por rota (sync/cron 300s, nuvemshop 60s, knowledge 120s). Alinhado à regra de cron do CLAUDE.md.
-- **`prisma.config.ts`** — schema/migrations/seed padrão, datasource via `DATABASE_URL`.
-- **`eslint.config.mjs`** — flat config com `eslint-config-next` core-web-vitals + typescript.
-- **`postcss.config.mjs`** — apenas `@tailwindcss/postcss` (padrão Tailwind v4, sem `autoprefixer` explícito, correto na v4).
-- **`@anthropic-ai/sdk`** — instanciado em 7 pontos (`src/app/api/ai/chat/route.ts:8`, `dashboard-chat/route.ts:5`, `knowledge/upload/route.ts:9`, `src/services/weekly-report-generator.ts:16`, `campaign-insight-generator.ts:18`, `src/app/actions/planoAcao.ts:8`, `insights.ts:7`).
+| Arquivo | Papel |
+|---|---|
+| `package.json` | Deps, scripts, config `prisma.seed` |
+| `next.config.ts` | `compress`, `poweredByHeader:false`, `optimizePackageImports` p/ `lucide-react` e `@anthropic-ai/sdk` |
+| `tsconfig.json` | `strict:true`, `target ES2017`, `moduleResolution bundler`, alias `@/*` |
+| `eslint.config.mjs` | Flat config estendendo `eslint-config-next` (core-web-vitals + typescript) |
+| `postcss.config.mjs` | Único plugin `@tailwindcss/postcss` (Tailwind v4) |
+| `prisma.config.ts` | Schema, migrations path, seed via `tsx`, datasource `DATABASE_URL` |
+| `vercel.json` | 4 crons + `maxDuration` por rota (`sync` 300s, `cron` 300s, `nuvemshop` 60s, `knowledge` 120s) |
+
+Stack confirmada: Next `16.2.1` · React `19.2.4` · TS `^5` · Prisma `^7.5.0` + `@prisma/adapter-pg` · `pg 8` · `jose 6` (JWT httpOnly) · Tailwind v4 · `@anthropic-ai/sdk ^0.80.0`.
+
+Modelos de IA em uso (ambos válidos e ativos no catálogo atual):
+- `claude-sonnet-4-6` — `planoAcao.ts`, `weekly-report-generator.ts`, `ai/chat`, `ai/dashboard-chat`, `campaign-insight-generator.ts`
+- `claude-haiku-4-5-20251001` — `actions/insights.ts` (ID datado; é o full ID correto de Haiku 4.5)
+
+Auth de cron (`api/cron/*/route.ts`) valida `CRON_SECRET` via Bearer ou `x-cron-secret` e **falha fechado** se o env var não existir.
 
 ### (b) Pontos fortes
 
-- Versões modernas e coerentes entre si (Next 16 + React 19 + eslint-config-next 16.2.1 casados).
-- `prisma generate` no build evita client desatualizado no deploy; retries de migrate mitigam cold-start Neon.
-- `maxDuration` por rota respeita limites de serverless para syncs/crons longos.
-- `strict` TS ligado; `server-only` presente para proteger código server.
-- `next.config.ts` enxuto, sem `ignoreBuildErrors`/`eslint.ignoreDuringBuilds` (build falha de verdade se houver erro — bom para o gate CI Vercel).
+- **Build resiliente ao cold-start do Neon**: `migrate:deploy` tem 3 tentativas com backoff (12s/25s) — mitiga cold-start do Postgres serverless (regra 11).
+- **Versões coerentes**: Next/React/eslint-config-next alinhados em 16.2.1 / 19.2.4; sem mismatch de major.
+- **`strict: true`** no TS — captura classe inteira de bugs em CI.
+- **`maxDuration` explícito** por família de rota no `vercel.json` — evita timeout silencioso de sync/cron longos (regra 6).
+- **Segredos via env/`IntegrationSetting`** — nenhum segredo hardcoded nos configs; IA usa `process.env.ANTHROPIC_API_KEY`.
+- **Cron auth fail-closed** — sem `CRON_SECRET`, toda requisição é rejeitada (regras 3/4).
+- `poweredByHeader:false` — reduz fingerprint.
 
-### (c) Riscos / Dívidas
+### (c) Riscos por severidade
 
-**Crítico**
-- **Model ID de IA provavelmente inválido — quebra em runtime.** `model: 'claude-sonnet-4-6'` em `src/app/api/ai/chat/route.ts:158` e `src/services/weekly-report-generator.ts:325,555,786,916`. Não existe modelo `claude-sonnet-4-6` no catálogo Anthropic (os válidos são `claude-sonnet-4-5` / `claude-sonnet-4-20250514` etc.). Toda chamada a esses fluxos (chat IA, relatório semanal) retorna 404 `not_found_error` da API. Falha silenciosa que só aparece quando o usuário aciona a feature. Verificar também `claude-haiku-4-5-20251001` (data-suffix suspeito; o alias estável é `claude-haiku-4-5`).
+**Crítico** — nenhum nesta dimensão.
 
 **Alto**
-- **Clientes Anthropic sem `timeout` — viola regra técnica 6 do CLAUDE.md.** Todas as 7 instâncias (`new Anthropic()` / `new Anthropic({ apiKey })`) não passam `timeout` nem `maxRetries`. "Toda chamada externa tem timeout" é inegociável. Uma chamada travada pode consumir os 300s de `maxDuration` do cron e derrubar a rotina.
-- **`apiKey` inconsistente entre instâncias.** Algumas usam `new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })` (chat/dashboard/upload) e outras `new Anthropic()` sem apiKey explícita (`weekly-report-generator.ts:16`, `campaign-insight-generator.ts:18`, `planoAcao.ts:8`, `insights.ts:7`), dependendo do fallback implícito para `ANTHROPIC_API_KEY`. Funciona, mas frágil — se a env mudar de nome, metade quebra e metade não.
+- **`next-auth ^5.0.0-beta.30` é dependência de produção mas não é importada em nenhum arquivo `src`** (`package.json:41`). Dependência **beta** não usada aumenta superfície de supply-chain e pode introduzir breaking change num `npm install` futuro; o auth real é `jose` + cookie httpOnly. → remover se confirmado sem uso.
 
 **Médio**
-- **`next-auth@^5.0.0-beta.30` como dependência de produção, aparentemente não usado.** `next-auth` só aparece em `package.json`; a auth real usa `jose` (`src/middleware.ts`, `src/lib/session.ts`). Dependência beta pesada e sem uso aumenta superfície de risco/tamanho de bundle. Confirmar e remover se órfã.
-- **Dependência em versão beta em produção.** `next-auth@5.0.0-beta.30` é beta; se de fato for usada em algum ponto, é risco de breaking change num `beta`.
-- **`@types/*` como dependencies (não devDependencies).** `@types/bcryptjs`, `@types/pg`, `@types/pdf-parse` estão em `dependencies` (`package.json:32-33,55` — pdf-parse está em dev). Types não são runtime; pertencem a devDependencies. Impacto baixo (Vercel instala tudo), mas polui o grafo de produção.
+- **Sem pin de versão do Node** (sem `engines`, sem `.nvmrc`) — CI/Vercel e dev podem rodar majors diferentes; Next 16 exige Node ≥ 20.9. Divergência silenciosa entre ambientes (regra 11).
+- **`@anthropic-ai/sdk ^0.80.0` com faixa `^` em SDK 0.x** (`package.json:17`) — por semver, `^0.80` permite minors 0.x que podem trazer breaking changes de API; um reinstall pode subir o SDK e quebrar `messages.create`. → pin exato ou `~0.80`.
+- **`migrate:deploy` dentro do comando de build** (`package.json:8`) — acopla deploy da app à migração de schema; migration destrutiva/lenta pode derrubar o build. Aceitável hoje (migrations aditivas — regra 13), mas é ponto único de falha.
+- **`pdf-parse ^2.4.5`** (`package.json:42`), usada em `admin/knowledge/upload` — histórico de issues em parsing de uploads. Garantir upload apenas ADMIN + limite de tamanho.
 
 **Baixo**
-- **Ranges `^` em libs críticas.** `next` e `react` estão pinados exatos (bom), mas Prisma/pg/anthropic usam `^`. Com build que roda `prisma generate` + `migrate deploy` sem lockfile determinístico garantido, um minor de Prisma pode alterar comportamento. Existe `package-lock.json` — verificar se Vercel usa `npm ci` (respeita lock) e não `npm install`.
-- **`@anthropic-ai/sdk@^0.80.0`** — SDK pré-1.0, minors podem trazer breaking changes; range `^` só protege até o próximo major (não existe major aqui). Pinar.
-- **Sem `engines` no `package.json`.** Node do Vercel não está fixado; um bump de Node default do Vercel pode mudar comportamento sem aviso.
-- **Sem `autoprefixer` / browserslist explícito** — aceitável no Tailwind v4, mas documentar alvo de browsers seria bom.
+- **`dotenv ^17` como dep de produção** (`package.json:37`) — só necessária em build/seed; runtime Vercel injeta env nativo. Poderia ser `devDependency`.
+- **`@types/bcryptjs`, `@types/pg`, `@types/pdf-parse` em `dependencies`** (`package.json:32,33,55`) — sem impacto runtime, só organização/peso.
+- **Sem gate de `npm audit` no CI** — CVEs transitivas passam silenciosas.
 
 ### 🔒 Travas / Fluidez
 
-Melhorias concretas de baixo risco (ordenadas por retorno):
+Melhorias concretas de baixo risco (não alteram runtime):
 
-1. **Corrigir os model IDs de IA** (`chat/route.ts:158`, `weekly-report-generator.ts:325,555,786,916`): trocar `claude-sonnet-4-6` por um alias válido (`claude-sonnet-4-5`) e validar `claude-haiku-4-5-20251001`. Trava contra quebra silenciosa das features de IA. Baixo risco, alto impacto.
-2. **Centralizar a criação do cliente Anthropic** num único módulo `src/lib/anthropic.ts` que exporte `new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000, maxRetries: 2 })`, e importar nos 7 pontos. Elimina a inconsistência de apiKey e cumpre a regra de timeout de uma vez.
-3. **Adicionar `engines.node`** ao `package.json` (ex.: `"node": ">=20"`) para travar a versão de runtime no Vercel.
-4. **Remover `next-auth`** se confirmado órfão (grep mostra uso zero fora do package.json) — reduz bundle e superfície beta.
-5. **Mover `@types/*` para `devDependencies`** — higiene do grafo de produção.
-6. **Pinar `@anthropic-ai/sdk`** em versão exata (SDK <1.0) e garantir `npm ci` no deploy (respeita `package-lock.json`).
+1. **Pinar `@anthropic-ai/sdk`** de `^0.80.0` para `0.80.0` (ou `~0.80.0`). SDK 0.x + `^` = risco de breaking minor. Aplicável agora, zero risco.
+2. **Adicionar `engines.node` (`">=20.9.0"`) e `.nvmrc`** — alinha dev/CI/Vercel. Aplicável agora, baixo risco.
+3. **Remover `next-auth`** das dependências (0 usos em `src`, verificado). Reduz superfície e ruído; validar no CI.
+4. **Mover `dotenv` e os `@types/*` para `devDependencies`** — reduz `node_modules` de produção. Baixo risco.
+5. **Step `npm audit --audit-level=high` não-bloqueante no CI** — visibilidade de CVEs sem travar deploy. Baixo risco.
+
+---
+*Fim — Stack & Dependências.*
