@@ -634,6 +634,7 @@ enum RecurrenceFrequency {
   DIA_UTIL
   SEMANAL
   QUINZENAL
+  TRIMESTRAL
   MENSAL
   DIA_DO_MES
   DIA_DA_SEMANA
