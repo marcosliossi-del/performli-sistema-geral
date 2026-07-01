@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
+import { checkTaskCompletion } from '@/services/task-completion-guard'
 import { TaskType, TaskPriority } from '@prisma/client'
 
 type ActionResult = { ok: true; id?: string } | { error: string }
@@ -342,6 +343,19 @@ export async function decideTaskValidation(taskId: string, approved: boolean, no
     select: { id: true },
   })
 
+  // FASE 5 — TaskCompletionGuard: ao aprovar (→ CONCLUIDO), reaplica o guard.
+  // Só bloqueia tarefas críticas flag-gated; tarefas comuns seguem como antes.
+  // Obs.: a decisão de aprovação da CS conta como revisão aprovada — como a
+  // aprovação ainda não foi gravada, tratamos requiresReview considerando este
+  // ato. Por isso avaliamos o guard e ignoramos apenas o item de revisão.
+  if (approved) {
+    const guard = await checkTaskCompletion(taskId, { reviewSatisfied: true })
+    if (!guard.allowed) {
+      await prisma.task.update({ where: { id: taskId }, data: { blockReason: guard.reason } })
+      return { error: guard.reason ?? 'Não é possível concluir: requisitos obrigatórios pendentes.' }
+    }
+  }
+
   const newStatus = approved ? 'CONCLUIDO' : 'AJUSTES_SOLICITADOS'
   const now = new Date()
 
@@ -349,7 +363,7 @@ export async function decideTaskValidation(taskId: string, approved: boolean, no
     prisma.task.update({
       where: { id: taskId },
       data: approved
-        ? { status: 'CONCLUIDO', completedAt: now, completedById: session.userId }
+        ? { status: 'CONCLUIDO', completedAt: now, completedById: session.userId, blockReason: null }
         : { status: 'AJUSTES_SOLICITADOS' },
     }),
     pending

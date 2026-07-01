@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess } from '@/lib/audit'
+import { checkTaskCompletion } from '@/services/task-completion-guard'
 import { TaskPriority, TaskStatus } from '@prisma/client'
 
 const createSchema = z.object({
@@ -75,12 +76,25 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
 
   const isConcluir = status === 'CONCLUIDO'
 
+  // FASE 5 — TaskCompletionGuard: só bloqueia tarefas críticas flag-gated.
+  // Tarefas comuns retornam allowed:true e concluem exatamente como antes.
+  if (isConcluir && current.status !== 'CONCLUIDO') {
+    const guard = await checkTaskCompletion(taskId)
+    if (!guard.allowed) {
+      await prisma.task.update({
+        where: { id: taskId },
+        data: { blockReason: guard.reason ?? 'Conclusão bloqueada: requisitos obrigatórios pendentes.' },
+      })
+      throw new Error(guard.reason ?? 'Não é possível concluir: requisitos obrigatórios pendentes.')
+    }
+  }
+
   await prisma.task.update({
     where: { id: taskId },
     data: {
       status,
       ...(isConcluir
-        ? { completedAt: new Date(), completedById: userId }
+        ? { completedAt: new Date(), completedById: userId, blockReason: null }
         : { completedAt: null, completedById: null }),
       activities: {
         create: {
