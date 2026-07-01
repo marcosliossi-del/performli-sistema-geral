@@ -53,6 +53,7 @@ import { WeekComparisonTable } from '@/components/clients/WeekComparisonTable'
 import { LocalBusinessKPISection } from '@/components/clients/LocalBusinessKPISection'
 import { SalesFunnelSection } from '@/components/clients/SalesFunnelSection'
 import { FichaCsPanel } from '@/components/clients/FichaCsPanel'
+import { CheckinReportPanel } from '@/components/clients/CheckinReportPanel'
 
 const platformColors: Record<string, string> = {
   META_ADS: '#1877F2',
@@ -128,7 +129,7 @@ export default async function ClientDetailPage({
   const activeFrom = from ?? defaultFrom
   const activeTo = to ?? defaultTo
 
-  const [metricHistory, kpis, paceGoals, chat, weeklyReport, monthlyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel, activeContract, clienteTarefas, resultadoInfo] = await Promise.all([
+  const [metricHistory, kpis, paceGoals, chat, weeklyReport, monthlyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel, activeContract, clienteTarefas, resultadoInfo, checkinInfo] = await Promise.all([
     getClientMetricHistory(client.id, 14),
     getClientKPIs(client.id, activeFrom, activeTo),
     getGoalPaceMetrics(client.id),
@@ -162,12 +163,23 @@ export default async function ClientDetailPage({
         nps: true, relacionamento: true, curva: true, feedbackNegativo: true, fichaCsUpdatedAt: true,
       },
     }),
+    prisma.clientWeeklyCheckin.findFirst({
+      where: { clientId: client.id },
+      orderBy: { weekStart: 'desc' },
+      select: {
+        problema: true, oQueFoiFeito: true, resultadoSemana: true,
+        proximosPassos: true, pedidosCliente: true, novosSeguidores: true, submittedAt: true,
+      },
+    }),
   ])
 
-  // Ficha de CS — editável por ADMIN, CS ou gestor atribuído.
+  // Ficha de CS / check-in — editável por ADMIN, CS ou gestor atribuído.
   const canEditFicha =
     session.role === 'ADMIN' ||
     session.role === 'CS' ||
+    (session.role === 'MANAGER' && client.assignments.some((a) => a.user.id === session.userId))
+  const canGerarRelatorio =
+    session.role === 'ADMIN' ||
     (session.role === 'MANAGER' && client.assignments.some((a) => a.user.id === session.userId))
 
   const contractData = activeContract ? {
@@ -286,6 +298,23 @@ export default async function ClientDetailPage({
           curva: resultadoInfo?.curva ?? null,
           feedbackNegativo: resultadoInfo?.feedbackNegativo ?? 0,
           atualizadoEm: resultadoInfo?.fichaCsUpdatedAt ? resultadoInfo.fichaCsUpdatedAt.toISOString() : null,
+        }}
+      />
+
+      {/* Check-in & Relatório do cliente (IA) */}
+      <CheckinReportPanel
+        clientId={client.id}
+        clientSlug={slug}
+        canEdit={canGerarRelatorio}
+        businessType={client.businessType}
+        initial={{
+          problema:        checkinInfo?.problema ?? '',
+          oQueFoiFeito:    checkinInfo?.oQueFoiFeito ?? '',
+          resultadoSemana: checkinInfo?.resultadoSemana ?? '',
+          proximosPassos:  checkinInfo?.proximosPassos ?? '',
+          pedidosCliente:  checkinInfo?.pedidosCliente ?? '',
+          novosSeguidores: checkinInfo?.novosSeguidores ?? null,
+          atualizadoEm:    checkinInfo?.submittedAt ? checkinInfo.submittedAt.toISOString() : null,
         }}
       />
 
