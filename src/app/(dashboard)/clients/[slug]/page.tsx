@@ -52,6 +52,7 @@ import { PillarBenchmarkPanel } from '@/components/clients/PillarBenchmarkPanel'
 import { WeekComparisonTable } from '@/components/clients/WeekComparisonTable'
 import { LocalBusinessKPISection } from '@/components/clients/LocalBusinessKPISection'
 import { SalesFunnelSection } from '@/components/clients/SalesFunnelSection'
+import { FichaCsPanel } from '@/components/clients/FichaCsPanel'
 
 const platformColors: Record<string, string> = {
   META_ADS: '#1877F2',
@@ -156,9 +157,18 @@ export default async function ClientDetailPage({
     getClienteTarefas(client.id, session.userId, session.role),
     prisma.client.findUnique({
       where: { id: client.id },
-      select: { resultado: true, etapa: true, resultadoRoas: true, resultadoUpdatedAt: true },
+      select: {
+        resultado: true, etapa: true, resultadoRoas: true, resultadoUpdatedAt: true,
+        nps: true, relacionamento: true, curva: true, feedbackNegativo: true, fichaCsUpdatedAt: true,
+      },
     }),
   ])
+
+  // Ficha de CS — editável por ADMIN, CS ou gestor atribuído.
+  const canEditFicha =
+    session.role === 'ADMIN' ||
+    session.role === 'CS' ||
+    (session.role === 'MANAGER' && client.assignments.some((a) => a.user.id === session.userId))
 
   const contractData = activeContract ? {
     ...activeContract,
@@ -265,6 +275,19 @@ export default async function ClientDetailPage({
           atualizadoEm={resultadoInfo.resultadoUpdatedAt ? resultadoInfo.resultadoUpdatedAt.toISOString() : null}
         />
       )}
+
+      {/* Ficha de CS — NPS, Relacionamento, Curva, Feedback negativo */}
+      <FichaCsPanel
+        clientId={client.id}
+        canEdit={canEditFicha}
+        initial={{
+          nps: resultadoInfo?.nps ?? null,
+          relacionamento: resultadoInfo?.relacionamento ?? null,
+          curva: resultadoInfo?.curva ?? null,
+          feedbackNegativo: resultadoInfo?.feedbackNegativo ?? 0,
+          atualizadoEm: resultadoInfo?.fichaCsUpdatedAt ? resultadoInfo.fichaCsUpdatedAt.toISOString() : null,
+        }}
+      />
 
       {/* Info cards */}
       <div className="grid grid-cols-4 gap-4">
