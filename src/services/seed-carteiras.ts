@@ -97,7 +97,7 @@ const CARTEIRAS: CarteiraRow[] = [
   { match: ['Svn Varejo', 'Svn [Varejo]'], gestor: null, businessType: 'ECOMMERCE', plataformas: ['Meta'], produtos: [TP], resultado: 'OTIMO', etapa: 'OTIMIZACAO', salaDeGuerra: false, relacionamento: 'OTIMO', nps: 'PROMOTOR', curva: 'B', investimentoMeta: null, investimentoGoogle: null, investimentoTiktok: null, roasMinimo: null },
 ]
 
-function normalize(s: string): string {
+export function normalize(s: string): string {
   return s
     .toLowerCase()
     .normalize('NFD')
