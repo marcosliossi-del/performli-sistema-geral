@@ -160,6 +160,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('Nuvemshop install error:', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    // Não vaza detalhes internos na resposta; o log guarda o erro real.
+    return NextResponse.json({ error: 'Falha ao instalar o app da loja' }, { status: 500 })
   }
 }

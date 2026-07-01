@@ -150,7 +150,8 @@ export async function GET(request: NextRequest) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('Nuvemshop OAuth callback error:', msg)
 
-    const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?nuvemshop=error&message=${encodeURIComponent(msg)}`
+    // Não expõe o erro interno na URL de redirect; mensagem genérica ao usuário.
+    const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?nuvemshop=error`
     return NextResponse.redirect(redirectUrl)
   }
 }
