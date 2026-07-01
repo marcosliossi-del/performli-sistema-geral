@@ -90,6 +90,7 @@ async function getServiceAccountToken(email: string, privateKey: string): Promis
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
       assertion:  jwt,
     }),
+    signal: AbortSignal.timeout(30_000),
   })
 
   if (!res.ok) {
@@ -113,6 +114,7 @@ async function getRefreshToken(clientId: string, clientSecret: string, refreshTo
       client_secret: clientSecret,
       refresh_token: refreshToken,
     }),
+    signal: AbortSignal.timeout(30_000),
   })
 
   if (!res.ok) {
@@ -183,6 +185,7 @@ export class GA4Client {
 
       const res = await fetch(`${GA4_BASE}/${normalized}/metadata`, {
         headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(30_000),
       })
 
       if (!res.ok) {
@@ -220,6 +223,7 @@ export class GA4Client {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       next: { revalidate: 0 },
+      signal: AbortSignal.timeout(30_000),
     })
 
     if (!res.ok) {
@@ -260,6 +264,7 @@ export class GA4Client {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       next: { revalidate: 0 },
+      signal: AbortSignal.timeout(30_000),
     })
 
     if (!res.ok) {

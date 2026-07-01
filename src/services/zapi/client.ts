@@ -37,6 +37,7 @@ async function req<T>(config: ZApiConfig, method: string, path: string, body?: u
       'client-token': config.clientToken,
     },
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(30_000),
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')

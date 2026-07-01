@@ -102,6 +102,7 @@ export async function exchangeCodeForToken(code: string): Promise<NuvemshopOAuth
       grant_type: 'authorization_code',
       code,
     }),
+    signal: AbortSignal.timeout(30_000),
   })
 
   if (!res.ok) {
@@ -134,6 +135,7 @@ export class NuvemshopClient {
         'User-Agent': process.env.NUVEMSHOP_USER_AGENT || 'Performli/1.0 (kyn.leonardo@gmail.com)',
         ...options.headers,
       },
+      signal: AbortSignal.timeout(30_000),
     })
 
     if (!res.ok) {
