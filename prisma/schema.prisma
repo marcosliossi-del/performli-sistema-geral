@@ -72,6 +72,27 @@ enum ClientEtapa {
   OTIMIZACAO      // Resultado Ruim ou Péssimo
 }
 
+// Ficha de CS — dimensões de relacionamento preenchidas manualmente pela CS
+enum ClientNps {
+  PROMOTOR
+  NEUTRO
+  DETRATOR
+}
+
+enum ClientRelacionamento {
+  OTIMO
+  BOM
+  REGULAR
+  RUIM
+  PESSIMO
+}
+
+enum ClientCurva {
+  A
+  B
+  C
+}
+
 enum PipelineStage {
   LEAD
   PROPOSTA
@@ -114,6 +135,12 @@ model Client {
   resultadoRoas      Decimal?  @db.Decimal(8, 4) // ROAS da última semana avaliada
   resultadoWeek      String?            // janela avaliada (YYYY-MM-DD do domingo) — idempotência
   resultadoUpdatedAt DateTime?          // última atualização automática do resultado
+  // ── Ficha de CS (manual) ─────────────────────────────────────────────────
+  nps            ClientNps?
+  relacionamento ClientRelacionamento?
+  curva          ClientCurva?
+  feedbackNegativo Int      @default(0)  // reclamações registradas na semana
+  fichaCsUpdatedAt DateTime?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 

@@ -23,6 +23,7 @@ async function getClientesData(userId: string, role: string) {
         email: true, status: true, contractValue: true, createdAt: true,
         businessType: true,
         resultado: true, etapa: true, resultadoRoas: true, resultadoUpdatedAt: true,
+        nps: true, relacionamento: true, curva: true,
       },
       orderBy: { name: 'asc' },
     }),

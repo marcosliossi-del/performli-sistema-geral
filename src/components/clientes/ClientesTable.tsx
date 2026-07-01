@@ -20,6 +20,9 @@ export interface ClientRow {
   etapa:              string | null
   resultadoRoas:      number | null
   resultadoUpdatedAt: string | null
+  nps:                string | null
+  relacionamento:     string | null
+  curva:              string | null
 }
 
 const RESULTADO_CONFIG: Record<string, { label: string; color: string }> = {
@@ -33,6 +36,23 @@ const ETAPA_CONFIG: Record<string, { label: string; color: string }> = {
   ESCALA:        { label: 'Escala',        color: '#34c97a' },
   MONITORAMENTO: { label: 'Monitoramento', color: '#54e0ee' },
   OTIMIZACAO:    { label: 'Otimização',    color: '#e3ad45' },
+}
+const REL_CONFIG: Record<string, { label: string; color: string }> = {
+  OTIMO:   { label: 'Ótimo',   color: '#34c97a' },
+  BOM:     { label: 'Bom',     color: '#54e0ee' },
+  REGULAR: { label: 'Regular', color: '#e3ad45' },
+  RUIM:    { label: 'Ruim',    color: '#ff5e6a' },
+  PESSIMO: { label: 'Péssimo', color: '#ff3b4e' },
+}
+const NPS_CONFIG: Record<string, { label: string; color: string }> = {
+  PROMOTOR: { label: 'Promotor', color: '#34c97a' },
+  NEUTRO:   { label: 'Neutro',   color: '#e3ad45' },
+  DETRATOR: { label: 'Detrator', color: '#ff5e6a' },
+}
+const CURVA_CONFIG: Record<string, { label: string; color: string }> = {
+  A: { label: 'A', color: '#34c97a' },
+  B: { label: 'B', color: '#54e0ee' },
+  C: { label: 'C', color: '#e3ad45' },
 }
 
 interface Props {
@@ -193,6 +213,9 @@ export function ClientesTable({ clients }: Props) {
               <th className="text-left px-3 py-3 font-medium">TIPO</th>
               <th className="text-left px-3 py-3 font-medium">RESULTADO</th>
               <th className="text-left px-3 py-3 font-medium">ETAPA</th>
+              <th className="text-left px-3 py-3 font-medium">RELACIONAMENTO</th>
+              <th className="text-left px-3 py-3 font-medium">NPS</th>
+              <th className="text-left px-3 py-3 font-medium">CURVA</th>
               <th className="text-left px-3 py-3 font-medium">ORIGEM</th>
               <th className="text-left px-3 py-3 font-medium">TELEFONE</th>
               <th className="text-left px-3 py-3 font-medium">CONTRATO</th>
@@ -204,7 +227,7 @@ export function ClientesTable({ clients }: Props) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center py-12 text-sm text-[#87919E]">
+                <td colSpan={14} className="text-center py-12 text-sm text-[#87919E]">
                   Nenhum cliente encontrado
                 </td>
               </tr>
@@ -274,6 +297,42 @@ export function ClientesTable({ clients }: Props) {
                           style={{ color: ETAPA_CONFIG[client.etapa].color, background: `${ETAPA_CONFIG[client.etapa].color}1f` }}
                         >
                           {ETAPA_CONFIG[client.etapa].label}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[#576070]">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
+                      {client.relacionamento && REL_CONFIG[client.relacionamento] ? (
+                        <span
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                          style={{ color: REL_CONFIG[client.relacionamento].color, background: `${REL_CONFIG[client.relacionamento].color}1f` }}
+                        >
+                          {REL_CONFIG[client.relacionamento].label}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[#576070]">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
+                      {client.nps && NPS_CONFIG[client.nps] ? (
+                        <span
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                          style={{ color: NPS_CONFIG[client.nps].color, background: `${NPS_CONFIG[client.nps].color}1f` }}
+                        >
+                          {NPS_CONFIG[client.nps].label}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[#576070]">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3">
+                      {client.curva && CURVA_CONFIG[client.curva] ? (
+                        <span
+                          className="inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold rounded-md"
+                          style={{ color: CURVA_CONFIG[client.curva].color, background: `${CURVA_CONFIG[client.curva].color}1f` }}
+                        >
+                          {CURVA_CONFIG[client.curva].label}
                         </span>
                       ) : (
                         <span className="text-[10px] text-[#576070]">—</span>
