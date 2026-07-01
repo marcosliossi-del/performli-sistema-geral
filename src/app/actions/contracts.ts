@@ -17,7 +17,8 @@ export async function createContract(
   prevState: ContractFormState,
   formData: FormData,
 ): Promise<ContractFormState> {
-  await requireSession()
+  const session = await requireSession()
+  if (session.role !== 'ADMIN') return { error: 'Apenas o admin pode gerenciar contratos.' }
 
   const clientId      = (formData.get('clientId')      as string)?.trim()
   const responsibleId = (formData.get('responsibleId') as string)?.trim() || null
@@ -81,7 +82,8 @@ export async function updateContract(
   prevState: ContractFormState,
   formData: FormData,
 ): Promise<ContractFormState> {
-  await requireSession()
+  const session = await requireSession()
+  if (session.role !== 'ADMIN') return { error: 'Apenas o admin pode gerenciar contratos.' }
 
   const id            = (formData.get('id')            as string)?.trim()
   const responsibleId = (formData.get('responsibleId') as string)?.trim() || null
@@ -140,7 +142,8 @@ export async function updateContract(
 }
 
 export async function renewContract(contractId: string): Promise<{ ok: boolean; newId?: string; error?: string }> {
-  await requireSession()
+  const session = await requireSession()
+  if (session.role !== 'ADMIN') return { ok: false, error: 'Apenas o admin pode renovar contratos.' }
 
   const original = await prisma.contract.findUnique({ where: { id: contractId } })
   if (!original) return { ok: false, error: 'Contrato não encontrado.' }
@@ -177,7 +180,8 @@ export async function renewContract(contractId: string): Promise<{ ok: boolean; 
 }
 
 export async function cancelContract(contractId: string, reason?: string): Promise<{ ok: boolean; error?: string }> {
-  await requireSession()
+  const session = await requireSession()
+  if (session.role !== 'ADMIN') return { ok: false, error: 'Apenas o admin pode cancelar contratos.' }
 
   await prisma.contract.update({
     where: { id: contractId },
@@ -194,6 +198,9 @@ export async function cancelContract(contractId: string, reason?: string): Promi
 }
 
 export async function fetchAllContracts() {
+  const session = await requireSession()
+  if (session.role !== 'ADMIN' && session.role !== 'CS') return []
+
   const contracts = await prisma.contract.findMany({
     include: {
       client:      { select: { id: true, name: true, slug: true } },

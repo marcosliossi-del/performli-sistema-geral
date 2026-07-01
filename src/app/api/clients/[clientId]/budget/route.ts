@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/session'
+import { assertClientMutationAccess } from '@/lib/audit'
 import { getMonthRange } from '@/lib/utils'
 
 export async function PATCH(
@@ -13,6 +14,14 @@ export async function PATCH(
   }
 
   const { clientId } = await params
+
+  // Posse: ADMIN/CS em qualquer cliente; MANAGER só nos atribuídos.
+  try {
+    await assertClientMutationAccess(session, clientId, { allowCS: true })
+  } catch {
+    return NextResponse.json({ error: 'Sem acesso a este cliente' }, { status: 403 })
+  }
+
   const body = await request.json()
   const value = typeof body.value === 'number' ? body.value : parseFloat(body.value)
   if (isNaN(value) || value < 0) {
