@@ -337,3 +337,9 @@ calendário, DnD, skeletons).
   CommandPalette (modal vidro, atalhos rápidos quando vazio, busca com debounce,
   navegação ↑↓/Enter/Esc, agrupado Tarefas/Clientes/POPs). Aberto por ⌘K/Ctrl+K
   global (listener no DashboardShell) e pelo botão de busca do TopNav.
+
+- **Fluidez: Toasts + polish carteira** — branch feat/polish-telas: sistema de
+  toasts global (lib/toast pub/sub + ToastViewport no shell, vidro, auto-dismiss)
+  fiado no TaskDrawer (enviar/aprovar/ajustes/concluir/comentar) e na
+  ValidationQueue (aprovar/ajustes). ClientesTable container → .card (hairline +
+  sombra + brilho). Demais telas já herdam a paleta via overrides globais.

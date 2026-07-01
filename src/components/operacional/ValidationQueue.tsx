@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { CheckSquare, RotateCcw, Clock, User as UserIcon, ShieldCheck, FileText } from 'lucide-react'
 import { decideTaskValidation } from '@/app/actions/operacional'
 import type { ValidationQueueItem } from '@/lib/dal'
+import { toast } from '@/lib/toast'
 
 export function ValidationQueue({ items, canDecide }: { items: ValidationQueueItem[]; canDecide: boolean }) {
   const [list, setList] = useState(items)
@@ -20,10 +21,11 @@ export function ValidationQueue({ items, canDecide }: { items: ValidationQueueIt
     startTransition(async () => {
       const r = await decideTaskValidation(id, approved, approved ? undefined : note)
       setBusyId(null)
-      if ('error' in r) { setError(r.error); return }
+      if ('error' in r) { setError(r.error); toast(r.error, 'err'); return }
       setList((prev) => prev.filter((it) => it.id !== id))
       setOpenId(null)
       setNote('')
+      toast(approved ? 'Check-in aprovado' : 'Ajustes solicitados', approved ? 'ok' : 'info')
     })
   }
 
