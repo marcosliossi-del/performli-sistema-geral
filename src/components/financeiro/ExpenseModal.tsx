@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { X, Loader2, TrendingDown, Trash2 } from 'lucide-react'
+import { useModalA11y } from '@/lib/useModalA11y'
 
 export interface ExpenseRow {
   id:          string
@@ -46,6 +47,7 @@ export function ExpenseModal({ expense, onClose, onSaved, onDeleted }: Props) {
   const [saving,   setSaving]   = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error,    setError]    = useState<string | null>(null)
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose)
 
   const [form, setForm] = useState({
     description: expense?.description ?? '',
@@ -98,6 +100,10 @@ export function ExpenseModal({ expense, onClose, onSaved, onDeleted }: Props) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={expense ? 'Editar despesa' : 'Lançar despesa'}
         className="relative w-full max-w-md bg-[#0D2137] border border-[#38435C] rounded-2xl shadow-2xl"
         onClick={e => e.stopPropagation()}
       >

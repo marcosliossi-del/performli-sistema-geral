@@ -5,6 +5,7 @@ import { Plus, X, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createTask } from '@/app/actions/tasks'
+import { useModalA11y } from '@/lib/useModalA11y'
 
 interface Props {
   clients: { id: string; name: string }[]
@@ -12,9 +13,24 @@ interface Props {
 
 export function TaskFormModal({ clients }: Props) {
   const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>
+        <Plus size={16} />
+        Nova Tarefa
+      </Button>
+
+      {open && <TaskFormDialog clients={clients} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+function TaskFormDialog({ clients, onClose }: { clients: Props['clients']; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const formRef = useRef<HTMLFormElement>(null)
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -24,7 +40,7 @@ export function TaskFormModal({ clients }: Props) {
       try {
         await createTask(data)
         formRef.current?.reset()
-        setOpen(false)
+        onClose()
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao salvar')
       }
@@ -32,18 +48,20 @@ export function TaskFormModal({ clients }: Props) {
   }
 
   return (
-    <>
-      <Button onClick={() => setOpen(true)}>
-        <Plus size={16} />
-        Nova Tarefa
-      </Button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Nova Tarefa"
+        className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl"
+      >
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#38435C]">
               <h2 className="text-sm font-semibold text-[#EBEBEB]">Nova Tarefa</h2>
-              <button onClick={() => setOpen(false)} className="text-[#87919E] hover:text-[#EBEBEB] transition-colors">
+              <button onClick={onClose} className="text-[#87919E] hover:text-[#EBEBEB] transition-colors">
                 <X size={16} />
               </button>
             </div>
@@ -107,7 +125,7 @@ export function TaskFormModal({ clients }: Props) {
               )}
 
               <div className="flex gap-3 pt-2">
-                <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>
+                <Button type="button" variant="outline" className="flex-1" onClick={onClose}>
                   Cancelar
                 </Button>
                 <Button type="submit" className="flex-1" disabled={isPending}>
@@ -116,9 +134,7 @@ export function TaskFormModal({ clients }: Props) {
                 </Button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-    </>
+      </div>
+    </div>
   )
 }

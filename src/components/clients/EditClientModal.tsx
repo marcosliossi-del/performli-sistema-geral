@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { updateClient, deleteClient } from '@/app/actions/updateClient'
 import { X, Trash2, AlertTriangle, ShoppingCart, MapPin } from 'lucide-react'
 import { BusinessType } from '@prisma/client'
+import { useModalA11y } from '@/lib/useModalA11y'
 
 interface ClientData {
   id: string
@@ -51,6 +52,7 @@ export function EditClientModal({ client, onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose)
 
   function set(field: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -94,8 +96,17 @@ export function EditClientModal({ client, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#0A1E2C] border border-[#38435C] rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Editar Cliente"
+        className="bg-[#0A1E2C] border border-[#38435C] rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#38435C] flex-shrink-0">
           <h2 className="text-sm font-semibold text-[#EBEBEB]">Editar Cliente</h2>

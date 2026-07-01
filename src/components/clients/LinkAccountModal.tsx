@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { Plus, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { linkMetaAccount, validateMetaAccount } from '@/app/actions/platformAccounts'
 import { useRouter } from 'next/navigation'
+import { useModalA11y } from '@/lib/useModalA11y'
 
 interface LinkAccountModalProps {
   clientId: string
@@ -14,6 +15,23 @@ type Step = 'form' | 'verifying' | 'done'
 
 export function LinkAccountModal({ clientId, clientSlug: _ }: LinkAccountModalProps) {
   const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 text-xs text-[#95BBE2] hover:text-[#EBEBEB] transition-colors"
+      >
+        <Plus size={13} />
+        Vincular Meta
+      </button>
+
+      {open && <LinkAccountDialog clientId={clientId} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+function LinkAccountDialog({ clientId, onClose }: { clientId: string; onClose: () => void }) {
   const [step, setStep] = useState<Step>('form')
   const [accountId, setAccountId] = useState('')
   const [accountName, setAccountName] = useState('')
@@ -21,18 +39,10 @@ export function LinkAccountModal({ clientId, clientSlug: _ }: LinkAccountModalPr
   const [successName, setSuccessName] = useState<string | null>(null)
   const [, startTransition] = useTransition()
   const router = useRouter()
-
-  function reset() {
-    setStep('form')
-    setAccountId('')
-    setAccountName('')
-    setError(null)
-    setSuccessName(null)
-  }
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose)
 
   function close() {
-    setOpen(false)
-    reset()
+    onClose()
   }
 
   function handleVerifyAndLink() {
@@ -77,18 +87,17 @@ export function LinkAccountModal({ clientId, clientSlug: _ }: LinkAccountModalPr
   }
 
   return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 text-xs text-[#95BBE2] hover:text-[#EBEBEB] transition-colors"
-      >
-        <Plus size={13} />
-        Vincular Meta
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) close() }}
+        >
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Vincular conta Meta Ads"
+            className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl"
+          >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#38435C]">
               <div>
@@ -181,7 +190,5 @@ export function LinkAccountModal({ clientId, clientSlug: _ }: LinkAccountModalPr
             </div>
           </div>
         </div>
-      )}
-    </>
   )
 }

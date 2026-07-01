@@ -5,6 +5,7 @@ import { addInteraction } from '@/app/actions/interactions'
 import { ClientInteractionItem } from '@/lib/dal'
 import { InteractionType } from '@prisma/client'
 import { X } from 'lucide-react'
+import { useModalA11y } from '@/lib/useModalA11y'
 
 const TYPES: { value: InteractionType; label: string }[] = [
   { value: 'LIGACAO',           label: 'Ligação'           },
@@ -27,6 +28,7 @@ export function AddInteractionModal({ clientId, onClose, onAdded }: Props) {
   const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -55,8 +57,17 @@ export function AddInteractionModal({ clientId, onClose, onAdded }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#0A1E2C] border border-[#38435C] rounded-xl w-full max-w-md shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Nova Interação"
+        className="bg-[#0A1E2C] border border-[#38435C] rounded-xl w-full max-w-md shadow-2xl"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#38435C]">
           <h2 className="text-sm font-semibold text-[#EBEBEB]">Nova Interação</h2>

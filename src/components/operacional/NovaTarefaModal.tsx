@@ -9,6 +9,7 @@ import type { TaskType, TaskPriority } from '@prisma/client'
 import {
   TYPE_OPTIONS, TYPE_LABELS, PRIORITY_OPTIONS, PRIORITY_LABELS, label,
 } from './labels'
+import { useModalA11y } from '@/lib/useModalA11y'
 
 export function NovaTarefaModal({
   ctx, onClose,
@@ -28,6 +29,7 @@ export function NovaTarefaModal({
   const [checklist, setChecklist] = useState<string[]>([])
   const [msg, setMsg] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose)
 
   const cliente = useMemo(() => ctx.clientes.find((c) => c.id === clientId) ?? null, [ctx.clientes, clientId])
   const popsDaArea = useMemo(
@@ -58,7 +60,13 @@ export function NovaTarefaModal({
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
-      <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[#05141C] border border-[#38435C] rounded-xl z-50">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Nova tarefa"
+        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[#05141C] border border-[#38435C] rounded-xl z-50"
+      >
         <div className="sticky top-0 bg-[#05141C] border-b border-[#38435C] px-5 py-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-[#EBEBEB]">Nova tarefa</h2>
           <button onClick={onClose} className="text-[#87919E] hover:text-[#EBEBEB]"><X size={18} /></button>
