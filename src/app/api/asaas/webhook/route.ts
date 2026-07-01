@@ -44,13 +44,19 @@ export async function POST(request: NextRequest) {
     'PAYMENT_CREATED',
   ]
 
-  if (paymentEvents.includes(body.event) && body.payment) {
-    try {
-      await handlePaymentWebhook({ event: body.event, payment: body.payment })
-    } catch (err) {
-      console.error('[Asaas Webhook] Error processing payment:', err)
-      // Return 200 to prevent Asaas from retrying on internal errors
-    }
+  // Evento não tratado (ou sem payload): ignoramos de propósito → 200 para o
+  // Asaas parar de reenviar. Isso é "ignorado com sucesso", não uma falha.
+  if (!paymentEvents.includes(body.event) || !body.payment) {
+    return NextResponse.json({ received: true, ignored: true })
+  }
+
+  try {
+    await handlePaymentWebhook({ event: body.event, payment: body.payment })
+  } catch (err) {
+    // Falha REAL de processamento/persistência: 500 para o Asaas reentregar.
+    // Nunca engolir com 200 — isso mascararia perda de dado financeiro.
+    console.error('[Asaas Webhook] Error processing payment:', err)
+    return NextResponse.json({ error: 'Processing failed' }, { status: 500 })
   }
 
   return NextResponse.json({ received: true })
