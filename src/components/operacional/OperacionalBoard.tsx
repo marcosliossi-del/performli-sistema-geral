@@ -3,7 +3,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react'
 import type { OperacionalTask, NovaTarefaContext } from '@/lib/dal'
-import { TaskDrawer } from './TaskDrawer'
+import { TaskDrawer, type TaskUser, type TaskPatch } from './TaskDrawer'
 import { NovaTarefaModal } from './NovaTarefaModal'
 import {
   STATUS_LABELS, STATUS_COLORS, PRIORITY_LABELS, KANBAN_ORDER, label,
@@ -256,13 +256,15 @@ function CalendarView({ tasks, onSelect }: { tasks: OperacionalTask[]; onSelect:
 }
 
 export function OperacionalBoard({
-  tasks, ctx, canEdit, initialTaskId,
+  tasks: initialTasks, ctx, canEdit, users, initialTaskId,
 }: {
   tasks: OperacionalTask[]
   ctx: NovaTarefaContext
   canEdit: boolean
+  users: TaskUser[]
   initialTaskId?: string
 }) {
+  const [tasks, setTasks] = useState<OperacionalTask[]>(initialTasks)
   const [view, setView] = useState<View>('lista')
   const [statusF, setStatusF] = useState('')
   const [priorityF, setPriorityF] = useState('')
@@ -272,6 +274,9 @@ export function OperacionalBoard({
   const [novaOpen, setNovaOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
+  // Mantém o board sincronizado quando o server revalida os dados.
+  useEffect(() => { setTasks(initialTasks) }, [initialTasks])
+
   // Deep-link: abre o drawer da tarefa indicada por ?task=<id> ao montar.
   useEffect(() => {
     if (!initialTaskId) return
@@ -279,6 +284,20 @@ export function OperacionalBoard({
     if (t) setSelected(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTaskId])
+
+  // Atualização otimista vinda da edição inline do drawer.
+  function handlePatch(taskId: string, patch: TaskPatch) {
+    const apply = (t: OperacionalTask): OperacionalTask => ({
+      ...t,
+      ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+      ...(patch.assigneeName !== undefined ? { assigneeName: patch.assigneeName } : {}),
+      ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate ? new Date(patch.dueDate) : null } : {}),
+    })
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? apply(t) : t)))
+    setSelected((cur) => (cur && cur.id === taskId ? apply(cur) : cur))
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -380,7 +399,7 @@ export function OperacionalBoard({
         </div>
       )}
 
-      {selected && <TaskDrawer task={selected} canEdit={canEdit} onClose={() => setSelected(null)} />}
+      {selected && <TaskDrawer task={selected} canEdit={canEdit} users={users} onClose={() => setSelected(null)} onPatch={handlePatch} />}
       {novaOpen && <NovaTarefaModal ctx={ctx} onClose={() => setNovaOpen(false)} />}
     </div>
   )

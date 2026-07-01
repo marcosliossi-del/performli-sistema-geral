@@ -6,7 +6,8 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess } from '@/lib/audit'
 import { checkTaskCompletion } from '@/services/task-completion-guard'
-import { TaskPriority, TaskStatus } from '@prisma/client'
+import { TaskPriority, TaskStatus, SupportCategory } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
 
 const createSchema = z.object({
   title:       z.string().min(3, 'Título obrigatório'),
@@ -148,4 +149,132 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
 
   revalidatePath('/tasks')
   revalidatePath('/operacional')
+}
+
+// ── Edição inline dos campos da tarefa (estilo ClickUp) ──────────────────────
+// Salva campo a campo (autosave) e registra cada mudança na trilha de atividade.
+const fieldsSchema = z.object({
+  title:           z.string().min(3, 'O título precisa de pelo menos 3 caracteres.').optional(),
+  description:     z.string().nullable().optional(),
+  assignedTo:      z.string().min(1).optional(),
+  dueDate:         z.string().datetime({ message: 'Data de vencimento inválida.' }).nullable().optional(),
+  priority:        z.nativeEnum(TaskPriority).optional(),
+  supportCategory: z.nativeEnum(SupportCategory).nullable().optional(),
+})
+
+export type UpdateTaskFieldsPatch = z.infer<typeof fieldsSchema>
+
+// Rótulos operacionais para a trilha de atividade.
+const FIELD_LABELS: Record<keyof UpdateTaskFieldsPatch, string> = {
+  title:           'título',
+  description:     'descrição',
+  assignedTo:      'responsável',
+  dueDate:         'prazo',
+  priority:        'prioridade',
+  supportCategory: 'categoria',
+}
+const PRIORITY_PT: Record<TaskPriority, string> = {
+  BAIXA: 'Baixa', MEDIA: 'Média', ALTA: 'Alta', CRITICA: 'Crítica',
+}
+const CATEGORY_PT: Record<SupportCategory, string> = {
+  TRAFEGO: 'Tráfego', DEMANDA_DA_AGENCIA: 'Demanda da Agência', SUCESSO_DO_CLIENTE: 'Sucesso do Cliente',
+}
+function fmtDatePt(d: Date | null): string {
+  return d ? d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'sem prazo'
+}
+
+export async function updateTaskFields(
+  taskId: string,
+  patch: UpdateTaskFieldsPatch,
+): Promise<{ ok: true } | { error: string }> {
+  const session = await requireSession()
+  const { userId } = session
+
+  const parsed = fieldsSchema.safeParse(patch)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Não foi possível salvar a alteração.' }
+  }
+  const p = parsed.data
+
+  const current = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: {
+      clientId: true, status: true,
+      title: true, description: true, assignedTo: true, dueDate: true,
+      priority: true, supportCategory: true,
+      user: { select: { name: true } },
+    },
+  })
+  if (!current) return { error: 'Tarefa não encontrada.' }
+
+  if (current.clientId) {
+    await assertClientMutationAccess(session, current.clientId, { allowCS: true })
+  }
+
+  const data: Prisma.TaskUncheckedUpdateInput = {}
+  const activities: Prisma.TaskActivityCreateWithoutTaskInput[] = []
+  const log = (field: keyof UpdateTaskFieldsPatch, fromDisplay: string, toDisplay: string) => {
+    activities.push({
+      actorId: userId,
+      action: 'field_changed',
+      fromValue: `${FIELD_LABELS[field]}: ${fromDisplay}`,
+      toValue: `${FIELD_LABELS[field]}: ${toDisplay}`,
+    })
+  }
+
+  // Título
+  if (p.title !== undefined && p.title !== current.title) {
+    data.title = p.title
+    log('title', current.title, p.title)
+  }
+  // Descrição
+  if (p.description !== undefined) {
+    const next = p.description && p.description.trim() ? p.description : null
+    if (next !== current.description) {
+      data.description = next
+      log('description', current.description ?? '(vazio)', next ?? '(vazio)')
+    }
+  }
+  // Responsável
+  if (p.assignedTo !== undefined && p.assignedTo !== current.assignedTo) {
+    const target = await prisma.user.findUnique({ where: { id: p.assignedTo }, select: { name: true } })
+    if (!target) return { error: 'Responsável não encontrado.' }
+    data.assignedTo = p.assignedTo
+    log('assignedTo', current.user?.name ?? '—', target.name)
+  }
+  // Prazo (null = limpar)
+  if (p.dueDate !== undefined) {
+    const next = p.dueDate ? new Date(p.dueDate) : null
+    const changed = (next?.getTime() ?? null) !== (current.dueDate?.getTime() ?? null)
+    if (changed) {
+      data.dueDate = next
+      log('dueDate', fmtDatePt(current.dueDate), fmtDatePt(next))
+    }
+  }
+  // Prioridade
+  if (p.priority !== undefined && p.priority !== current.priority) {
+    data.priority = p.priority
+    log('priority', PRIORITY_PT[current.priority], PRIORITY_PT[p.priority])
+  }
+  // Categoria de suporte (null = limpar)
+  if (p.supportCategory !== undefined && p.supportCategory !== current.supportCategory) {
+    data.supportCategory = p.supportCategory
+    log(
+      'supportCategory',
+      current.supportCategory ? CATEGORY_PT[current.supportCategory] : '—',
+      p.supportCategory ? CATEGORY_PT[p.supportCategory] : '—',
+    )
+  }
+
+  if (activities.length === 0) return { ok: true } // nada mudou de fato
+
+  await prisma.task.update({
+    where: { id: taskId },
+    data: { ...data, activities: { create: activities } },
+  })
+
+  revalidatePath('/operacional')
+  revalidatePath('/suporte')
+  revalidatePath('/meu-dia')
+  return { ok: true }
 }

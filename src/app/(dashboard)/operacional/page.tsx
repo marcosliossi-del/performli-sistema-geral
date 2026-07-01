@@ -1,4 +1,5 @@
 import { requireSession, getOperacionalBoard, getNovaTarefaContext } from '@/lib/dal'
+import { prisma } from '@/lib/prisma'
 import { OperacionalBoard } from '@/components/operacional/OperacionalBoard'
 
 export const dynamic = 'force-dynamic'
@@ -10,9 +11,14 @@ export default async function OperacionalPage({
 }) {
   const { task: initialTaskId } = await searchParams
   const { userId, role } = await requireSession()
-  const [board, ctx] = await Promise.all([
+  const [board, ctx, users] = await Promise.all([
     getOperacionalBoard(userId, role),
     getNovaTarefaContext(userId, role),
+    prisma.user.findMany({
+      where: { active: true },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    }),
   ])
   const canEdit = role !== 'ANALYST'
   const k = board.kpis
@@ -36,7 +42,7 @@ export default async function OperacionalPage({
         <Kpi label="War Room" value={k.warRoom} tone="crit" />
       </div>
 
-      <OperacionalBoard tasks={board.tasks} ctx={ctx} canEdit={canEdit} initialTaskId={initialTaskId} />
+      <OperacionalBoard tasks={board.tasks} ctx={ctx} canEdit={canEdit} users={users} initialTaskId={initialTaskId} />
     </div>
   )
 }

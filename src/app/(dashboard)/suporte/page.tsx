@@ -101,7 +101,7 @@ export default async function SuportePage() {
         </div>
       </div>
 
-      <SupportViews rows={rows} cards={cards} />
+      <SupportViews rows={rows} cards={cards} users={users} canEdit={session.role !== 'ANALYST'} />
     </div>
   )
 }

@@ -124,6 +124,10 @@ export async function toggleChecklistItem(itemId: string, done: boolean): Promis
 }
 
 export type TaskMeta = {
+  title: string
+  assignedTo: string
+  isSupport: boolean
+  supportCategory: string | null
   description: string | null
   type: string
   priority: string
@@ -165,9 +169,12 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
     where: { id: taskId },
     select: {
       id: true,
+      title: true,
       status: true,
       evidence: true,
       assignedTo: true,
+      isSupport: true,
+      supportCategory: true,
       description: true,
       type: true,
       priority: true,
@@ -214,6 +221,10 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
   const canSubmit = submittable && (isAssignee || session.role === 'ADMIN')
 
   const meta: TaskMeta = {
+    title: task.title,
+    assignedTo: task.assignedTo,
+    isSupport: task.isSupport,
+    supportCategory: task.supportCategory,
     description: task.description,
     type: task.type,
     priority: task.priority,

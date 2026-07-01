@@ -7,6 +7,8 @@ import { updateTaskStatus } from '@/app/actions/tasks'
 import { timeAgo } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { ChevronDown, ChevronRight, Repeat, Flag } from 'lucide-react'
+import { TaskDrawer, type TaskUser, type TaskPatch } from '@/components/operacional/TaskDrawer'
+import type { OperacionalTask } from '@/lib/dal'
 
 // Linha serializável entregue pelo server component (page.tsx).
 export type SupportRow = {
@@ -101,15 +103,62 @@ function sortRows(rows: SupportRow[]): SupportRow[] {
 
 interface Props {
   initialRows: SupportRow[]
+  users?: TaskUser[]
+  canEdit?: boolean
 }
 
-export function SupportList({ initialRows }: Props) {
+// Constrói o shape que o TaskDrawer espera a partir da linha de suporte.
+// Os campos ausentes vêm do loadTaskDetail (o drawer carrega o detalhe completo).
+function toDrawerTask(row: SupportRow): OperacionalTask {
+  return {
+    id: row.id,
+    title: row.title,
+    status: row.status,
+    priority: row.priority,
+    type: 'SIMPLES',
+    dueDate: row.dueDate ? new Date(row.dueDate) : null,
+    requestedAt: row.requestedAt ? new Date(row.requestedAt) : null,
+    createdAt: new Date(),
+    clientName: row.clientName,
+    clientSlug: row.clientSlug,
+    clientHealth: null,
+    assigneeName: row.assigneeName ?? '—',
+    areaName: null,
+    popCode: null,
+    slaHours: null,
+    slaBreached: false,
+  }
+}
+
+export function SupportList({ initialRows, users = [], canEdit = false }: Props) {
   const [rows, setRows] = useState<SupportRow[]>(initialRows)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ CONCLUIDO: true })
+  const [openId, setOpenId] = useState<string | null>(null)
 
   function toggle(status: TaskStatus) {
     setCollapsed((prev) => ({ ...prev, [status]: !prev[status] }))
   }
+
+  // Atualização otimista das edições inline feitas no drawer.
+  function handlePatch(taskId: string, patch: TaskPatch) {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === taskId
+          ? {
+              ...r,
+              ...(patch.title !== undefined ? { title: patch.title } : {}),
+              ...(patch.status !== undefined ? { status: patch.status } : {}),
+              ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+              ...(patch.assigneeName !== undefined ? { assigneeName: patch.assigneeName } : {}),
+              ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate } : {}),
+              ...(patch.category !== undefined ? { category: patch.category } : {}),
+            }
+          : r,
+      ),
+    )
+  }
+
+  const openRow = openId ? rows.find((r) => r.id === openId) ?? null : null
 
   async function moveStage(id: string, next: TaskStatus) {
     const row = rows.find((r) => r.id === id)
@@ -190,7 +239,7 @@ export function SupportList({ initialRows }: Props) {
                       </thead>
                       <tbody>
                         {groupRows.map((row) => (
-                          <SupportListRow key={row.id} row={row} onMove={moveStage} />
+                          <SupportListRow key={row.id} row={row} onMove={moveStage} onOpen={() => setOpenId(row.id)} />
                         ))}
                       </tbody>
                     </table>
@@ -201,6 +250,16 @@ export function SupportList({ initialRows }: Props) {
           </div>
         )
       })}
+
+      {openRow && (
+        <TaskDrawer
+          task={toDrawerTask(openRow)}
+          canEdit={canEdit}
+          users={users}
+          onClose={() => setOpenId(null)}
+          onPatch={handlePatch}
+        />
+      )}
     </div>
   )
 }
@@ -208,9 +267,11 @@ export function SupportList({ initialRows }: Props) {
 function SupportListRow({
   row,
   onMove,
+  onOpen,
 }: {
   row: SupportRow
   onMove: (id: string, next: TaskStatus) => void
+  onOpen: () => void
 }) {
   const cat = row.category ? CATEGORY_META[row.category] : null
   const prio = PRIORITY_META[row.priority]
@@ -225,12 +286,13 @@ function SupportListRow({
     >
       {/* Nome */}
       <td className="px-3 py-2.5 max-w-[280px]">
-        <span
-          className="text-sm text-[#EBEBEB] line-clamp-1"
-          title={row.description ?? undefined}
+        <button
+          onClick={onOpen}
+          className="text-sm text-[#EBEBEB] line-clamp-1 text-left hover:text-[#95BBE2] hover:underline"
+          title={row.description ?? 'Abrir e editar a demanda'}
         >
           {row.title}
-        </span>
+        </button>
       </td>
 
       {/* Cliente */}

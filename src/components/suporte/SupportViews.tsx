@@ -6,15 +6,18 @@ import { SupportList } from './SupportList'
 import type { SupportRow } from './SupportList'
 import { SupportBoard } from './SupportBoard'
 import type { SupportCardData } from './SupportBoard'
+import type { TaskUser } from '@/components/operacional/TaskDrawer'
 
 type View = 'lista' | 'quadro'
 
 interface Props {
   rows: SupportRow[]
   cards: SupportCardData[]
+  users: TaskUser[]
+  canEdit: boolean
 }
 
-export function SupportViews({ rows, cards }: Props) {
+export function SupportViews({ rows, cards, users, canEdit }: Props) {
   const [view, setView] = useState<View>('lista')
 
   return (
@@ -35,7 +38,7 @@ export function SupportViews({ rows, cards }: Props) {
       </div>
 
       {view === 'lista' ? (
-        <SupportList initialRows={rows} />
+        <SupportList initialRows={rows} users={users} canEdit={canEdit} />
       ) : (
         <SupportBoard initialCards={cards} />
       )}

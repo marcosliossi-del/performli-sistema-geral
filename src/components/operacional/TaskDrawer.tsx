@@ -7,27 +7,56 @@ import {
   X, Send, Square, CheckSquare, User as UserIcon, ShieldCheck,
   RotateCcw, Eye, Tag as TagIcon, Paperclip,
 } from 'lucide-react'
-import { updateTaskStatus } from '@/app/actions/tasks'
+import { updateTaskStatus, updateTaskFields } from '@/app/actions/tasks'
 import {
   addTaskComment, toggleChecklistItem, loadTaskDetail,
   submitTaskForValidation, decideTaskValidation, type TaskDetail,
 } from '@/app/actions/operacional'
 import type { OperacionalTask } from '@/lib/dal'
-import type { TaskStatus } from '@prisma/client'
+import type { TaskStatus, TaskPriority, SupportCategory } from '@prisma/client'
 import { toast } from '@/lib/toast'
 import {
-  STATUS_LABELS, STATUS_COLORS, STATUS_OPTIONS, PRIORITY_LABELS, PRIORITY_COLORS, TYPE_LABELS, label,
+  STATUS_LABELS, STATUS_COLORS, STATUS_OPTIONS, PRIORITY_LABELS, PRIORITY_COLORS, PRIORITY_OPTIONS, TYPE_LABELS, label,
 } from './labels'
 import { useModalA11y } from '@/lib/useModalA11y'
 
 type Tab = 'comentarios' | 'atividade' | 'anexos'
 
+export type TaskUser = { id: string; name: string }
+
+// Campos que a edição inline pode devolver ao board pai (atualização otimista).
+export type TaskPatch = {
+  title?: string
+  status?: TaskStatus
+  priority?: TaskPriority
+  assigneeName?: string
+  dueDate?: string | null
+  category?: SupportCategory | null
+}
+
+const CATEGORY_OPTIONS: { value: SupportCategory; label: string }[] = [
+  { value: 'TRAFEGO', label: 'Tráfego' },
+  { value: 'DEMANDA_DA_AGENCIA', label: 'Demanda da Agência' },
+  { value: 'SUCESSO_DO_CLIENTE', label: 'Sucesso do Cliente' },
+]
+
+// Date → 'yyyy-mm-dd' local para <input type=date>.
+function toDateInput(d: Date | null | undefined): string {
+  if (!d) return ''
+  const x = new Date(d)
+  const mm = String(x.getMonth() + 1).padStart(2, '0')
+  const dd = String(x.getDate()).padStart(2, '0')
+  return `${x.getFullYear()}-${mm}-${dd}`
+}
+
 export function TaskDrawer({
-  task, canEdit, onClose,
+  task, canEdit, users = [], onClose, onPatch,
 }: {
   task: OperacionalTask | null
   canEdit: boolean
+  users?: TaskUser[]
   onClose: () => void
+  onPatch?: (taskId: string, patch: TaskPatch) => void
 }) {
   const [detail, setDetail] = useState<TaskDetail | null>(null)
   const [loading, setLoading] = useState(false)
@@ -40,6 +69,11 @@ export function TaskDrawer({
   const [isPending, startTransition] = useTransition()
   const dialogRef = useModalA11y<HTMLElement>(onClose)
 
+  // Campos editáveis inline (estilo ClickUp) — estado local com autosave.
+  const [editTitle, setEditTitle] = useState('')
+  const [editDesc, setEditDesc] = useState('')
+  const dialogRefKey = task?.id
+
   useEffect(() => {
     if (!task) { setDetail(null); return }
     setLoading(true)
@@ -47,8 +81,16 @@ export function TaskDrawer({
     setRejectNote('')
     setActionError(null)
     setTab('comentarios')
-    loadTaskDetail(task.id).then((d) => { setDetail(d); setEvidence(d?.evidence ?? ''); setLoading(false) })
-  }, [task])
+    setEditTitle(task.title)
+    setEditDesc('')
+    loadTaskDetail(task.id).then((d) => {
+      setDetail(d)
+      setEvidence(d?.evidence ?? '')
+      if (d) { setEditTitle(d.meta.title); setEditDesc(d.meta.description ?? '') }
+      setLoading(false)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialogRefKey])
 
   if (!task) return null
 
@@ -62,7 +104,57 @@ export function TaskDrawer({
       setStatusResetKey((k) => k + 1) // devolve o select ao valor atual
       return
     }
-    startTransition(async () => { await updateTaskStatus(task!.id, status as TaskStatus); await reload() })
+    startTransition(async () => {
+      await updateTaskStatus(task!.id, status as TaskStatus)
+      onPatch?.(task!.id, { status: status as TaskStatus })
+      await reload()
+    })
+  }
+
+  // Autosave de um campo. Em erro: toast + recarrega (reverte a UI ao servidor).
+  function saveFields(
+    patch: Parameters<typeof updateTaskFields>[1],
+    parentPatch: TaskPatch,
+  ) {
+    startTransition(async () => {
+      const r = await updateTaskFields(task!.id, patch)
+      if (r && 'error' in r) {
+        toast(r.error, 'err')
+        await reload()
+        const d = await loadTaskDetail(task!.id)
+        if (d) { setEditTitle(d.meta.title); setEditDesc(d.meta.description ?? '') }
+        return
+      }
+      onPatch?.(task!.id, parentPatch)
+      await reload()
+    })
+  }
+  function saveTitle() {
+    const v = editTitle.trim()
+    if (v === (m?.title ?? task!.title)) return
+    if (v.length < 3) { toast('O título precisa de pelo menos 3 caracteres.', 'err'); setEditTitle(m?.title ?? task!.title); return }
+    saveFields({ title: v }, { title: v })
+  }
+  function saveDesc() {
+    const v = editDesc
+    if ((v.trim() || null) === (m?.description ?? null)) return
+    saveFields({ description: v.trim() ? v : null }, {})
+  }
+  function saveAssignee(userId: string) {
+    if (userId === m?.assignedTo) return
+    const name = users.find((u) => u.id === userId)?.name
+    saveFields({ assignedTo: userId }, name ? { assigneeName: name } : {})
+  }
+  function saveDue(value: string) {
+    const iso = value ? new Date(`${value}T12:00:00`).toISOString() : null
+    saveFields({ dueDate: iso }, { dueDate: iso })
+  }
+  function savePriority(value: string) {
+    saveFields({ priority: value as TaskPriority }, { priority: value as TaskPriority })
+  }
+  function saveCategory(value: string) {
+    const cat = value ? (value as SupportCategory) : null
+    saveFields({ supportCategory: cat }, { category: cat })
   }
   function handleComment() {
     if (!comment.trim()) return
@@ -91,7 +183,12 @@ export function TaskDrawer({
     })
   }
   function handleComplete() {
-    startTransition(async () => { await updateTaskStatus(task!.id, 'CONCLUIDO' as TaskStatus); await reload(); toast('Tarefa concluída') })
+    startTransition(async () => {
+      await updateTaskStatus(task!.id, 'CONCLUIDO' as TaskStatus)
+      onPatch?.(task!.id, { status: 'CONCLUIDO' as TaskStatus })
+      await reload()
+      toast('Tarefa concluída')
+    })
   }
 
   const m = detail?.meta
@@ -121,7 +218,22 @@ export function TaskDrawer({
             </div>
             <button onClick={onClose} className="text-[#87919E] hover:text-[#EBEBEB] shrink-0"><X size={18} /></button>
           </div>
-          <h2 className="text-[17px] font-bold text-[#EBEBEB] leading-snug mt-2">{task.title}</h2>
+          {canEdit ? (
+            <input
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              onBlur={saveTitle}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
+                if (e.key === 'Escape') { setEditTitle(m?.title ?? task.title); e.currentTarget.blur() }
+              }}
+              disabled={isPending}
+              aria-label="Título da tarefa"
+              className="w-full bg-transparent text-[17px] font-bold text-[#EBEBEB] leading-snug mt-2 rounded-md px-1 -ml-1 py-0.5 hover:bg-white/[0.04] focus:bg-[#0A1E2C] focus:outline-none focus:ring-1 focus:ring-[#95BBE2]/50"
+            />
+          ) : (
+            <h2 className="text-[17px] font-bold text-[#EBEBEB] leading-snug mt-2">{task.title}</h2>
+          )}
           <div className="flex items-center gap-2.5 mt-3 flex-wrap">
             <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${STATUS_COLORS[status] ?? 'text-[#87919E] border-[#38435C]'}`}>
               <span className="w-1.5 h-1.5 rounded-full bg-current" />{label(STATUS_LABELS, status)}
@@ -143,12 +255,25 @@ export function TaskDrawer({
           <div className="p-5 md:border-r border-[#38435C]/50 space-y-1">
             {loading && <p className="text-[11px] text-[#87919E]">Carregando…</p>}
 
-            {m?.description && (
+            {canEdit ? (
+              <>
+                <Sec>Descrição</Sec>
+                <textarea
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  onBlur={saveDesc}
+                  rows={3}
+                  disabled={isPending}
+                  placeholder="Descreva o que precisa ser feito, o contexto e o resultado esperado."
+                  className="w-full bg-[#0A1E2C] border border-[#38435C] rounded-lg px-3 py-2 text-[12.5px] text-[#EBEBEB] leading-relaxed placeholder:text-[#87919E]/60 focus:outline-none focus:border-[#95BBE2]/50 resize-y"
+                />
+              </>
+            ) : m?.description ? (
               <>
                 <Sec>Descrição</Sec>
                 <p className="text-[12.5px] text-[#9fb0c0] leading-relaxed whitespace-pre-wrap">{m.description}</p>
               </>
-            )}
+            ) : null}
 
             {/* Checklist obrigatório */}
             {detail && detail.checklist.length > 0 && (
@@ -267,21 +392,77 @@ export function TaskDrawer({
                   key={statusResetKey}
                   value={status}
                   onChange={(e) => handleStatus(e.target.value)}
-                  disabled={isPending}
-                  className="w-full bg-[#0A1E2C] border border-[#38435C] rounded-lg px-2 py-1.5 text-[11px] text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
+                  disabled={isPending || status === 'CONCLUIDO'}
+                  title={status === 'CONCLUIDO' ? 'Tarefa concluída. Reabra pelo fluxo de conclusão.' : undefined}
+                  className="w-full bg-[#0A1E2C] border border-[#38435C] rounded-lg px-2 py-1.5 text-[11px] text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50 disabled:opacity-60"
                 >
                   {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{label(STATUS_LABELS, s)}</option>)}
                 </select>
               </Field>
             )}
-            <Field k="Responsável"><span className="flex items-center gap-1.5"><UserIcon size={11} />{m?.assigneeName ?? task.assigneeName}</span></Field>
+            <Field k="Responsável">
+              {canEdit && users.length > 0 ? (
+                <select
+                  value={m?.assignedTo ?? ''}
+                  onChange={(e) => saveAssignee(e.target.value)}
+                  disabled={isPending}
+                  className="w-full bg-[#0A1E2C] border border-[#38435C] rounded-lg px-2 py-1.5 text-[11px] text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
+                >
+                  {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              ) : (
+                <span className="flex items-center gap-1.5"><UserIcon size={11} />{m?.assigneeName ?? task.assigneeName}</span>
+              )}
+            </Field>
+            {canEdit && (
+              <Field k="Prioridade">
+                <select
+                  value={m?.priority ?? task.priority}
+                  onChange={(e) => savePriority(e.target.value)}
+                  disabled={isPending}
+                  className="w-full bg-[#0A1E2C] border border-[#38435C] rounded-lg px-2 py-1.5 text-[11px] text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
+                >
+                  {PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{label(PRIORITY_LABELS, p)}</option>)}
+                </select>
+              </Field>
+            )}
+            {canEdit && m?.isSupport && (
+              <Field k="Categoria">
+                <select
+                  value={m?.supportCategory ?? ''}
+                  onChange={(e) => saveCategory(e.target.value)}
+                  disabled={isPending}
+                  className="w-full bg-[#0A1E2C] border border-[#38435C] rounded-lg px-2 py-1.5 text-[11px] text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
+                >
+                  <option value="">Sem categoria</option>
+                  {CATEGORY_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </Field>
+            )}
             {m?.watcherNames && m.watcherNames.length > 0 && (
               <Field k="Observadores"><span className="flex items-center gap-1.5"><Eye size={11} />{m.watcherNames.join(' · ')}</span></Field>
             )}
             {m?.requesterName && <Field k="Solicitante">{m.requesterName}</Field>}
             <Field k="Data do pedido">{fmtDate(m?.requestedAt ?? task.requestedAt)}</Field>
             {m?.startDate && <Field k="Início">{fmtDate(m.startDate)}</Field>}
-            <Field k="Prazo"><span className={isOverdue ? 'text-[#EF4444]' : ''}>{fmtDate(m?.dueDate ?? task.dueDate)}{isOverdue ? ' (atrasado)' : ''}</span></Field>
+            <Field k="Prazo">
+              {canEdit ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="date"
+                    value={toDateInput(m?.dueDate ?? task.dueDate)}
+                    onChange={(e) => saveDue(e.target.value)}
+                    disabled={isPending}
+                    className={`bg-[#0A1E2C] border rounded-lg px-2 py-1.5 text-[11px] focus:outline-none focus:border-[#95BBE2]/50 ${isOverdue ? 'border-[#EF4444]/50 text-[#EF4444]' : 'border-[#38435C] text-[#EBEBEB]'}`}
+                  />
+                  {(m?.dueDate ?? task.dueDate) && (
+                    <button onClick={() => saveDue('')} disabled={isPending} title="Limpar prazo" className="text-[#87919E] hover:text-[#EF4444] disabled:opacity-50"><X size={13} /></button>
+                  )}
+                </div>
+              ) : (
+                <span className={isOverdue ? 'text-[#EF4444]' : ''}>{fmtDate(m?.dueDate ?? task.dueDate)}{isOverdue ? ' (atrasado)' : ''}</span>
+              )}
+            </Field>
             {m?.slaHours != null && (
               <Field k="SLA"><span className={`font-mono ${m.slaBreached ? 'text-[#EF4444]' : 'text-[#9fb0c0]'}`}>{m.slaHours}h{m.slaBreached ? ' · estourado' : ''}</span></Field>
             )}
@@ -366,6 +547,14 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
 function describeActivity(action: string, from: string | null, to: string | null): string {
   switch (action) {
     case 'status_changed': return `mudou status: ${label(STATUS_LABELS, from ?? '')} → ${label(STATUS_LABELS, to ?? '')}`
+    case 'field_changed': {
+      // fromValue/toValue chegam como "campo: valor" — renderiza legível.
+      const sep = (to ?? '').indexOf(': ')
+      const field = sep >= 0 ? (to ?? '').slice(0, sep) : 'campo'
+      const oldV = from ? (from.indexOf(': ') >= 0 ? from.slice(from.indexOf(': ') + 2) : from) : ''
+      const newV = to ? (sep >= 0 ? to.slice(sep + 2) : to) : ''
+      return `alterou ${field} de "${oldV}" para "${newV}"`
+    }
     case 'created': return 'criou a tarefa'
     case 'created_by_recurrence': return 'gerada por recorrência'
     case 'commented': return 'comentou'
