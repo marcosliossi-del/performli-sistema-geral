@@ -9,8 +9,31 @@ import { toast } from '@/lib/toast'
 import { useModalA11y } from '@/lib/useModalA11y'
 
 type ClientOption = { id: string; name: string }
+type UserOption = { id: string; name: string }
 
-export function NewSupportDemand({ clients }: { clients: ClientOption[] }) {
+type Category = 'TRAFEGO' | 'DEMANDA_DA_AGENCIA' | 'SUCESSO_DO_CLIENTE'
+type Priority = 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAIXA'
+
+const CATEGORIES: { value: Category; label: string; color: string }[] = [
+  { value: 'TRAFEGO',            label: 'Tráfego',            color: '#3B82F6' },
+  { value: 'DEMANDA_DA_AGENCIA', label: 'Demanda da Agência', color: '#F59E0B' },
+  { value: 'SUCESSO_DO_CLIENTE', label: 'Sucesso do Cliente', color: '#A98CFF' },
+]
+
+const PRIORITIES: { value: Priority; label: string }[] = [
+  { value: 'CRITICA', label: 'Urgente' },
+  { value: 'ALTA',    label: 'Alta' },
+  { value: 'MEDIA',   label: 'Normal' },
+  { value: 'BAIXA',   label: 'Baixa' },
+]
+
+export function NewSupportDemand({
+  clients,
+  users,
+}: {
+  clients: ClientOption[]
+  users: UserOption[]
+}) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -22,27 +45,39 @@ export function NewSupportDemand({ clients }: { clients: ClientOption[] }) {
         <Plus size={14} />
         Nova demanda
       </button>
-      {open && <NewSupportDemandModal clients={clients} onClose={() => setOpen(false)} />}
+      {open && (
+        <NewSupportDemandModal
+          clients={clients}
+          users={users}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </>
   )
 }
 
 function NewSupportDemandModal({
   clients,
+  users,
   onClose,
 }: {
   clients: ClientOption[]
+  users: UserOption[]
   onClose: () => void
 }) {
   const router = useRouter()
   const [clientId, setClientId] = useState('')
   const [title, setTitle] = useState('')
-  const [direction, setDirection] =
-    useState<'CLIENTE_PARA_NOS' | 'NOS_PARA_CLIENTE'>('CLIENTE_PARA_NOS')
+  const [category, setCategory] = useState<Category>('TRAFEGO')
+  const [assigneeId, setAssigneeId] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [priority, setPriority] = useState<Priority>('MEDIA')
   const [description, setDescription] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const dialogRef = useModalA11y<HTMLDivElement>(onClose)
+
+  const canSubmit = clientId.length > 0 && title.trim().length >= 3
 
   function handleCreate() {
     setMsg(null)
@@ -50,11 +85,18 @@ function NewSupportDemandModal({
       setMsg('Selecione o cliente da demanda.')
       return
     }
+    if (title.trim().length < 3) {
+      setMsg('Descreva a demanda no título.')
+      return
+    }
     startTransition(async () => {
       const res = await createSupportDemand({
         clientId,
         title,
-        direction,
+        category,
+        priority,
+        assigneeId: assigneeId || undefined,
+        dueDate: dueDate || undefined,
         description: description || undefined,
       })
       if ('error' in res) {
@@ -94,7 +136,7 @@ function NewSupportDemandModal({
             </select>
           </Field>
 
-          <Field label="O que o cliente precisa? *">
+          <Field label="O que precisa ser feito? *">
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -103,23 +145,50 @@ function NewSupportDemandModal({
             />
           </Field>
 
-          <Field label="Direção da demanda *">
-            <div className="grid grid-cols-2 gap-2">
-              <DirectionOption
-                active={direction === 'CLIENTE_PARA_NOS'}
-                label="Cliente → Nós"
-                hint="O cliente pediu algo"
-                color="#95BBE2"
-                onClick={() => setDirection('CLIENTE_PARA_NOS')}
-              />
-              <DirectionOption
-                active={direction === 'NOS_PARA_CLIENTE'}
-                label="Nós → Cliente"
-                hint="Precisamos de algo do cliente"
-                color="#F59E0B"
-                onClick={() => setDirection('NOS_PARA_CLIENTE')}
-              />
+          <Field label="Categoria *">
+            <div className="grid grid-cols-3 gap-2">
+              {CATEGORIES.map((c) => (
+                <CategoryOption
+                  key={c.value}
+                  active={category === c.value}
+                  label={c.label}
+                  color={c.color}
+                  onClick={() => setCategory(c.value)}
+                />
+              ))}
             </div>
+          </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Responsável">
+              <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className={inputCls}>
+                <option value="">CS do cliente</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Prioridade">
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as Priority)}
+                className={inputCls}
+              >
+                {PRIORITIES.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+          <Field label="Vencimento (opcional)">
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className={inputCls}
+            />
           </Field>
 
           <Field label="Detalhes (opcional)">
@@ -143,8 +212,8 @@ function NewSupportDemandModal({
             </button>
             <button
               onClick={handleCreate}
-              disabled={isPending}
-              className="text-xs bg-[#95BBE2]/10 text-[#95BBE2] border border-[#95BBE2]/20 rounded-lg px-4 py-1.5 hover:bg-[#95BBE2]/20 disabled:opacity-50"
+              disabled={isPending || !canSubmit}
+              className="text-xs bg-[#95BBE2]/10 text-[#95BBE2] border border-[#95BBE2]/20 rounded-lg px-4 py-1.5 hover:bg-[#95BBE2]/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Criar demanda
             </button>
@@ -155,16 +224,14 @@ function NewSupportDemandModal({
   )
 }
 
-function DirectionOption({
+function CategoryOption({
   active,
   label,
-  hint,
   color,
   onClick,
 }: {
   active: boolean
   label: string
-  hint: string
   color: string
   onClick: () => void
 }) {
@@ -172,15 +239,17 @@ function DirectionOption({
     <button
       type="button"
       onClick={onClick}
-      className={`text-left rounded-lg border px-3 py-2 transition-colors ${
+      className={`text-center rounded-lg border px-2 py-2 transition-colors ${
         active ? 'bg-[#0A1E2C]' : 'bg-[#0A1E2C]/40 border-[#38435C] hover:bg-[#0A1E2C]/70'
       }`}
       style={active ? { borderColor: color } : undefined}
     >
-      <span className="block text-xs font-semibold" style={{ color: active ? color : '#EBEBEB' }}>
+      <span
+        className="block text-[11px] font-semibold leading-tight"
+        style={{ color: active ? color : '#EBEBEB' }}
+      >
         {label}
       </span>
-      <span className="block text-[10px] text-[#87919E] mt-0.5">{hint}</span>
     </button>
   )
 }
