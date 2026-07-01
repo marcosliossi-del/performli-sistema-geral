@@ -63,6 +63,7 @@ async function getAccessToken(): Promise<string> {
       grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
       assertion:  `${sigInput}.${sig}`,
     }),
+    signal: AbortSignal.timeout(30_000),
   })
 
   if (!res.ok) throw new Error(`Falha ao obter token Google Ads: ${await res.text()}`)
@@ -107,6 +108,7 @@ export class GoogleAdsClient {
         body:    JSON.stringify({
           query: 'SELECT customer.id, customer.descriptive_name FROM customer LIMIT 1',
         }),
+        signal: AbortSignal.timeout(30_000),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -152,6 +154,7 @@ export class GoogleAdsClient {
       method:  'POST',
       headers: this.headers(token),
       body:    JSON.stringify({ query }),
+      signal:  AbortSignal.timeout(30_000),
     })
 
     if (!res.ok) {

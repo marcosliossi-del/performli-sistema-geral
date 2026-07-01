@@ -31,6 +31,7 @@ async function req<T>(
     method,
     headers: { 'Content-Type': 'application/json', 'apikey': config.apiKey },
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(30_000),
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
