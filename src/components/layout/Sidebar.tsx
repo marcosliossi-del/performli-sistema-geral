@@ -30,6 +30,7 @@ import {
   Target,
   Scale,
   MessagesSquare,
+  Repeat,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -67,6 +68,7 @@ const navigation: NavSection[] = [
       { name: 'Meu Dia',            href: '/meu-dia',      icon: Sun,          countKey: 'meuDia', alert: true },
       { name: 'Minha Semana',       href: '/minha-semana', icon: CalendarRange },
       { name: 'Central de Tarefas', href: '/operacional',  icon: ListTodo,     countKey: 'abertas' },
+      { name: 'Recorrências',       href: '/recorrencias', icon: Repeat,       roles: ['ADMIN' as Role] },
       { name: 'Cockpit',            href: '/cockpit',      icon: Gauge },
       { name: 'Aceite Operacional', href: '/aceite',       icon: ShieldCheck,  roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
     ],
