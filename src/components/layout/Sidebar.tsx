@@ -7,6 +7,8 @@ import {
   Gauge,
   Sun,
   ShieldCheck,
+  CalendarRange,
+  FileText,
   ListTodo,
   LayoutDashboard,
   CheckSquare,
@@ -44,85 +46,83 @@ type NavItemDef = {
   countKey?: CountKey
   /** Render the badge in alert color when > 0. */
   alert?: boolean
+  /** Sub-itens aninhados (nav-tree) — item vira expansível. */
+  children?: NavItemDef[]
 }
 
 type NavSection = {
   label: string
-  expandable?: boolean
   /** Which roles can see this entire section. Omit to show to all roles. */
   roles?: Role[]
   items: NavItemDef[]
 }
 
-// Organização por DEPARTAMENTO (estilo ClickUp). Cada departamento é colapsável.
-// Removidas duplicidades: "Minhas Tarefas" (/tasks) — coberto por Meu Dia +
-// Central de Tarefas; "Dashboard" virou "Painel Analítico" em Inteligência
-// (Cockpit é o comando operacional); "War Room" e "Anti Churn" unificados.
+// Estrutura espelhada do protótipo iOS: atalhos no topo · ÁREAS (com sub-menus
+// aninhados / nav-tree) · Visões por papel · Inteligência.
 const navigation: NavSection[] = [
   {
-    label: 'PRINCIPAL',
+    label: '',
     items: [
-      { name: 'Meu Dia',            href: '/meu-dia',     icon: Sun,        countKey: 'meuDia', alert: true },
-      { name: 'Central de Tarefas', href: '/operacional', icon: ListTodo,   countKey: 'abertas' },
-      { name: 'Cockpit',            href: '/cockpit',     icon: Gauge },
-      { name: 'Aceite Operacional', href: '/aceite',      icon: ShieldCheck, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
+      { name: 'Meu Dia',            href: '/meu-dia',      icon: Sun,          countKey: 'meuDia', alert: true },
+      { name: 'Minha Semana',       href: '/minha-semana', icon: CalendarRange },
+      { name: 'Central de Tarefas', href: '/operacional',  icon: ListTodo,     countKey: 'abertas' },
+      { name: 'Cockpit',            href: '/cockpit',      icon: Gauge },
+      { name: 'Aceite Operacional', href: '/aceite',       icon: ShieldCheck,  roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
     ],
   },
   {
-    label: 'COMERCIAL',
-    expandable: true,
+    label: 'ÁREAS',
     items: [
-      { name: 'Pipeline CRM',    href: '/pipeline',    icon: Kanban },
-      { name: 'CRM Comercial',   href: '/comercial',   icon: Target },
-      { name: 'Novo Onboarding', href: '/clients/new', icon: UserPlus, roles: ['ADMIN' as Role] },
+      {
+        name: 'Tráfego', href: '/operacional', icon: Activity, countKey: 'abertas',
+        children: [
+          { name: 'Check-ins da semana',  href: '/check-ins',  icon: CheckSquare, countKey: 'checkins', alert: true },
+          { name: 'Prestações de contas', href: '/operacional', icon: FileText },
+          { name: 'Processos & POPs',     href: '/processos',  icon: BookOpen },
+        ],
+      },
+      {
+        name: 'Sucesso do Cliente', href: '/clients', icon: Users,
+        children: [
+          { name: 'Meus Clientes',   href: '/clients',    icon: Users },
+          { name: 'Validação da CS', href: '/validacoes', icon: ShieldCheck, countKey: 'validacoes', alert: true, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
+          { name: 'Relatórios',      href: '/reports',    icon: BarChart3 },
+        ],
+      },
+      { name: 'War Room', href: '/anti-churn', icon: ShieldAlert, countKey: 'warRooms', alert: true },
+      {
+        name: 'Comercial', href: '/comercial', icon: Target,
+        children: [
+          { name: 'Pipeline CRM',  href: '/pipeline',  icon: Kanban },
+          { name: 'CRM Comercial', href: '/comercial', icon: Target },
+        ],
+      },
+      {
+        name: 'Financeiro', href: '/financeiro', icon: TrendingUp, roles: ['ADMIN' as Role, 'CS' as Role],
+        children: [
+          { name: 'DRE — Financeiro', href: '/financeiro', icon: TrendingUp },
+          { name: 'Jurídico',         href: '/juridico',   icon: Scale, roles: ['ADMIN' as Role] },
+        ],
+      },
+      { name: 'Onboarding', href: '/clients/new', icon: UserPlus, roles: ['ADMIN' as Role] },
     ],
   },
   {
-    label: 'OPERAÇÃO',
-    expandable: true,
-    items: [
-      { name: 'Check-ins da semana',   href: '/check-ins',  icon: CheckSquare, countKey: 'checkins', alert: true },
-      { name: 'Registro de Operações', href: '/operations', icon: BookOpen },
-      { name: 'Processos & POPs',      href: '/processos',  icon: Activity },
-    ],
-  },
-  {
-    label: 'SUCESSO DO CLIENTE',
-    expandable: true,
-    items: [
-      { name: 'Meus Clientes',        href: '/clients',    icon: Users },
-      { name: 'Validação da CS',      href: '/validacoes', icon: ShieldCheck, countKey: 'validacoes', alert: true, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
-      { name: 'Anti-churn & War Room', href: '/anti-churn', icon: ShieldAlert, countKey: 'warRooms', alert: true },
-      { name: 'Relatórios',           href: '/reports',    icon: BarChart3 },
-    ],
-  },
-  {
-    label: 'FINANCEIRO',
-    expandable: true,
+    label: 'VISÕES POR PAPEL',
     roles: ['ADMIN', 'CS'],
     items: [
-      { name: 'DRE — Financeiro', href: '/financeiro', icon: TrendingUp },
-      { name: 'Jurídico',         href: '/juridico',   icon: Scale, roles: ['ADMIN' as Role] },
+      { name: 'Visão CS',     href: '/clients',  icon: Users },
+      { name: 'Visão Gestor', href: '/managers', icon: PieChart },
+      { name: 'Visão CEO',    href: '/agency',   icon: Building2, roles: ['ADMIN' as Role] },
     ],
   },
   {
-    label: 'ADMINISTRATIVO',
-    expandable: true,
-    roles: ['ADMIN', 'CS'],
-    items: [
-      { name: 'Visão Geral',   href: '/agency',       icon: Building2, roles: ['ADMIN' as Role] },
-      { name: 'Metas Mensais', href: '/agency/metas', icon: Target,    roles: ['ADMIN' as Role] },
-      { name: 'Gestores',      href: '/managers',     icon: PieChart },
-      { name: 'Equipe',        href: '/team',         icon: Users,     roles: ['ADMIN' as Role] },
-    ],
-  },
-  {
-    label: 'INTELIGÊNCIA & DADOS',
-    expandable: true,
+    label: 'INTELIGÊNCIA',
     items: [
       { name: 'Alertas',              href: '/alerts',    icon: Bell, countKey: 'alertas', alert: true },
       { name: 'Agentes IA',           href: '/ai-agents', icon: Bot },
       { name: 'Base de Conhecimento', href: '/knowledge', icon: BookMarked, roles: ['ADMIN' as Role] },
+      { name: 'Metas & Equipe',       href: '/agency/metas', icon: Target, roles: ['ADMIN' as Role] },
       { name: 'Painel Analítico',     href: '/dashboard', icon: LayoutDashboard },
     ],
   },
@@ -141,8 +141,6 @@ interface SidebarProps {
 
 export function Sidebar({ role, counts }: SidebarProps) {
   const pathname = usePathname()
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
-  const toggle = (label: string) => setCollapsed((c) => ({ ...c, [label]: !c[label] }))
 
   return (
     <aside className="ak-sidebar w-60 flex-shrink-0 h-screen sticky top-0 bg-[#0A1E2C] border-r border-[#38435C] flex flex-col">
@@ -161,7 +159,7 @@ export function Sidebar({ role, counts }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+      <nav className="flex-1 overflow-y-auto py-3 px-2.5 space-y-1">
         {navigation
           .filter((section) => canSee(section.roles, role))
           .map((section) => {
@@ -169,42 +167,21 @@ export function Sidebar({ role, counts }: SidebarProps) {
             if (visibleItems.length === 0) return null
 
             return (
-              <div key={section.label} className="mb-4">
-                {section.expandable ? (
-                  <>
-                    <button
-                      onClick={() => toggle(section.label)}
-                      className="flex items-center justify-between w-full px-2 mb-1.5 group"
-                    >
-                      <span className="text-[10px] font-semibold text-[#87919E] tracking-widest uppercase group-hover:text-[#EBEBEB] transition-colors">
-                        {section.label}
-                      </span>
-                      {collapsed[section.label] ? (
-                        <ChevronRight size={12} className="text-[#87919E]" />
-                      ) : (
-                        <ChevronDown size={12} className="text-[#87919E]" />
-                      )}
-                    </button>
-                    {!collapsed[section.label] && (
-                      <div className="space-y-0.5">
-                        {visibleItems.map((item) => (
-                          <NavItem key={item.href} item={item} pathname={pathname} counts={counts} />
-                        ))}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <p className="text-[10px] font-semibold text-[#87919E] tracking-widest uppercase px-2 mb-1.5">
-                      {section.label}
-                    </p>
-                    <div className="space-y-0.5">
-                      {visibleItems.map((item) => (
-                        <NavItem key={item.href} item={item} pathname={pathname} counts={counts} />
-                      ))}
-                    </div>
-                  </>
+              <div key={section.label || 'top'} className="mb-3">
+                {section.label && (
+                  <p className="text-[10px] font-semibold text-[#647488] tracking-[0.09em] uppercase px-2 pt-2.5 pb-1">
+                    {section.label}
+                  </p>
                 )}
+                <div className="space-y-0.5">
+                  {visibleItems.map((item) =>
+                    item.children && item.children.some((c) => canSee(c.roles, role)) ? (
+                      <NavGroup key={item.name} item={item} role={role} pathname={pathname} counts={counts} />
+                    ) : (
+                      <NavLeaf key={item.href} item={item} pathname={pathname} counts={counts} />
+                    ),
+                  )}
+                </div>
               </div>
             )
           })}
@@ -224,17 +201,30 @@ export function Sidebar({ role, counts }: SidebarProps) {
   )
 }
 
-function NavItem({
-  item,
-  pathname,
-  counts,
+function CountBadge({ count, alert }: { count: number; alert?: boolean }) {
+  if (count <= 0) return null
+  return (
+    <span
+      className={cn(
+        'ml-auto tabular text-[10.5px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 min-w-[18px] text-center',
+        alert ? 'bg-[#EF4444]/16 text-[#EF4444]' : 'bg-white/[0.07] text-[#a3b2c2]',
+      )}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  )
+}
+
+function NavLeaf({
+  item, pathname, counts, nested,
 }: {
   item: NavItemDef
   pathname: string
   counts?: Counts
+  nested?: boolean
 }) {
   const Icon = item.icon
-  const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+  const isActive = pathname === item.href || (item.href !== '/operacional' && pathname.startsWith(item.href + '/'))
   const count = item.countKey ? counts?.[item.countKey] ?? 0 : 0
 
   return (
@@ -242,29 +232,60 @@ function NavItem({
       href={item.href}
       prefetch
       className={cn(
-        'group relative flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all duration-200 ease-out active:scale-[0.98]',
+        'group relative flex items-center gap-2.5 rounded-[10px] transition-all duration-200 ease-out active:scale-[0.98]',
+        nested ? 'px-2.5 py-1.5 text-[12.5px]' : 'px-2.5 py-2 text-[13px]',
         isActive
           ? 'bg-[#95BBE2]/15 text-[#95BBE2] font-semibold'
-          : 'text-[#87919E] hover:bg-[#38435C]/50 hover:text-[#EBEBEB]'
+          : 'text-[#a3b2c2] hover:bg-white/[0.05] hover:text-[#f2f6fa] font-medium',
       )}
     >
-      {isActive && (
-        <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-gradient-to-b from-[#54e0ee] to-[#22c2d6] shadow-[0_0_10px_rgba(34,194,214,0.5)]" />
+      {isActive && !nested && (
+        <span className="absolute -left-[2px] top-2 bottom-2 w-[3px] rounded-full bg-gradient-to-b from-[#54e0ee] to-[#22c2d6] shadow-[0_0_10px_rgba(34,194,214,0.5)]" />
       )}
-      <Icon size={16} className="flex-shrink-0" />
+      {nested
+        ? <span className="w-[17px] text-center text-[#647488] flex-shrink-0">·</span>
+        : <Icon size={16} className="flex-shrink-0" />}
       <span className="truncate">{item.name}</span>
-      {count > 0 && (
-        <span
-          className={cn(
-            'ml-auto tabular text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 min-w-[18px] text-center',
-            item.alert
-              ? 'bg-[#EF4444]/16 text-[#EF4444]'
-              : 'bg-[#38435C] text-[#87919E]'
-          )}
-        >
-          {count > 99 ? '99+' : count}
-        </span>
-      )}
+      <CountBadge count={count} alert={item.alert} />
     </Link>
+  )
+}
+
+function NavGroup({
+  item, role, pathname, counts,
+}: {
+  item: NavItemDef
+  role: Role
+  pathname: string
+  counts?: Counts
+}) {
+  const Icon = item.icon
+  const kids = (item.children ?? []).filter((c) => canSee(c.roles, role))
+  const childActive = kids.some((c) => pathname === c.href || pathname.startsWith(c.href + '/'))
+  const [open, setOpen] = useState(childActive)
+  const count = item.countKey ? counts?.[item.countKey] ?? 0 : 0
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          'group w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[13px] font-medium transition-all duration-200 ease-out',
+          childActive ? 'text-[#f2f6fa]' : 'text-[#a3b2c2] hover:bg-white/[0.05] hover:text-[#f2f6fa]',
+        )}
+      >
+        {open
+          ? <ChevronDown size={13} className="flex-shrink-0 text-[#647488]" />
+          : <ChevronRight size={13} className="flex-shrink-0 text-[#647488]" />}
+        <Icon size={16} className="flex-shrink-0" />
+        <span className="truncate">{item.name}</span>
+        <CountBadge count={count} alert={item.alert} />
+      </button>
+      {open && (
+        <div className="ml-[15px] mt-0.5 mb-0.5 pl-1.5 border-l border-white/[0.06] space-y-0.5">
+          {kids.map((c) => <NavLeaf key={c.name} item={c} pathname={pathname} counts={counts} nested />)}
+        </div>
+      )}
+    </div>
   )
 }

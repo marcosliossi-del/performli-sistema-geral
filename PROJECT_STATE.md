@@ -317,3 +317,16 @@ calendário, DnD, skeletons).
   "Buscar tarefas, clientes, POPs…" + kbd ⌘K mono); avatar do usuário com gradiente
   ciano. Mantidos: view-mode ADMIN/GESTOR, sino de alertas, menu do usuário
   (funcionalidades reais). ⌘K funcional fica pra fatia de inovação (command palette).
+- **Paridade sidebar** — branch feat/paridade-sidebar: estrutura igual ao protótipo iOS.
+  Seções: (topo sem label) Meu Dia · Minha Semana · Central de Tarefas · Cockpit ·
+  Aceite; ÁREAS com ITENS EXPANSÍVEIS + sub-menu aninhado (nav-tree): Tráfego
+  (→ Check-ins/Prestações/Processos), Sucesso do Cliente (→ Clientes/Validação CS/
+  Relatórios), War Room, Comercial (→ Pipeline/CRM), Financeiro (→ DRE/Jurídico),
+  Onboarding; VISÕES POR PAPEL (Visão CS/Gestor/CEO); INTELIGÊNCIA (Alertas/IA/
+  Base/Metas&Equipe/Painel). NavGroup (expansível, abre se filho ativo) + NavLeaf
+  (nested com ·). Contadores mantidos. Nova rota /minha-semana (reusa Meu Dia).
+
+- **Fonte iOS (San Francisco) global** — fixada como token do Tailwind (--font-sans/
+  --font-mono/--default-font-family) = -apple-system → SF em Apple, Inter fallback.
+  Sem webfont (zero download = mais rápido). body com text-rendering optimizeLegibility
+  + font-optical-sizing auto.
