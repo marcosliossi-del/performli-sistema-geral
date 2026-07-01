@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     const start = new Date(d.getFullYear(), d.getMonth(), 1)
     const end   = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
 
-    const [entradasAgg, saidasAgg] = await Promise.all([
+    const [entradasAgg, transfersAgg, expensesAgg] = await Promise.all([
       prisma.asaasPayment.aggregate({
         where: {
           status: { in: ['RECEIVED', 'CONFIRMED'] },
@@ -47,10 +47,15 @@ export async function GET(request: NextRequest) {
         },
         _sum: { value: true },
       }),
+      // Despesas manuais / DRE (saídas)
+      prisma.expense.aggregate({
+        where: { date: { gte: start, lte: end } },
+        _sum: { value: true },
+      }),
     ])
 
     const entradas = Number(entradasAgg._sum.value ?? 0)
-    const saidas   = Number(saidasAgg._sum.value ?? 0)
+    const saidas   = Number(transfersAgg._sum.value ?? 0) + Number(expensesAgg._sum.value ?? 0)
 
     results.push({
       month: ptMonths[d.getMonth()],
