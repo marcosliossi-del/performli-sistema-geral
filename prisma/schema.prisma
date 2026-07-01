@@ -612,6 +612,12 @@ enum SupportDirection {
   NOS_PARA_CLIENTE
 }
 
+enum SupportCategory {
+  TRAFEGO
+  DEMANDA_DA_AGENCIA
+  SUCESSO_DO_CLIENTE
+}
+
 enum TaskOrigin {
   MANUAL
   TEMPLATE
@@ -797,6 +803,7 @@ model Task {
   // ── Hub de Suporte (aditivo) ───────────────────────────────────────────────
   isSupport        Boolean           @default(false)
   supportDirection SupportDirection?
+  supportCategory  SupportCategory?
 
   parentId      String?
   parent        Task?       @relation("Subtasks", fields: [parentId], references: [id])

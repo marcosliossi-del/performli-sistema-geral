@@ -5,12 +5,15 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
-import { SupportDirection } from '@prisma/client'
+import { SupportDirection, SupportCategory, TaskPriority } from '@prisma/client'
 
 const createSchema = z.object({
   clientId:    z.string().min(1, 'Selecione um cliente'),
   title:       z.string().min(3, 'Descreva a demanda'),
-  direction:   z.nativeEnum(SupportDirection),
+  category:    z.nativeEnum(SupportCategory),
+  direction:   z.nativeEnum(SupportDirection).optional(),
+  priority:    z.nativeEnum(TaskPriority).default('MEDIA'),
+  dueDate:     z.string().optional(),
   description: z.string().optional(),
   assigneeId:  z.string().optional(),
 })
@@ -18,7 +21,10 @@ const createSchema = z.object({
 type CreateSupportInput = {
   clientId: string
   title: string
-  direction: 'CLIENTE_PARA_NOS' | 'NOS_PARA_CLIENTE'
+  category: 'TRAFEGO' | 'DEMANDA_DA_AGENCIA' | 'SUCESSO_DO_CLIENTE'
+  direction?: 'CLIENTE_PARA_NOS' | 'NOS_PARA_CLIENTE'
+  priority?: 'BAIXA' | 'MEDIA' | 'ALTA' | 'CRITICA'
+  dueDate?: string
   description?: string
   assigneeId?: string
 }
@@ -38,7 +44,8 @@ export async function createSupportDemand(
     return { error: parsed.error.issues.map((i) => i.message).join(', ') }
   }
 
-  const { clientId, title, direction, description, assigneeId } = parsed.data
+  const { clientId, title, category, direction, priority, dueDate, description, assigneeId } =
+    parsed.data
 
   try {
     await assertClientMutationAccess(session, clientId, { allowCS: true })
@@ -58,10 +65,12 @@ export async function createSupportDemand(
       title,
       description: description || null,
       isSupport: true,
-      supportDirection: direction,
+      supportDirection: direction ?? null,
+      supportCategory: category,
       type: 'CS',
       status: 'A_FAZER',
-      priority: 'MEDIA',
+      priority,
+      dueDate: dueDate ? new Date(dueDate) : null,
       clientId,
       assignedTo: assigneeId ?? client.csId ?? userId,
       requesterId: userId,
@@ -77,7 +86,7 @@ export async function createSupportDemand(
     entityType: 'Task',
     entityId: task.id,
     clientId,
-    metadata: { direction },
+    metadata: { category, direction: direction ?? null, priority },
   })
 
   revalidatePath('/suporte')

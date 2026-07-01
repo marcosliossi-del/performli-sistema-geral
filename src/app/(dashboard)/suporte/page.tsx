@@ -1,8 +1,9 @@
 import { requireSession, getClientsForSelect } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@prisma/client'
-import { SupportBoard } from '@/components/suporte/SupportBoard'
 import type { SupportCardData } from '@/components/suporte/SupportBoard'
+import type { SupportRow } from '@/components/suporte/SupportList'
+import { SupportViews } from '@/components/suporte/SupportViews'
 import { NewSupportDemand } from '@/components/suporte/NewSupportDemand'
 import { Headset } from 'lucide-react'
 
@@ -43,9 +44,32 @@ export default async function SuportePage() {
     updatedAt: t.updatedAt.toISOString(),
   }))
 
+  const rows: SupportRow[] = tasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    description: t.description,
+    status: t.status,
+    priority: t.priority,
+    category: t.supportCategory,
+    clientName: t.client?.name ?? null,
+    clientSlug: t.client?.slug ?? null,
+    assigneeName: t.user?.name ?? null,
+    requestedAt: t.requestedAt?.toISOString() ?? null,
+    dueDate: t.dueDate?.toISOString() ?? null,
+    isRecurring: t.origin === 'RECORRENCIA',
+  }))
+
   const clients = (await getClientsForSelect(session.userId, session.role)).map(
     (c) => ({ id: c.id, name: c.name }),
   )
+
+  const users = (
+    await prisma.user.findMany({
+      where: { active: true },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    })
+  ).map((u) => ({ id: u.id, name: u.name }))
 
   // Data/hora da última atualização (CLAUDE.md, regra de UX #10).
   const lastMovement = tasks.length
@@ -65,7 +89,7 @@ export default async function SuportePage() {
           <div>
             <h1 className="text-xl font-bold text-[#EBEBEB]">Hub de Suporte</h1>
             <p className="text-sm text-[#87919E] mt-0.5">
-              O atendimento diário da agência: arraste cada demanda pelo fluxo até concluir.
+              As tarefas de suporte diário da agência: responsável, prazo, prioridade e cliente em uma lista.
             </p>
             <p className="text-[11px] text-[#87919E]/70 mt-1">
               {cards.length} demanda{cards.length !== 1 ? 's' : ''} em aberto · última movimentação em {stamp}
@@ -73,11 +97,11 @@ export default async function SuportePage() {
           </div>
         </div>
         <div className="flex-shrink-0">
-          <NewSupportDemand clients={clients} />
+          <NewSupportDemand clients={clients} users={users} />
         </div>
       </div>
 
-      <SupportBoard initialCards={cards} />
+      <SupportViews rows={rows} cards={cards} />
     </div>
   )
 }
