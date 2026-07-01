@@ -16,7 +16,8 @@ const createSchema = z.object({
 })
 
 export async function createTask(formData: FormData) {
-  const { userId } = await requireSession()
+  const session = await requireSession()
+  const { userId } = session
 
   const raw = {
     title:       formData.get('title'),
@@ -32,6 +33,11 @@ export async function createTask(formData: FormData) {
   }
 
   const { title, description, priority, dueDate, clientId } = parsed.data
+
+  // Posse: tarefa vinculada a cliente exige papel + atribuição (CS acompanha).
+  if (clientId) {
+    await assertClientMutationAccess(session, clientId, { allowCS: true })
+  }
 
   const task = await prisma.task.create({
     data: {

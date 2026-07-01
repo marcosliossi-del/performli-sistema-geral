@@ -18,7 +18,7 @@ export async function generateClientMonthlyReport(
   prevState: ReportState,
   formData: FormData
 ): Promise<ReportState> {
-  await requireSession()
+  const session = await requireSession()
 
   const clientId   = formData.get('clientId')   as string
   const clientSlug = formData.get('clientSlug') as string
@@ -26,6 +26,13 @@ export async function generateClientMonthlyReport(
   const monthStr   = formData.get('month')       as string | null
 
   if (!clientId) return { error: 'Cliente não informado.' }
+
+  // Posse: só ADMIN/CS ou o gestor atribuído geram relatório deste cliente.
+  try {
+    await assertClientMutationAccess(session, clientId, { allowCS: true })
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Sem permissão.' }
+  }
 
   try {
     const year  = yearStr  ? parseInt(yearStr)  : undefined
@@ -45,7 +52,7 @@ export async function generateClientReport(
   prevState: ReportState,
   formData: FormData
 ): Promise<ReportState> {
-  await requireSession()
+  const session = await requireSession()
 
   const clientId   = formData.get('clientId')   as string
   const clientSlug = formData.get('clientSlug') as string
@@ -53,6 +60,13 @@ export async function generateClientReport(
   const toStr      = formData.get('to')          as string | null
 
   if (!clientId) return { error: 'Cliente não informado.' }
+
+  // Posse: só ADMIN/CS ou o gestor atribuído geram relatório deste cliente.
+  try {
+    await assertClientMutationAccess(session, clientId, { allowCS: true })
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Sem permissão.' }
+  }
 
   try {
     const content = await generateWeeklyReportForClient(

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
-import { assertClientMutationAccess } from '@/lib/audit'
+import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { MetricType } from '@prisma/client'
 import { getWeekRange, getMonthRange } from '@/lib/utils'
 
@@ -144,6 +144,18 @@ export async function upsertMonthlyGoals(goals: GoalUpsert[]): Promise<{ ok: boo
       await upsertWeeklyGoalForMonth(g.clientId, g.metric, g.value)
     }
   }
+
+  await writeAuditLog({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: 'goals.upsertMonthly',
+    entityType: 'Goal',
+    entityId: 'bulk',
+    metadata: {
+      count: goals.length,
+      clientIds: Array.from(new Set(goals.map((g) => g.clientId))),
+    },
+  })
 
   revalidatePath('/agency/metas')
   revalidatePath('/clients')
