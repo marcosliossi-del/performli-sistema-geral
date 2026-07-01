@@ -86,8 +86,12 @@ export async function addTaskComment(taskId: string, body: string): Promise<Acti
   const session = await requireSession()
   if (!body.trim()) return { error: 'Comentário vazio.' }
 
-  const task = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true } })
+  const task = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true, clientId: true } })
   if (!task) return { error: 'Tarefa não encontrada.' }
+
+  if (task.clientId) {
+    await assertClientMutationAccess(session, task.clientId, { allowCS: true })
+  }
 
   await prisma.taskComment.create({
     data: { taskId, authorId: session.userId, body: body.trim() },
@@ -102,9 +106,16 @@ export async function addTaskComment(taskId: string, body: string): Promise<Acti
 
 /** Marca/desmarca um item de checklist. */
 export async function toggleChecklistItem(itemId: string, done: boolean): Promise<ActionResult> {
-  await requireSession()
-  const item = await prisma.taskChecklistItem.findUnique({ where: { id: itemId }, select: { id: true } })
+  const session = await requireSession()
+  const item = await prisma.taskChecklistItem.findUnique({
+    where: { id: itemId },
+    select: { id: true, task: { select: { clientId: true } } },
+  })
   if (!item) return { error: 'Item não encontrado.' }
+
+  if (item.task?.clientId) {
+    await assertClientMutationAccess(session, item.task.clientId, { allowCS: true })
+  }
 
   await prisma.taskChecklistItem.update({ where: { id: itemId }, data: { done } })
   revalidatePath('/operacional')

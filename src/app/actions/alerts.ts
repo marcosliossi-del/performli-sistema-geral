@@ -5,8 +5,15 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 
 export async function markAlertRead(alertId: string) {
-  await requireSession()
-  await prisma.alert.update({ where: { id: alertId }, data: { read: true } })
+  const session = await requireSession()
+
+  // Posse: ADMIN/CS veem tudo; MANAGER/ANALYST só alertas de clientes atribuídos.
+  const isViewAll = session.role === 'ADMIN' || session.role === 'CS'
+  const scope = isViewAll
+    ? { id: alertId }
+    : { id: alertId, client: { assignments: { some: { userId: session.userId } } } }
+
+  await prisma.alert.updateMany({ where: scope, data: { read: true } })
   revalidatePath('/alerts')
   revalidatePath('/dashboard')
 }
@@ -14,8 +21,9 @@ export async function markAlertRead(alertId: string) {
 export async function markAllAlertsRead() {
   const session = await requireSession()
 
+  const isViewAll = session.role === 'ADMIN' || session.role === 'CS'
   const where =
-    session.role === 'ADMIN'
+    isViewAll
       ? { read: false }
       : { read: false, client: { assignments: { some: { userId: session.userId } } } }
 

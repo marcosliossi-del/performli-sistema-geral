@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
+import { assertClientMutationAccess } from '@/lib/audit'
 import { TaskPriority, TaskStatus } from '@prisma/client'
 
 const createSchema = z.object({
@@ -52,13 +53,19 @@ export async function createTask(formData: FormData) {
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {
-  const { userId } = await requireSession()
+  const session = await requireSession()
+  const { userId } = session
 
   const current = await prisma.task.findUnique({
     where: { id: taskId },
     select: { status: true, popId: true, type: true, clientId: true, assignedTo: true, client: { select: { name: true } } },
   })
   if (!current) throw new Error('Tarefa não encontrada.')
+
+  // Mutação em tarefa de cliente: valida papel + posse (CS acompanha, pode atualizar).
+  if (current.clientId) {
+    await assertClientMutationAccess(session, current.clientId, { allowCS: true })
+  }
 
   const isConcluir = status === 'CONCLUIDO'
 
