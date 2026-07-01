@@ -165,6 +165,9 @@ model Client {
   contracts           Contract[]
   auditLogs           AuditLog[]
   weeklyCheckins      ClientWeeklyCheckin[]
+
+  @@index([status])
+  @@index([pipelineStage])
 }
 
 model ClientInteraction {
@@ -1189,6 +1192,9 @@ model SyncLog {
   errorMessage      String?
 
   platformAccount PlatformAccount @relation(fields: [platformAccountId], references: [id], onDelete: Cascade)
+
+  @@index([platformAccountId, startedAt])
+  @@index([status])
 }
 
 // ─── NUVEMSHOP ──────────────────────────────────────────────────────────────
@@ -1470,6 +1476,7 @@ model AgencyLead {
 
   @@index([status])
   @@index([createdAt])
+  @@index([status, deletedAt])
 }
 
 enum AgencyActivityType {
