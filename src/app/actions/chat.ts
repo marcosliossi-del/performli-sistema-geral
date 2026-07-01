@@ -35,9 +35,11 @@ export async function sendChatMessage(
 
   if (!chat) return { error: 'Chat não encontrado.' }
 
-  // ADMIN can always post; others must be assigned
-  if (session.role !== 'ADMIN' && chat.client.assignments.length === 0) {
-    return { error: 'Sem permissão para este chat.' }
+  // Participantes do canal interno: ADMIN (Marcos) + CS + gestor atribuído.
+  const isOversight = session.role === 'ADMIN' || session.role === 'CS'
+  const isAssignedManager = session.role === 'MANAGER' && chat.client.assignments.length > 0
+  if (!isOversight && !isAssignedManager) {
+    return { error: 'Apenas o gestor atribuído, a CS e o admin participam deste canal.' }
   }
 
   await prisma.clientChatMessage.create({
@@ -49,6 +51,7 @@ export async function sendChatMessage(
   })
 
   revalidatePath(`/clients/${clientSlug}`)
+  revalidatePath('/canais')
   return { success: true }
 }
 

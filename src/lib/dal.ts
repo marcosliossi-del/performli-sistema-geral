@@ -2231,8 +2231,11 @@ export const getClientMonthlyReport = cache(async (clientId: string) => {
 // ─── Client chat ──────────────────────────────────────────────────────────────
 
 export const getClientChat = cache(async (clientId: string) => {
-  const chat = await prisma.clientChat.findUnique({
+  // Garante que o canal interno exista para que o painel sempre apareça.
+  const chat = await prisma.clientChat.upsert({
     where: { clientId },
+    create: { clientId },
+    update: {},
     include: {
       messages: {
         orderBy: { createdAt: 'asc' },
@@ -2245,6 +2248,82 @@ export const getClientChat = cache(async (clientId: string) => {
   })
 
   return chat
+})
+
+// ─── Central de Comunicação (canais internos por cliente) ─────────────────────
+
+export type ClientChannelSummary = {
+  clientId: string
+  clientName: string
+  clientSlug: string
+  status: string
+  primaryManager: string | null
+  participants: string[]           // gestores atribuídos (nomes) — além de CS/ADMIN
+  messageCount: number
+  lastMessage: {
+    content: string
+    authorName: string
+    createdAt: string
+  } | null
+  lastActivityAt: string | null    // p/ ordenação
+}
+
+/**
+ * Lista os canais internos (um por cliente), com escopo por papel:
+ * ADMIN/CS → todos os clientes; MANAGER/ANALYST → apenas clientes atribuídos.
+ * Participantes de cada canal: gestor(es) atribuído(s) + CS + ADMIN (Marcos).
+ */
+export const getClientChannels = cache(async (userId: string, role: string): Promise<ClientChannelSummary[]> => {
+  const where: Prisma.ClientWhereInput = canViewAll(role)
+    ? { status: { not: 'CHURNED' } }
+    : { status: { not: 'CHURNED' }, assignments: { some: { userId } } }
+
+  const clients = await prisma.client.findMany({
+    where,
+    select: {
+      id: true, name: true, slug: true, status: true,
+      assignments: {
+        select: { isPrimary: true, user: { select: { name: true } } },
+      },
+      chat: {
+        select: {
+          _count: { select: { messages: true } },
+          messages: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { content: true, createdAt: true, user: { select: { name: true } } },
+          },
+        },
+      },
+    },
+    orderBy: { name: 'asc' },
+  })
+
+  const rows: ClientChannelSummary[] = clients.map((c) => {
+    const last = c.chat?.messages[0] ?? null
+    const primary = c.assignments.find((a) => a.isPrimary)?.user.name ?? null
+    return {
+      clientId: c.id,
+      clientName: c.name,
+      clientSlug: c.slug,
+      status: c.status,
+      primaryManager: primary,
+      participants: c.assignments.map((a) => a.user.name),
+      messageCount: c.chat?._count.messages ?? 0,
+      lastMessage: last
+        ? { content: last.content, authorName: last.user.name, createdAt: last.createdAt.toISOString() }
+        : null,
+      lastActivityAt: last ? last.createdAt.toISOString() : null,
+    }
+  })
+
+  // Canais com atividade primeiro (mais recente no topo); depois os silenciosos, por nome.
+  return rows.sort((a, b) => {
+    if (a.lastActivityAt && b.lastActivityAt) return a.lastActivityAt < b.lastActivityAt ? 1 : -1
+    if (a.lastActivityAt) return -1
+    if (b.lastActivityAt) return 1
+    return a.clientName.localeCompare(b.clientName)
+  })
 })
 
 // ─── Goal pace metrics (daily / weekly targets from monthly goal) ─────────────
