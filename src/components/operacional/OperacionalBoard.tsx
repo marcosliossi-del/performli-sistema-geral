@@ -256,11 +256,12 @@ function CalendarView({ tasks, onSelect }: { tasks: OperacionalTask[]; onSelect:
 }
 
 export function OperacionalBoard({
-  tasks, ctx, canEdit,
+  tasks, ctx, canEdit, initialTaskId,
 }: {
   tasks: OperacionalTask[]
   ctx: NovaTarefaContext
   canEdit: boolean
+  initialTaskId?: string
 }) {
   const [view, setView] = useState<View>('lista')
   const [statusF, setStatusF] = useState('')
@@ -270,6 +271,14 @@ export function OperacionalBoard({
   const [selected, setSelected] = useState<OperacionalTask | null>(null)
   const [novaOpen, setNovaOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+
+  // Deep-link: abre o drawer da tarefa indicada por ?task=<id> ao montar.
+  useEffect(() => {
+    if (!initialTaskId) return
+    const t = tasks.find((x) => x.id === initialTaskId)
+    if (t) setSelected(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTaskId])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()

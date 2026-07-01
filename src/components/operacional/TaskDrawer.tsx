@@ -36,6 +36,7 @@ export function TaskDrawer({
   const [rejectNote, setRejectNote] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('comentarios')
+  const [statusResetKey, setStatusResetKey] = useState(0)
   const [isPending, startTransition] = useTransition()
   const dialogRef = useModalA11y<HTMLElement>(onClose)
 
@@ -56,6 +57,11 @@ export function TaskDrawer({
     setDetail(d)
   }
   function handleStatus(status: string) {
+    if (status === 'CONCLUIDO' && requiredOpen > 0) {
+      toast('Conclua os itens obrigatórios do checklist antes de concluir a tarefa', 'err')
+      setStatusResetKey((k) => k + 1) // devolve o select ao valor atual
+      return
+    }
     startTransition(async () => { await updateTaskStatus(task!.id, status as TaskStatus); await reload() })
   }
   function handleComment() {
@@ -258,6 +264,7 @@ export function TaskDrawer({
             {canEdit && (
               <Field k="Status">
                 <select
+                  key={statusResetKey}
                   value={status}
                   onChange={(e) => handleStatus(e.target.value)}
                   disabled={isPending}

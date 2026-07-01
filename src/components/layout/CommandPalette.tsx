@@ -32,13 +32,13 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     }
     const items: Flat[] = []
     res?.tasks.forEach((t) =>
-      items.push({ key: `t-${t.id}`, group: 'Tarefas', label: t.title, sub: t.clientSlug ?? undefined, href: '/operacional', icon: ListTodo }),
+      items.push({ key: `t-${t.id}`, group: 'Tarefas', label: t.title, sub: t.clientSlug ?? undefined, href: `/operacional?task=${t.id}`, icon: ListTodo }),
     )
     res?.clients.forEach((c) =>
       items.push({ key: `c-${c.id}`, group: 'Clientes', label: c.name, href: `/clients/${c.slug}`, icon: Users }),
     )
     res?.pops.forEach((p) =>
-      items.push({ key: `p-${p.id}`, group: 'POPs', label: `${p.code} — ${p.name}`, href: '/processos', icon: Activity }),
+      items.push({ key: `p-${p.id}`, group: 'POPs', label: `${p.code} — ${p.name}`, href: `/processos#pop-${p.code}`, icon: Activity }),
     )
     return items
   })()

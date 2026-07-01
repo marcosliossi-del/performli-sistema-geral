@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { ArrowRight, type LucideIcon } from 'lucide-react'
@@ -29,7 +30,7 @@ export function OperationalCard({
 }: {
   icon: LucideIcon
   title: string
-  value: string | number
+  value: ReactNode
   severity?: Severity
   why: string
   responsible?: string

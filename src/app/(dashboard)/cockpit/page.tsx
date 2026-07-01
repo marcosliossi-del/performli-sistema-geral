@@ -69,7 +69,15 @@ export default async function CockpitPage() {
         <OperationalCard
           icon={HeartPulse}
           title="Saúde da carteira"
-          value={`${data.clientesOk}·${data.clientesAtencao}·${data.clientesCriticos}`}
+          value={
+            <MiniStats
+              items={[
+                { n: data.clientesOk, label: 'ok', cls: 'text-[#22C55E]' },
+                { n: data.clientesAtencao, label: 'atenção', cls: 'text-[#EAB308]' },
+                { n: data.clientesCriticos, label: 'críticos', cls: 'text-[#EF4444]' },
+              ]}
+            />
+          }
           severity={data.clientesCriticos > 0 ? 'warning' : 'ok'}
           why="Clientes OK · em atenção · críticos (status atual)."
           responsible="CS"
@@ -86,12 +94,20 @@ export default async function CockpitPage() {
           responsible="Responsável de cada tarefa"
           deadline="SLA: D+3 alerta, D+7 escala"
           impact="Demanda atrasada reincidente gera insatisfação."
-          action={{ href: '/tasks', label: 'Ver demandas' }}
+          action={{ href: '/operacional', label: 'Ver demandas' }}
         />
         <OperationalCard
           icon={ClipboardCheck}
           title="Check-ins da semana"
-          value={`${checkins.semCheckin}·${checkins.aguardandoRevisao}·${checkins.reprovados}`}
+          value={
+            <MiniStats
+              items={[
+                { n: checkins.semCheckin, label: 'sem preencher', cls: 'text-[#EAB308]' },
+                { n: checkins.aguardandoRevisao, label: 'em revisão', cls: 'text-[#95BBE2]' },
+                { n: checkins.reprovados, label: 'reprovados', cls: 'text-[#EF4444]' },
+              ]}
+            />
+          }
           severity={checkins.semCheckin > 0 || checkins.reprovados > 0 ? 'warning' : 'ok'}
           why={`${checkins.semCheckin} sem preencher · ${checkins.aguardandoRevisao} em revisão · ${checkins.reprovados} reprovados.`}
           responsible="Gestor preenche · CS valida"
@@ -168,5 +184,19 @@ export default async function CockpitPage() {
         Financeiro visível apenas para ADMIN/CS.
       </p>
     </div>
+  )
+}
+
+function MiniStats({ items }: { items: { n: number; label: string; cls: string }[] }) {
+  return (
+    <span className="flex items-center gap-2">
+      {items.map((it, i) => (
+        <span key={it.label} className="flex items-baseline gap-1">
+          {i > 0 && <span className="text-[#576070] text-xs mr-1">·</span>}
+          <span className={`text-xl font-bold leading-none ${it.n > 0 ? it.cls : 'text-[#576070]'}`}>{it.n}</span>
+          <span className="text-[9px] font-medium text-[#87919E]">{it.label}</span>
+        </span>
+      ))}
+    </span>
   )
 }

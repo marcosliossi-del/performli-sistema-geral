@@ -119,7 +119,7 @@ function ResumoKpi({ label: l, value, tone, icon: Icon }: { label: string; value
 function TarefaLinha({ t, urgente }: { t: MinhaTarefa; urgente: boolean }) {
   return (
     <Link
-      href="/operacional"
+      href={`/operacional?task=${t.id}`}
       className={`flex items-center gap-3 px-3 py-2 rounded-lg border bg-[#0F1623] hover:bg-[#141C2B] transition-colors ${urgente ? 'border-[#EF4444]/30' : 'border-[#1F2937]'}`}
     >
       <span className={`text-[11px] shrink-0 ${PRIORITY_COLORS[t.priority] ?? 'text-[#87919E]'}`}>

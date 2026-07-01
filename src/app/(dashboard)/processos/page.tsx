@@ -17,7 +17,7 @@ const STATUS_META: Record<ImplementacaoStatus, { label: string; cls: string }> =
 function PopRow({ pop }: { pop: Pop }) {
   const meta = STATUS_META[pop.implementacao]
   return (
-    <div className="flex items-start justify-between gap-3 py-2.5 px-3 rounded-lg bg-[#0A1E2C]/40 border border-[#38435C]/50">
+    <div id={`pop-${pop.codigo}`} className="scroll-mt-20 flex items-start justify-between gap-3 py-2.5 px-3 rounded-lg bg-[#0A1E2C]/40 border border-[#38435C]/50">
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[10px] font-mono text-[#87919E]">{pop.codigo}</span>

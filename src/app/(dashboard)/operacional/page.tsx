@@ -3,7 +3,12 @@ import { OperacionalBoard } from '@/components/operacional/OperacionalBoard'
 
 export const dynamic = 'force-dynamic'
 
-export default async function OperacionalPage() {
+export default async function OperacionalPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ task?: string }>
+}) {
+  const { task: initialTaskId } = await searchParams
   const { userId, role } = await requireSession()
   const [board, ctx] = await Promise.all([
     getOperacionalBoard(userId, role),
@@ -31,7 +36,7 @@ export default async function OperacionalPage() {
         <Kpi label="War Room" value={k.warRoom} tone="crit" />
       </div>
 
-      <OperacionalBoard tasks={board.tasks} ctx={ctx} canEdit={canEdit} />
+      <OperacionalBoard tasks={board.tasks} ctx={ctx} canEdit={canEdit} initialTaskId={initialTaskId} />
     </div>
   )
 }

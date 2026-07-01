@@ -157,7 +157,7 @@ export function NovaTarefaModal({
 
           <div className="flex justify-end gap-2 pt-1">
             <button onClick={onClose} className="text-xs text-[#87919E] border border-[#38435C] rounded-lg px-3 py-1.5 hover:bg-[#38435C]/30">Cancelar</button>
-            <button onClick={handleCreate} disabled={isPending} className="text-xs bg-[#95BBE2]/10 text-[#95BBE2] border border-[#95BBE2]/20 rounded-lg px-4 py-1.5 hover:bg-[#95BBE2]/20 disabled:opacity-50">
+            <button onClick={handleCreate} disabled={isPending || !title.trim()} className="text-xs bg-[#95BBE2]/10 text-[#95BBE2] border border-[#95BBE2]/20 rounded-lg px-4 py-1.5 hover:bg-[#95BBE2]/20 disabled:opacity-50">
               Criar tarefa
             </button>
           </div>
