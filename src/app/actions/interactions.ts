@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess } from '@/lib/audit'
 import { InteractionType, PipelineStage } from '@prisma/client'
+import { runClientOffboarding } from '@/services/client-offboarding'
 
 export async function addInteraction(
   clientId: string,
@@ -54,6 +55,12 @@ export async function updatePipelineStage(clientId: string, stage: PipelineStage
   } catch (e) {
     return { error: (e as Error).message }
   }
+  // Estado ANTES da mudança — para detectar a transição real para CHURNED.
+  const before = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { status: true },
+  })
+
   await prisma.client.update({
     where: { id: clientId },
     data: {
@@ -63,6 +70,18 @@ export async function updatePipelineStage(clientId: string, stage: PipelineStage
       ...(stage === 'ATIVO'   ? { status: 'ACTIVE'  } : {}),
     },
   })
+
+  // ClientOffboardingAgent — dispara SÓ na transição real para CHURNED
+  // (cliente não estava CHURNED e agora está). Best-effort: falha aqui NÃO
+  // quebra o cancelamento (o status já foi persistido acima).
+  if (stage === 'CHURNED' && before?.status !== 'CHURNED') {
+    try {
+      await runClientOffboarding(clientId)
+    } catch (err) {
+      console.error('[offboarding] falha ao rodar runClientOffboarding:', err)
+    }
+  }
+
   revalidatePath('/pipeline')
   revalidatePath(`/clients/[slug]`, 'page')
   return { ok: true }
