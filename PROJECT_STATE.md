@@ -262,3 +262,15 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
   sem inventar métrica). Valida papel+posse. Componente PlanoAcaoPanel (botão
   "Sugerir plano de ação") na página do cliente (destaque quando saúde RUIM).
   Depende de ANTHROPIC_API_KEY em runtime (não bloqueia build).
+
+## SIDEBAR — reorganização por departamentos (pedido do usuário)
+- branch feat/sidebar-departamentos: navegação reagrupada por DEPARTAMENTO estilo
+  ClickUp, cada um colapsável independente (Record<string,boolean>):
+  PRINCIPAL (Meu Dia/Central de Tarefas/Cockpit/Aceite) · COMERCIAL (Pipeline/CRM/
+  Onboarding) · OPERAÇÃO (Check-ins/Registro/Processos) · SUCESSO DO CLIENTE
+  (Clientes/Validação CS/Anti-churn & War Room/Relatórios) · FINANCEIRO (DRE/Jurídico)
+  · ADMINISTRATIVO (Visão Geral/Metas/Gestores/Equipe) · INTELIGÊNCIA & DADOS
+  (Alertas/Agentes IA/Base de Conhecimento/Painel Analítico).
+- Duplicidades removidas: "Minhas Tarefas" (/tasks) — coberto por Meu Dia+Central;
+  "Dashboard" demovido p/ "Painel Analítico" em Inteligência (Cockpit é o comando);
+  "War Room" e "Anti Churn" unificados em um item. Logo aponta p/ /cockpit.

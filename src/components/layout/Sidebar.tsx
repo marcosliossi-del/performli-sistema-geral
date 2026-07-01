@@ -54,56 +54,76 @@ type NavSection = {
   items: NavItemDef[]
 }
 
+// Organização por DEPARTAMENTO (estilo ClickUp). Cada departamento é colapsável.
+// Removidas duplicidades: "Minhas Tarefas" (/tasks) — coberto por Meu Dia +
+// Central de Tarefas; "Dashboard" virou "Painel Analítico" em Inteligência
+// (Cockpit é o comando operacional); "War Room" e "Anti Churn" unificados.
 const navigation: NavSection[] = [
   {
     label: 'PRINCIPAL',
     items: [
-      { name: 'Meu Dia',         href: '/meu-dia',     icon: Sun,       countKey: 'meuDia', alert: true },
-      { name: 'Central de Tarefas', href: '/operacional', icon: ListTodo, countKey: 'abertas' },
-      { name: 'Cockpit',         href: '/cockpit',     icon: Gauge },
-      { name: 'Aceite Operacional', href: '/aceite',   icon: ShieldCheck, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
-      { name: 'Dashboard',       href: '/dashboard',   icon: LayoutDashboard },
+      { name: 'Meu Dia',            href: '/meu-dia',     icon: Sun,        countKey: 'meuDia', alert: true },
+      { name: 'Central de Tarefas', href: '/operacional', icon: ListTodo,   countKey: 'abertas' },
+      { name: 'Cockpit',            href: '/cockpit',     icon: Gauge },
+      { name: 'Aceite Operacional', href: '/aceite',      icon: ShieldCheck, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
     ],
   },
   {
-    label: 'ÁREAS',
+    label: 'COMERCIAL',
     expandable: true,
     items: [
-      { name: 'Check-ins da semana', href: '/check-ins',  icon: CheckSquare, countKey: 'checkins', alert: true },
-      { name: 'Validação da CS',     href: '/validacoes', icon: ShieldCheck, countKey: 'validacoes', alert: true, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
-      { name: 'Processos & POPs',    href: '/processos',  icon: Activity },
-      { name: 'War Room',            href: '/anti-churn', icon: ShieldAlert, countKey: 'warRooms', alert: true },
-      { name: 'Comercial',           href: '/comercial',  icon: Target },
-      { name: 'Pipeline CRM',        href: '/pipeline',   icon: Kanban },
-      { name: 'Financeiro',          href: '/financeiro', icon: TrendingUp, roles: ['ADMIN' as Role, 'CS' as Role] },
-      { name: 'Onboarding',          href: '/clients/new', icon: UserPlus,  roles: ['ADMIN' as Role] },
+      { name: 'Pipeline CRM',    href: '/pipeline',    icon: Kanban },
+      { name: 'CRM Comercial',   href: '/comercial',   icon: Target },
+      { name: 'Novo Onboarding', href: '/clients/new', icon: UserPlus, roles: ['ADMIN' as Role] },
     ],
   },
   {
-    label: 'CLIENTES',
+    label: 'OPERAÇÃO',
+    expandable: true,
+    items: [
+      { name: 'Check-ins da semana',   href: '/check-ins',  icon: CheckSquare, countKey: 'checkins', alert: true },
+      { name: 'Registro de Operações', href: '/operations', icon: BookOpen },
+      { name: 'Processos & POPs',      href: '/processos',  icon: Activity },
+    ],
+  },
+  {
+    label: 'SUCESSO DO CLIENTE',
+    expandable: true,
     items: [
       { name: 'Meus Clientes',        href: '/clients',    icon: Users },
-      { name: 'Registro de Operações', href: '/operations', icon: BookOpen },
+      { name: 'Validação da CS',      href: '/validacoes', icon: ShieldCheck, countKey: 'validacoes', alert: true, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
+      { name: 'Anti-churn & War Room', href: '/anti-churn', icon: ShieldAlert, countKey: 'warRooms', alert: true },
       { name: 'Relatórios',           href: '/reports',    icon: BarChart3 },
-      { name: 'Alertas',              href: '/alerts',     icon: Bell, countKey: 'alertas', alert: true },
     ],
   },
   {
-    label: 'INTELIGÊNCIA',
-    items: [
-      { name: 'Agentes IA',           href: '/ai-agents',  icon: Bot },
-      { name: 'Base de Conhecimento', href: '/knowledge',  icon: BookMarked, roles: ['ADMIN' as Role] },
-    ],
-  },
-  {
-    label: 'VISÕES POR PAPEL',
+    label: 'FINANCEIRO',
+    expandable: true,
     roles: ['ADMIN', 'CS'],
     items: [
-      { name: 'Visão CEO',     href: '/agency',       icon: Building2, roles: ['ADMIN' as Role] },
-      { name: 'Gestores',      href: '/managers',     icon: PieChart },
+      { name: 'DRE — Financeiro', href: '/financeiro', icon: TrendingUp },
+      { name: 'Jurídico',         href: '/juridico',   icon: Scale, roles: ['ADMIN' as Role] },
+    ],
+  },
+  {
+    label: 'ADMINISTRATIVO',
+    expandable: true,
+    roles: ['ADMIN', 'CS'],
+    items: [
+      { name: 'Visão Geral',   href: '/agency',       icon: Building2, roles: ['ADMIN' as Role] },
       { name: 'Metas Mensais', href: '/agency/metas', icon: Target,    roles: ['ADMIN' as Role] },
+      { name: 'Gestores',      href: '/managers',     icon: PieChart },
       { name: 'Equipe',        href: '/team',         icon: Users,     roles: ['ADMIN' as Role] },
-      { name: 'Jurídico',      href: '/juridico',     icon: Scale,     roles: ['ADMIN' as Role] },
+    ],
+  },
+  {
+    label: 'INTELIGÊNCIA & DADOS',
+    expandable: true,
+    items: [
+      { name: 'Alertas',              href: '/alerts',    icon: Bell, countKey: 'alertas', alert: true },
+      { name: 'Agentes IA',           href: '/ai-agents', icon: Bot },
+      { name: 'Base de Conhecimento', href: '/knowledge', icon: BookMarked, roles: ['ADMIN' as Role] },
+      { name: 'Painel Analítico',     href: '/dashboard', icon: LayoutDashboard },
     ],
   },
 ]
@@ -121,13 +141,14 @@ interface SidebarProps {
 
 export function Sidebar({ role, counts }: SidebarProps) {
   const pathname = usePathname()
-  const [clientsOpen, setClientsOpen] = useState(true)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const toggle = (label: string) => setCollapsed((c) => ({ ...c, [label]: !c[label] }))
 
   return (
     <aside className="ak-sidebar w-60 flex-shrink-0 h-screen sticky top-0 bg-[#0A1E2C] border-r border-[#38435C] flex flex-col">
       {/* Logo */}
       <div className="h-16 flex items-center px-5 border-b border-[#38435C]">
-        <Link href="/dashboard" className="flex items-center gap-2.5">
+        <Link href="/cockpit" className="flex items-center gap-2.5">
           <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M50 5L90 28V72L50 95L10 72V28L50 5Z" fill="none" stroke="#54e0ee" strokeWidth="6"/>
             <path d="M50 5L50 50M50 50L90 28M50 50L10 28" stroke="#54e0ee" strokeWidth="4"/>
@@ -152,19 +173,19 @@ export function Sidebar({ role, counts }: SidebarProps) {
                 {section.expandable ? (
                   <>
                     <button
-                      onClick={() => setClientsOpen(!clientsOpen)}
+                      onClick={() => toggle(section.label)}
                       className="flex items-center justify-between w-full px-2 mb-1.5 group"
                     >
                       <span className="text-[10px] font-semibold text-[#87919E] tracking-widest uppercase group-hover:text-[#EBEBEB] transition-colors">
                         {section.label}
                       </span>
-                      {clientsOpen ? (
-                        <ChevronDown size={12} className="text-[#87919E]" />
-                      ) : (
+                      {collapsed[section.label] ? (
                         <ChevronRight size={12} className="text-[#87919E]" />
+                      ) : (
+                        <ChevronDown size={12} className="text-[#87919E]" />
                       )}
                     </button>
-                    {clientsOpen && (
+                    {!collapsed[section.label] && (
                       <div className="space-y-0.5">
                         {visibleItems.map((item) => (
                           <NavItem key={item.href} item={item} pathname={pathname} counts={counts} />
