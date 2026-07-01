@@ -14,13 +14,15 @@ interface ZApiPayload {
 
 export async function POST(req: NextRequest) {
   try {
-    // Optional: validate Z-API client-token header
+    // Fail-closed: exige o token do Z-API configurado e conferido a cada requisição.
+    const row = await prisma.integrationSetting.findUnique({ where: { key: 'ZAPI_CLIENT_TOKEN' } })
+    if (!row?.value) {
+      // Sem segredo configurado, o endpoint não pode confiar em nenhum payload.
+      return NextResponse.json({ error: 'Webhook não configurado' }, { status: 503 })
+    }
     const clientToken = req.headers.get('client-token')
-    if (clientToken) {
-      const row = await prisma.integrationSetting.findUnique({ where: { key: 'ZAPI_CLIENT_TOKEN' } })
-      if (row?.value && row.value !== clientToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+    if (clientToken !== row.value) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const payload: ZApiPayload = await req.json()

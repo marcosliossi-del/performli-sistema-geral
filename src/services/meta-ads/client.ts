@@ -173,7 +173,7 @@ export class MetaAdsClient {
       access_token: `${appId}|${appSecret}`,
     })
 
-    const res = await fetch(`${GRAPH_BASE}/debug_token?${params}`)
+    const res = await fetch(`${GRAPH_BASE}/debug_token?${params}`, { signal: AbortSignal.timeout(25_000) })
     if (!res.ok) return { valid: false }
 
     const json = await res.json()
@@ -197,7 +197,7 @@ export class MetaAdsClient {
       fields: 'id,name,currency,account_status',
     })
 
-    const res = await fetch(`${GRAPH_BASE}/me/adaccounts?${params}`)
+    const res = await fetch(`${GRAPH_BASE}/me/adaccounts?${params}`, { signal: AbortSignal.timeout(25_000) })
     if (!res.ok) throw new Error(`Meta API error ${res.status}`)
 
     const json = await res.json()

@@ -2230,24 +2230,31 @@ export const getClientMonthlyReport = cache(async (clientId: string) => {
 
 // ─── Client chat ──────────────────────────────────────────────────────────────
 
+const CHAT_INCLUDE = {
+  messages: {
+    orderBy: { createdAt: 'asc' as const },
+    take: 100,
+    include: {
+      user: { select: { id: true, name: true, avatarUrl: true, role: true } },
+    },
+  },
+}
+
 export const getClientChat = cache(async (clientId: string) => {
-  // Garante que o canal interno exista para que o painel sempre apareça.
-  const chat = await prisma.clientChat.upsert({
+  // Leitura primeiro — evita emitir escrita a cada render do painel.
+  const existing = await prisma.clientChat.findUnique({
+    where: { clientId },
+    include: CHAT_INCLUDE,
+  })
+  if (existing) return existing
+
+  // Só cria o canal na primeira vez que ele é aberto (idempotente por clientId).
+  return prisma.clientChat.upsert({
     where: { clientId },
     create: { clientId },
     update: {},
-    include: {
-      messages: {
-        orderBy: { createdAt: 'asc' },
-        take: 100,
-        include: {
-          user: { select: { id: true, name: true, avatarUrl: true, role: true } },
-        },
-      },
-    },
+    include: CHAT_INCLUDE,
   })
-
-  return chat
 })
 
 // ─── Central de Comunicação (canais internos por cliente) ─────────────────────
