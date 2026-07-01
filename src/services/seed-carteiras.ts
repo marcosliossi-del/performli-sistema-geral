@@ -232,6 +232,25 @@ export async function createNovosClientes(): Promise<{ created: string[]; skippe
   const end = new Date('2026-12-26T00:00:00')
   const FEE = 2500 // fee mensal — igual para os dois (mesma empresa: Esj Confecções)
 
+  // Gestor dos dois Svn: Marcos (externalId ClickUp 152690431).
+  const marcos = await prisma.user.findUnique({ where: { externalId: '152690431' }, select: { id: true } })
+  const marcosId = marcos?.id ?? null
+
+  async function ensureGestor(clientId: string) {
+    if (!marcosId) return
+    await prisma.client.update({ where: { id: clientId }, data: { gestorId: marcosId } })
+    await prisma.clientAssignment.updateMany({
+      where: { clientId, isPrimary: true, NOT: { userId: marcosId } },
+      data: { isPrimary: false },
+    })
+    const a = await prisma.clientAssignment.findUnique({
+      where: { clientId_userId: { clientId, userId: marcosId } },
+      select: { id: true },
+    })
+    if (a) await prisma.clientAssignment.update({ where: { id: a.id }, data: { isPrimary: true } })
+    else await prisma.clientAssignment.create({ data: { clientId, userId: marcosId, isPrimary: true } })
+  }
+
   const novos = [
     {
       name: 'Svn Varejo',
@@ -267,7 +286,12 @@ export async function createNovosClientes(): Promise<{ created: string[]; skippe
 
   for (const n of novos) {
     const existing = await prisma.client.findUnique({ where: { slug: n.slug }, select: { id: true } })
-    if (existing) { skipped.push(n.name); continue }
+    if (existing) {
+      // Já criado (talvez sem gestor): garante o gestor Marcos + atribuição.
+      await ensureGestor(existing.id)
+      skipped.push(n.name)
+      continue
+    }
 
     const client = await prisma.client.create({
       data: {
@@ -275,6 +299,7 @@ export async function createNovosClientes(): Promise<{ created: string[]; skippe
         slug: n.slug,
         status: 'ACTIVE',
         pipelineStage: 'ATIVO',
+        ...(marcosId ? { gestorId: marcosId } : {}),
         businessType: n.businessType,
         plataformas: n.plataformas,
         produtos: [TP],
@@ -308,6 +333,9 @@ export async function createNovosClientes(): Promise<{ created: string[]; skippe
         noticeDays: 30,
       },
     })
+
+    // Gestor Marcos como atribuição primária (posse + roteamento das tarefas).
+    await ensureGestor(client.id)
 
     // Onboarding: nasce com a operação (15 recorrentes + tarefas iniciais).
     try { await runClientOnboarding(client.id) } catch { /* best-effort */ }
