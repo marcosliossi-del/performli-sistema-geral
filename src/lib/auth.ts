@@ -1,9 +1,10 @@
 import 'server-only'
 import { compare } from 'bcryptjs'
+import type { OperationalRole } from '@prisma/client'
 import { prisma } from './prisma'
 
 export type AuthResult =
-  | { success: true; user: { id: string; name: string; email: string; role: 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS' } }
+  | { success: true; user: { id: string; name: string; email: string; role: 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS'; operationalRole: OperationalRole | null } }
   | { success: false; error: string }
 
 export async function verifyCredentials(email: string, password: string): Promise<AuthResult> {
@@ -13,7 +14,7 @@ export async function verifyCredentials(email: string, password: string): Promis
 
   const user = await prisma.user.findUnique({
     where: { email: email.toLowerCase().trim() },
-    select: { id: true, name: true, email: true, role: true, passwordHash: true, active: true },
+    select: { id: true, name: true, email: true, role: true, operationalRole: true, passwordHash: true, active: true },
   })
 
   if (!user) {
@@ -31,6 +32,6 @@ export async function verifyCredentials(email: string, password: string): Promis
 
   return {
     success: true,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    user: { id: user.id, name: user.name, email: user.email, role: user.role, operationalRole: user.operationalRole },
   }
 }

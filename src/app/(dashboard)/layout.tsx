@@ -3,6 +3,8 @@ export const dynamic = 'force-dynamic'
 import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/session'
 import { getSidebarCounts } from '@/lib/dal'
+import { prisma } from '@/lib/prisma'
+import { homeForUser } from '@/lib/home'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -11,8 +13,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const counts = await getSidebarCounts(session.userId, session.role)
 
+  // Home do perfil (destino do logo). Sessões antigas sem operationalRole no
+  // token: busca no banco para acertar o pouso.
+  let operationalRole = session.operationalRole ?? null
+  if (session.operationalRole === undefined) {
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { operationalRole: true },
+    })
+    operationalRole = user?.operationalRole ?? null
+  }
+  const homeHref = homeForUser(session.role, operationalRole)
+
   return (
-    <DashboardShell session={session} counts={counts} unreadAlerts={counts.alertas}>
+    <DashboardShell session={session} counts={counts} unreadAlerts={counts.alertas} homeHref={homeHref}>
       {children}
     </DashboardShell>
   )
