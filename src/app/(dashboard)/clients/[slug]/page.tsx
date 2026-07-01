@@ -54,6 +54,7 @@ import { LocalBusinessKPISection } from '@/components/clients/LocalBusinessKPISe
 import { SalesFunnelSection } from '@/components/clients/SalesFunnelSection'
 import { FichaCsPanel } from '@/components/clients/FichaCsPanel'
 import { CheckinReportPanel } from '@/components/clients/CheckinReportPanel'
+import { ClientSectionNav, type ClientSectionAnchor } from '@/components/clients/ClientSectionNav'
 
 const platformColors: Record<string, string> = {
   META_ADS: '#1877F2',
@@ -217,6 +218,16 @@ export default async function ClientDetailPage({
   const isLocal = client.businessType === 'LOCAL'
   const hasData = kpis.faturamento > 0 || kpis.investimento > 0 || kpis.sessoes > 0
 
+  const sectionAnchors: ClientSectionAnchor[] = [
+    { id: 'sec-visao-geral', label: 'Visão geral' },
+    { id: 'sec-metas',       label: 'Metas & Resultado' },
+    { id: 'sec-diagnostico', label: 'Histórico & Diagnóstico' },
+    { id: 'sec-campanhas',   label: 'Campanhas & Relatórios' },
+    { id: 'sec-conversas',   label: 'Conversas & Operações' },
+    { id: 'sec-tarefas',     label: 'Tarefas & Plano de Ação' },
+    { id: 'sec-crm',         label: 'Interações CRM' },
+  ]
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -278,6 +289,11 @@ export default async function ClientDetailPage({
         </div>
       </div>
 
+      {/* Sub-header sticky — navegação interna por seção */}
+      <ClientSectionNav anchors={sectionAnchors} />
+
+      {/* ══ VISÃO GERAL ══ */}
+      <section id="sec-visao-geral" className="scroll-mt-24 space-y-6">
       {/* Resultado da semana (automação ROAS/GA4) */}
       {resultadoInfo?.resultado && (
         <ResultadoStrip
@@ -538,6 +554,10 @@ export default async function ClientDetailPage({
         </div>
       )}
 
+      </section>
+
+      {/* ══ METAS & RESULTADO ══ */}
+      <section id="sec-metas" className="scroll-mt-24 space-y-6">
       {/* ── Revenue Pace + Monthly Comparison (E-commerce only) ────────────── */}
       {!isLocal && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -658,6 +678,10 @@ export default async function ClientDetailPage({
         )}
       </div>
 
+      </section>
+
+      {/* ══ HISTÓRICO & DIAGNÓSTICO ══ */}
+      <section id="sec-diagnostico" className="scroll-mt-24 space-y-6">
       {/* ── Comparativo semana vs semana anterior ────────────────────────── */}
       {weekComparison.length > 0 && (
         <WeekComparisonTable rows={weekComparison} />
@@ -719,6 +743,10 @@ export default async function ClientDetailPage({
         <MetricsChartsGrid data={metricHistory} />
       </div>
 
+      </section>
+
+      {/* ══ CAMPANHAS & RELATÓRIOS ══ */}
+      <section id="sec-campanhas" className="scroll-mt-24 space-y-6">
       {/* ── Campanhas de Anúncio (E-commerce only) ──────────────────────── */}
       {!isLocal && (
         <div className="space-y-4">
@@ -756,6 +784,10 @@ export default async function ClientDetailPage({
         />
       </div>
 
+      </section>
+
+      {/* ══ CONVERSAS & OPERAÇÕES ══ */}
+      <section id="sec-conversas" className="scroll-mt-24 space-y-6">
       {/* ── Chat do Cliente ───────────────────────────────────────────────── */}
       {chat && (
         <div id="chat" className="print:hidden scroll-mt-20">
@@ -799,16 +831,25 @@ export default async function ClientDetailPage({
         </div>
       )}
 
+      </section>
+
+      {/* ══ TAREFAS & PLANO DE AÇÃO ══ */}
+      <section id="sec-tarefas" className="scroll-mt-24 space-y-6">
       {/* ── Plano de ação por IA ──────────────────────────────────────────── */}
       <PlanoAcaoPanel clientId={client.id} destaque={streakStatus === 'RUIM'} />
 
       {/* ── Tarefas operacionais do cliente ───────────────────────────────── */}
       <ClientTasksCard tarefas={clienteTarefas} />
 
+      </section>
+
+      {/* ══ INTERAÇÕES CRM ══ */}
+      <section id="sec-crm" className="scroll-mt-24 space-y-6">
       {/* ── Histórico de Interações CRM ───────────────────────────────────── */}
       <div className="card p-5">
         <InteractionTimeline clientId={client.id} interactions={interactions} />
       </div>
+      </section>
     </div>
   )
 }
