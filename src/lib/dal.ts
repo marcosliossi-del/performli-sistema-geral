@@ -1099,8 +1099,10 @@ export type OperacionalTask = {
 
 export type OperacionalBoard = {
   tasks: OperacionalTask[]
-  kpis: { total: number; concluidas: number; atrasadas: number; taxaConclusao: number }
+  kpis: { abertas: number; atrasadas: number; aguardando: number; noPrazoPct: number; warRoom: number }
 }
+
+const AGUARDANDO_STATUS = new Set(['AGUARDANDO_CLIENTE', 'AGUARDANDO_GESTOR', 'AGUARDANDO_CS', 'EM_VALIDACAO'])
 
 /** Board da Central Operacional: tarefas role-scoped + KPIs. */
 export const getOperacionalBoard = cache(
@@ -1150,18 +1152,14 @@ export const getOperacionalBoard = cache(
       slaBreached: t.slaBreached,
     }))
 
-    const total = tasks.length
-    const concluidas = tasks.filter((t) => t.status === 'CONCLUIDO').length
-    const atrasadas = tasks.filter(
-      (t) =>
-        t.status !== 'CONCLUIDO' &&
-        t.status !== 'CANCELADO' &&
-        t.dueDate != null &&
-        new Date(t.dueDate).getTime() < now,
-    ).length
-    const taxaConclusao = total > 0 ? Math.round((concluidas / total) * 100) : 0
+    const abertasList = tasks.filter((t) => t.status !== 'CONCLUIDO' && t.status !== 'CANCELADO')
+    const abertas = abertasList.length
+    const atrasadas = abertasList.filter((t) => t.dueDate != null && new Date(t.dueDate).getTime() < now).length
+    const aguardando = abertasList.filter((t) => AGUARDANDO_STATUS.has(t.status)).length
+    const warRoom = tasks.filter((t) => t.type === 'WAR_ROOM' && t.status !== 'CONCLUIDO' && t.status !== 'CANCELADO').length
+    const noPrazoPct = abertas > 0 ? Math.round(((abertas - atrasadas) / abertas) * 100) : 100
 
-    return { tasks, kpis: { total, concluidas, atrasadas, taxaConclusao } }
+    return { tasks, kpis: { abertas, atrasadas, aguardando, noPrazoPct, warRoom } }
   },
 )
 

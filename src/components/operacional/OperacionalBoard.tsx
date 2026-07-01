@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef, useEffect } from 'react'
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react'
 import type { OperacionalTask, NovaTarefaContext } from '@/lib/dal'
 import { TaskDrawer } from './TaskDrawer'
@@ -9,14 +9,48 @@ import {
   STATUS_LABELS, STATUS_COLORS, PRIORITY_LABELS, KANBAN_ORDER, label,
 } from './labels'
 
-type View = 'lista' | 'kanban' | 'responsavel' | 'cliente'
+type View = 'lista' | 'kanban' | 'calendario' | 'cliente' | 'responsavel'
 
 const VIEWS: { key: View; label: string }[] = [
   { key: 'lista', label: 'Lista' },
   { key: 'kanban', label: 'Kanban' },
-  { key: 'responsavel', label: 'Por gestor' },
-  { key: 'cliente', label: 'Por cliente' },
+  { key: 'calendario', label: 'Calendário' },
+  { key: 'cliente', label: 'Por Cliente' },
+  { key: 'responsavel', label: 'Por Gestor' },
 ]
+
+function Segmented({ view, setView }: { view: View; setView: (v: View) => void }) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [thumb, setThumb] = useState<{ left: number; width: number } | null>(null)
+
+  useEffect(() => {
+    const wrap = wrapRef.current
+    if (!wrap) return
+    const active = wrap.querySelector<HTMLButtonElement>(`[data-v="${view}"]`)
+    if (active) setThumb({ left: active.offsetLeft, width: active.offsetWidth })
+  }, [view])
+
+  return (
+    <div ref={wrapRef} className="relative inline-flex gap-0.5 bg-white/[0.05] border border-white/[0.09] rounded-xl p-[3px]">
+      {thumb && (
+        <span
+          className="absolute top-[3px] bottom-[3px] rounded-[9px] bg-gradient-to-b from-[#54e0ee] to-[#22c2d6] shadow-[0_4px_12px_-4px_rgba(34,194,214,0.5)] transition-[transform,width] duration-[380ms] ease-[cubic-bezier(.34,1.56,.64,1)]"
+          style={{ transform: `translateX(${thumb.left - 3}px)`, width: thumb.width }}
+        />
+      )}
+      {VIEWS.map((v) => (
+        <button
+          key={v.key}
+          data-v={v.key}
+          onClick={() => setView(v.key)}
+          className={`relative z-10 text-[12.5px] px-[15px] py-[7px] rounded-[9px] whitespace-nowrap transition-colors duration-200 ${view === v.key ? 'text-[#021015] font-bold' : 'text-[#a3b2c2] font-semibold hover:text-[#f2f6fa]'}`}
+        >
+          {v.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 const CRITICAL_STATUS = new Set(['BLOQUEADO', 'ATRASADO'])
 
@@ -128,7 +162,7 @@ function TaskTable({ items, onSelect }: { items: OperacionalTask[]; onSelect: (t
           <tr className="text-[10px] uppercase tracking-wider text-[#647488]">
             <th className="text-left font-semibold px-3.5 py-2.5 border-b border-white/[0.05]">Tarefa</th>
             <th className="text-left font-semibold px-3.5 py-2.5 border-b border-white/[0.05]">Cliente</th>
-            <th className="text-left font-semibold px-3.5 py-2.5 border-b border-white/[0.05]">Resp.</th>
+            <th className="text-left font-semibold px-3.5 py-2.5 border-b border-white/[0.05]">Responsável</th>
             <th className="text-left font-semibold px-3.5 py-2.5 border-b border-white/[0.05]">Status</th>
             <th className="text-left font-semibold px-3.5 py-2.5 border-b border-white/[0.05]">Prioridade</th>
             <th className="text-left font-semibold px-3.5 py-2.5 border-b border-white/[0.05]">Prazo</th>
@@ -157,6 +191,67 @@ function KanbanCard({ t, onClick }: { t: OperacionalTask; onClick: () => void })
         <Avatar name={t.assigneeName} />
       </div>
     </button>
+  )
+}
+
+// ── Calendário (grade do mês, tarefas por dia de vencimento) ───────────────────
+const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+function CalendarView({ tasks, onSelect }: { tasks: OperacionalTask[]; onSelect: (t: OperacionalTask) => void }) {
+  const now = new Date()
+  const [ym, setYm] = useState<{ y: number; m: number }>({ y: now.getFullYear(), m: now.getMonth() })
+  const first = new Date(ym.y, ym.m, 1)
+  const startDay = first.getDay()
+  const daysInMonth = new Date(ym.y, ym.m + 1, 0).getDate()
+  const cells: (number | null)[] = [
+    ...Array.from({ length: startDay }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ]
+  const byDay = new Map<number, OperacionalTask[]>()
+  for (const t of tasks) {
+    if (!t.dueDate) continue
+    const d = new Date(t.dueDate)
+    if (d.getFullYear() === ym.y && d.getMonth() === ym.m) {
+      const day = d.getDate()
+      if (!byDay.has(day)) byDay.set(day, [])
+      byDay.get(day)!.push(t)
+    }
+  }
+  const monthName = first.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  const isToday = (day: number) => now.getFullYear() === ym.y && now.getMonth() === ym.m && now.getDate() === day
+
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={() => setYm((s) => (s.m === 0 ? { y: s.y - 1, m: 11 } : { y: s.y, m: s.m - 1 }))} className="text-[#95BBE2] text-sm px-2 py-1 rounded-lg hover:bg-white/[0.05]">←</button>
+        <span className="text-[13px] font-bold text-[#EBEBEB] capitalize">{monthName}</span>
+        <button onClick={() => setYm((s) => (s.m === 11 ? { y: s.y + 1, m: 0 } : { y: s.y, m: s.m + 1 }))} className="text-[#95BBE2] text-sm px-2 py-1 rounded-lg hover:bg-white/[0.05]">→</button>
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {WEEKDAYS.map((w) => (
+          <div key={w} className="text-[9px] uppercase tracking-wider text-[#647488] text-center py-1 font-semibold">{w}</div>
+        ))}
+        {cells.map((day, i) => (
+          <div key={i} className={`min-h-[76px] rounded-lg border p-1.5 ${day == null ? 'border-transparent' : isToday(day) ? 'border-[#95BBE2]/40 bg-[#95BBE2]/[0.06]' : 'border-white/[0.05] bg-[#0F1623]'}`}>
+            {day != null && (
+              <>
+                <div className={`text-[10px] tabular mb-1 ${isToday(day) ? 'text-[#95BBE2] font-bold' : 'text-[#647488]'}`}>{day}</div>
+                <div className="space-y-0.5">
+                  {(byDay.get(day) ?? []).slice(0, 3).map((t) => (
+                    <button key={t.id} onClick={() => onSelect(t)} title={t.title}
+                      className={`block w-full text-left text-[9.5px] truncate px-1 py-0.5 rounded ${isCritical(t) ? 'bg-[#ff3b4e]/15 text-[#ff7a8a]' : isOverdue(t) ? 'bg-[#ff5e6a]/15 text-[#ff8aa1]' : 'bg-white/[0.06] text-[#a3b2c2]'}`}>
+                      {t.title}
+                    </button>
+                  ))}
+                  {(byDay.get(day)?.length ?? 0) > 3 && (
+                    <div className="text-[9px] text-[#647488] px-1">+{(byDay.get(day)!.length - 3)} mais</div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -214,14 +309,7 @@ export function OperacionalBoard({
     <div className="space-y-4">
       {/* Barra de ações */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex gap-0.5 bg-[#0A1E2C]/60 border border-[#38435C]/50 rounded-xl p-1">
-          {VIEWS.map((v) => (
-            <button key={v.key} onClick={() => setView(v.key)}
-              className={`text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 ease-out ${view === v.key ? 'bg-gradient-to-b from-[#54e0ee] to-[#22c2d6] text-[#021015] shadow-[0_4px_12px_-4px_rgba(34,194,214,0.5)]' : 'text-[#87919E] hover:text-[#EBEBEB]'}`}>
-              {v.label}
-            </button>
-          ))}
-        </div>
+        <Segmented view={view} setView={setView} />
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar…"
           className="bg-[#0A1E2C] border border-[#38435C] rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/50 focus:outline-none focus:border-[#95BBE2]/50" />
         <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="bg-[#0A1E2C] border border-[#38435C] rounded-lg px-2 py-1.5 text-xs text-[#EBEBEB]">
@@ -246,6 +334,8 @@ export function OperacionalBoard({
       {/* Conteúdo */}
       {filtered.length === 0 ? (
         <div className="text-center py-16 text-sm text-[#87919E]">Nenhuma tarefa com esses filtros.</div>
+      ) : view === 'calendario' ? (
+        <CalendarView tasks={filtered} onSelect={setSelected} />
       ) : view === 'kanban' ? (
         <div className="flex gap-3.5 overflow-x-auto pb-2">
           {kanbanCols.map((g) => {

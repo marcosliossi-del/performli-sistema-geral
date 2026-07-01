@@ -296,3 +296,18 @@ AUDITORIA_SISTEMA.md · MAPA_ARQUITETURA.md · HANDOFF_PROXIMA_SESSAO.md ·
 DOSSIE_MAE_PROJETO.md. Prioridade: documentar (não alterar). Só depois de
 concluir: polimento #45, ficha de CS, e inovações funcionais (⌘K, toasts,
 calendário, DnD, skeletons).
+
+## PARIDADE VISUAL COM O PROTÓTIPO (pente-fino) — branch feat/paridade-prototipo
+- Central de Tarefas idêntica ao protótipo:
+  - Header "Central de Tarefas" (24px, weight bold, tracking -.03em) + subtítulo.
+  - KPI strip = protótipo: SEM ícone, número grande 26px MONO (tabular) tracking
+    -.04em, label uppercase 10.5px, variantes late(vermelho)/done(verde)/crit;
+    card surface-2 raio 14 + linha de brilho no topo + hover lift. Métricas:
+    Abertas · Atrasadas · Aguardando · No prazo(%) · War Room (DAL kpis reescrito).
+  - Segmented control com THUMB DESLIZANTE (gradiente ciano, spring). 5 views com
+    rótulos do protótipo: Lista · Kanban · Calendário · Por Cliente · Por Gestor.
+  - Coluna "Responsável" (era "Resp.").
+  - Nova view Calendário: grade do mês com tarefas por dia (crítico/atrasado
+    destacados), navegação de mês.
+- Workflow de auditoria de paridade rodou (8 comparadores ok; síntese estourou
+  retry) — pente-fino feito inline.
