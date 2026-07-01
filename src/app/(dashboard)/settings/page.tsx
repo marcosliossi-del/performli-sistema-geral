@@ -3,7 +3,8 @@ import { ProfileForm }     from '@/components/settings/ProfileForm'
 import { PasswordForm }    from '@/components/settings/PasswordForm'
 import { WhatsAppConnect } from '@/components/settings/WhatsAppConnect'
 import { AsaasStatus }     from '@/components/settings/AsaasStatus'
-import { User, Lock, MessageCircle, Landmark } from 'lucide-react'
+import { SeedOperacaoCard } from '@/components/settings/SeedOperacaoCard'
+import { User, Lock, MessageCircle, Landmark, ListChecks } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,6 +49,21 @@ export default async function SettingsPage() {
       {/* Integrations — ADMIN only */}
       {isAdmin && (
         <>
+          <div className="flex items-center gap-3 pt-2">
+            <div className="h-px flex-1 bg-[#38435C]" />
+            <span className="text-xs text-[#87919E] uppercase tracking-wider">Operação</span>
+            <div className="h-px flex-1 bg-[#38435C]" />
+          </div>
+
+          {/* Seed da operação (time + 15 tarefas recorrentes por cliente) */}
+          <div className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-2">
+              <ListChecks size={16} className="text-[#95BBE2]" />
+              <h2 className="text-sm font-semibold text-[#EBEBEB]">Tarefas recorrentes por cliente</h2>
+            </div>
+            <SeedOperacaoCard />
+          </div>
+
           <div className="flex items-center gap-3 pt-2">
             <div className="h-px flex-1 bg-[#38435C]" />
             <span className="text-xs text-[#87919E] uppercase tracking-wider">Integrações</span>
