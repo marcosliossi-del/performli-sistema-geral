@@ -264,3 +264,31 @@ body::before {
 /* Cantos mais Apple para os cards/painéis utilitários comuns */
 .rounded-xl  { border-radius: 16px; }
 .rounded-2xl { border-radius: 20px; }
+
+/* ═══ POLIMENTO Apple/iOS (aproxima do protótipo) ═══ */
+::selection { background: rgba(var(--ak-brand-rgb), .30); color: #fff; }
+
+/* Títulos com tracking apertado (assinatura do protótipo) */
+h1 { letter-spacing: -.03em; }
+h2 { letter-spacing: -.02em; }
+h3 { letter-spacing: -.015em; }
+
+/* Linha de brilho no topo dos cards (vibrancy) */
+.card { position: relative; }
+.card::after {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent);
+}
+
+/* Ponto de status com glow + pulso do crítico */
+.ak-dot { box-shadow: 0 0 8px currentColor; }
+.ak-pulse { animation: ak-pulse 1.8s ease-in-out infinite; }
+@keyframes ak-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,59,78,.5) } 50% { box-shadow: 0 0 0 5px rgba(255,59,78,0) } }
+
+/* Campos e cantos mais consistentes */
+input, select, textarea { border-radius: 10px; }
+
+/* Foco visível ciano em elementos interativos (acessibilidade + polimento) */
+a:focus-visible, button:focus-visible, [role="button"]:focus-visible {
+  outline: 2px solid rgba(var(--ak-brand-rgb), .55); outline-offset: 2px; border-radius: 8px;
+}

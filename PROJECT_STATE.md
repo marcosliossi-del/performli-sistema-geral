@@ -280,3 +280,10 @@ estes tokens (globals.css + tailwind.config) e evoluindo componentes existentes.
   query própria leve (resultado/etapa/resultadoRoas/resultadoUpdatedAt) no
   Promise.all da página; strip "Resultado da semana" (badge colorido + Etapa +
   ROAS + data automática) perto do topo, só quando há resultado calculado.
+
+## POLIMENTO UX (aproximar do protótipo) — branch feat/ux-polish
+- globals.css: seleção ciano; títulos h1/h2/h3 com tracking apertado; linha de
+  brilho no topo dos cards (.card::after vibrancy); .ak-dot (glow) + .ak-pulse
+  (pulso crítico); campos com raio consistente; foco visível ciano (a11y).
+- OperacionalBoard StatusBadge: pontos com glow, pulso nos status críticos
+  (BLOQUEADO/ATRASADO).

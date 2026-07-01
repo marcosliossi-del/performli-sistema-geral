@@ -76,9 +76,10 @@ function HealthDot({ h }: { h: OperacionalTask['clientHealth'] }) {
   return <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${c}`} />
 }
 function StatusBadge({ s }: { s: string }) {
+  const crit = CRITICAL_STATUS.has(s)
   return (
     <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${label(STATUS_COLORS, s)}`}>
-      <span className="w-1.5 h-1.5 rounded-full bg-current" />{label(STATUS_LABELS, s)}
+      <span className={`w-1.5 h-1.5 rounded-full bg-current ak-dot ${crit ? 'ak-pulse' : ''}`} />{label(STATUS_LABELS, s)}
     </span>
   )
 }
