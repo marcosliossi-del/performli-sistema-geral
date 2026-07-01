@@ -136,6 +136,23 @@ const navigation: NavSection[] = [
   },
 ]
 
+// Todas as rotas do menu — usado para o active-state: um item só acende por
+// prefixo se NENHUM outro item do menu for um match mais específico da rota
+// atual (evita /comercial e /comercial/dashboard acesos juntos).
+const ALL_NAV_HREFS: string[] = navigation.flatMap((s) =>
+  s.items.flatMap((i) => [i.href, ...(i.children?.map((c) => c.href) ?? [])])
+)
+
+function isLeafActive(pathname: string, href: string): boolean {
+  if (pathname === href) return true
+  if (!pathname.startsWith(href + '/')) return false
+  return !ALL_NAV_HREFS.some(
+    (other) =>
+      other.length > href.length &&
+      (pathname === other || pathname.startsWith(other + '/'))
+  )
+}
+
 function canSee(roles: Role[] | undefined, userRole: Role): boolean {
   return !roles || roles.includes(userRole)
 }
@@ -247,7 +264,7 @@ function NavLeaf({
   nested?: boolean
 }) {
   const Icon = item.icon
-  const isActive = pathname === item.href || (item.href !== '/operacional' && pathname.startsWith(item.href + '/'))
+  const isActive = isLeafActive(pathname, item.href)
   const count = item.countKey ? counts?.[item.countKey] ?? 0 : 0
 
   return (
