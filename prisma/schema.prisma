@@ -1072,9 +1072,12 @@ model ClientWeeklyCheckin {
   status       CheckinStatus @default(PENDENTE)
 
   // Conteúdo do check-in (preenchido pelo gestor)
-  resultadoSemana String? @db.Text   // o que aconteceu nas métricas
-  oQueFoiFeito    String? @db.Text   // ações executadas
-  proximosPassos  String? @db.Text   // plano para a próxima semana
+  problema        String? @db.Text   // Q1: principal problema da semana + hipótese
+  resultadoSemana String? @db.Text   // Q3: o que aconteceu nas métricas (resultado das ações)
+  oQueFoiFeito    String? @db.Text   // Q2: ações executadas
+  proximosPassos  String? @db.Text   // Q4: plano para a próxima semana
+  pedidosCliente  String? @db.Text   // Q5: o que precisa do cliente
+  novosSeguidores Int?               // Q6: novos seguidores no período
 
   submittedAt  DateTime?
   reviewedById String?

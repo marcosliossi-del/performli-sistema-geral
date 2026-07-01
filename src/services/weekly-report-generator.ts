@@ -12,8 +12,39 @@ import Anthropic from '@anthropic-ai/sdk'
 import { prisma } from '@/lib/prisma'
 import { GA4Client } from '@/services/ga4/client'
 import { getWeekRange, getMonthRange, formatCurrency } from '@/lib/utils'
+import { getClientKPIs } from '@/lib/dal'
+import { buildReportPrompt, type ReportCheckin } from '@/services/report-prompts'
 
 const anthropic = new Anthropic()
+
+/**
+ * Busca o check-in mais recente do cliente para uma janela de datas e mapeia
+ * as 6 respostas para o formato usado pelo prompt oficial. Se não houver
+ * check-in preenchido, retorna um objeto vazio (o prompt trata a ausência).
+ */
+async function fetchCheckin(clientId: string, from: Date, to: Date): Promise<ReportCheckin> {
+  const c = await prisma.clientWeeklyCheckin.findFirst({
+    where: { clientId, weekStart: { gte: from, lte: to } },
+    orderBy: { weekStart: 'desc' },
+    select: {
+      problema: true,
+      oQueFoiFeito: true,
+      resultadoSemana: true,
+      proximosPassos: true,
+      pedidosCliente: true,
+      novosSeguidores: true,
+    },
+  })
+  if (!c) return {}
+  return {
+    problema:       c.problema,
+    acoes:          c.oQueFoiFeito,
+    resultado:      c.resultadoSemana,
+    planoProximo:   c.proximosPassos,
+    pedidosCliente: c.pedidosCliente,
+    novosSeguidores: c.novosSeguidores,
+  }
+}
 
 /** Formata Date como 'YYYY-MM-DD' no fuso local (evita conversão UTC do toISOString). */
 function toLocalDateStr(d: Date): string {
@@ -255,71 +286,27 @@ export async function generateWeeklyReportForClient(
         ? [mLocal.leads > 0 ? `${mLocal.leads.toLocaleString('pt-BR')} leads` : '', mLocal.spend > 0 ? formatCurrency(mLocal.spend) + ' investidos' : ''].filter(Boolean).join(' / ')
         : [mLocal.mensagens > 0 ? `${mLocal.mensagens.toLocaleString('pt-BR')} mensagens` : '', mLocal.leads > 0 ? `${mLocal.leads.toLocaleString('pt-BR')} leads` : '', mLocal.spend > 0 ? formatCurrency(mLocal.spend) + ' investidos' : ''].filter(Boolean).join(' / ')
 
-    // ── Dynamic prompt blocks ────────────────────────────────────────────────
-    const focoSemana = isRestaurantMode
-      ? 'Foco PRINCIPAL: pedidos e faturamento via anúncio. Mencione alcance como contexto, mas os pedidos e o faturamento são as métricas de destaque.'
-      : hasLeadsGoal
-        ? 'Foco PRINCIPAL: leads gerados e custo por lead. Mencione alcance e visitas como contexto, mas o número de leads é a métrica mais importante.'
-        : 'Foco PRINCIPAL: mensagens recebidas e pessoas alcançadas. Esses são os indicadores centrais para este cliente.'
+    const dadosSistema = [
+      `OBJETIVO PRINCIPAL DESTE CLIENTE: ${objetivoPrincipal}`,
+      ``,
+      `Semana atual:`,
+      dadosPrimarios,
+      ``,
+      `Semana anterior (comparativo): ${semanaAnteriorStr}`,
+      `Acumulado do mês (${daysElapsed} de ${daysInMonth} dias): ${acumuladoMesStr || 'sem dados'}`,
+      `Cliente no prazo (vs meta/pacing): ${clienteNoPrazo ? 'SIM' : 'NÃO'}`,
+    ].join('\n')
 
-    const blocoResultados = isRestaurantMode
-      ? `💬 Resultados diretos
-[Máximo 3 linhas. Este cliente mede vendas/pedidos. Traga quantos pedidos vieram via anúncio. Se tiver faturamento, mencione. Ex: "Vieram X pedidos direto pelo anúncio." Tom: impacto concreto do investimento.]`
-      : hasLeadsGoal && lwLocal.leads > 0
-        ? `💬 Resultados diretos
-[Máximo 3 linhas. Este cliente mede geração de leads. Traga quantos leads vieram essa semana e o custo por lead. Ex: "Recebemos X novos cadastros essa semana." Tom: impacto concreto do investimento.]`
-        : `NÃO inclua o bloco de resultados diretos — ${hasLeadsGoal ? 'sem leads registrados essa semana' : 'cliente foca em alcance e mensagens, não em conversões diretas'}.`
+    const localCheckin = await fetchCheckin(clientId, lastWeekStart, lastWeekEnd)
 
-    const localPrompt = `Você é o gestor de tráfego pago da Arkza enviando um resumo semanal para o cliente via WhatsApp.
-Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrolação, sem cara de relatório corporativo, sem cara de IA.
-
-OBJETIVO PRINCIPAL DESTE CLIENTE: ${objetivoPrincipal}
-Este relatório deve ser construído em torno desse objetivo. Não fale de métricas que o cliente não está medindo.
-
-🗓️ DADOS DO CLIENTE:
-- Nome: ${client.name}
-- Período: ${periodoStr}
-${dadosPrimarios}
-- Semana anterior: ${semanaAnteriorStr}
-- Acumulado do mês (${daysElapsed} de ${daysInMonth} dias): ${acumuladoMesStr || 'sem dados'}
-- Cliente no prazo: ${clienteNoPrazo ? 'SIM' : 'NÃO'}
-
-📊 ESTRUTURA DO RELATÓRIO (siga exatamente):
-
-📊 Semana de ${periodoStr}
-
-[1 frase de abertura honesta e curta:
-→ Se foi boa semana (cliente no prazo): comemore de forma simples, ex: "Boa semana por aqui!"
-→ Se caiu: seja direto e tranquilo, ex: "Semana mais fraca, mas já sabemos o que ajustar."]
-
-📈 O que aconteceu essa semana
-[Máximo 5 linhas. ${focoSemana} Escreva como alguém contando os resultados para um amigo: número + o que isso significa em poucas palavras.
-${clienteNoPrazo
-  ? 'CLIENTE NO PRAZO: pode mencionar o acumulado do mês de forma positiva.'
-  : 'CLIENTE ABAIXO DO PRAZO: NÃO mencione o acumulado do mês. Foque só nos números da semana. Não gere ansiedade com números negativos.'}]
-
-${blocoResultados}
-
-📌 O que vem por aí
-[3 frases curtas sobre o que a equipe vai fazer na próxima semana. Escreva na primeira pessoa do plural.
-${clienteNoPrazo
-  ? 'CLIENTE NO PRAZO: ações de manutenção e escala, ex: "Vamos reforçar o que gerou mais resultados...", "Vamos testar novos criativos..."'
-  : 'CLIENTE ABAIXO DO PRAZO: mostre movimento e plano, ex: "Já estamos ajustando os anúncios...", "Vamos testar novas chamadas essa semana...", "Vamos ativar campanhas para quem já interagiu mas não entrou em contato." Transmita que a equipe está agindo.'}]
-
-⚙️ REGRAS OBRIGATÓRIAS:
-- Linguagem de conversa, não de relatório
-- Frases curtas, no máximo 12 palavras cada
-- Zero termos técnicos: sem CPC, CTR, impressões, frequência, cliques no link, funil, conversão
-- Não mencionar seguidores
-- Nunca use: estratégico, robusto, potencializar, insights, jornada, pilares, desbloquear, transformação, crucial, significativo, abordagem, no cenário atual, no fim do dia
-- Nunca use travessão ( — ) no texto
-- Nunca culpe fatores externos pelos resultados
-- CLIENTE ABAIXO DO PRAZO: transmita movimento e ação. Mostre que a equipe está trabalhando e ajustando. Nunca deixe o cliente ansioso sem resposta
-- Tom calibrado: animado se foi boa semana, firme e ativo se foi ruim
-- Sem markdown (sem *, #, -)
-- Emojis só nos títulos dos blocos, nunca no meio das frases
-- Linha em branco entre cada bloco
-- Gere apenas o texto final, pronto para enviar no WhatsApp`
+    const localPrompt = buildReportPrompt({
+      businessType: client.businessType ?? 'LOCAL',
+      period: 'weekly',
+      clientName: client.name,
+      periodLabel: periodoStr,
+      checkin: localCheckin,
+      dadosSistema,
+    })
 
     const localResponse = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
@@ -473,83 +460,53 @@ ${clienteNoPrazo
     funnelStatus(lw.checkoutToPurchase, BENCH.checkoutToPurchase) === 'low'
   )
 
-  const prompt = `Você é o gestor de tráfego pago da Arkza enviando um resumo semanal para o cliente via WhatsApp.
-Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrolação, sem cara de relatório corporativo, sem cara de IA.
+  // Faturamento/ROAS/compras/ticket vêm da MESMA função do painel (getClientKPIs),
+  // na mesma janela da semana, para nunca divergir do dashboard.
+  const kpi = await getClientKPIs(
+    clientId,
+    toLocalDateStr(lastWeekStart),
+    toLocalDateStr(lastWeekEnd),
+  )
 
-🗓️ DADOS DO CLIENTE:
-- Nome: ${client.name}
-- Período: ${periodoStr}
-- ROAS meta: ${roasMetaStr}
-- Meta de faturamento mensal: ${faturamentoMetaStr}
-- Investimento em mídia na semana: ${lw.spend > 0 ? formatCurrency(lw.spend) : 'sem dados'}
-- Faturamento (GA4) semana: ${lw.revenue > 0 ? formatCurrency(lw.revenue) : 'sem dados'}${rwRevChange !== null ? ` (${rwRevChange > 0 ? '+' : ''}${rwRevChange.toFixed(1)}% vs semana anterior)` : ''}
-- Compras semana: ${lw.purchases > 0 ? lw.purchases.toLocaleString('pt-BR') : 'sem dados'}${rwPurchasesChange !== null ? ` (${rwPurchasesChange > 0 ? '+' : ''}${rwPurchasesChange.toFixed(1)}% vs semana anterior)` : ''}
-- Sessões (GA4) semana: ${lw.sessions > 0 ? lw.sessions.toLocaleString('pt-BR') : 'sem dados'}${rwSessionsChange !== null ? ` (${rwSessionsChange > 0 ? '+' : ''}${rwSessionsChange.toFixed(1)}% vs semana anterior)` : ''}
-- ROAS realizado semana: ${lw.roas !== null ? `${lw.roas.toFixed(2)}x` : 'sem dados'}
-- Taxa de conversão semana: ${lw.taxaConversao !== null ? `${lw.taxaConversao.toFixed(2)}%` : 'sem dados'}
-- Ticket médio semana: ${lw.ticketMedio !== null ? formatCurrency(lw.ticketMedio) : 'sem dados'}
-- Faturamento acumulado no mês: ${month.revenue > 0 ? formatCurrency(month.revenue) : 'sem dados'} (${daysElapsed} de ${daysInMonth} dias)
-- Projeção para fechar o mês: ${projecaoMes !== null ? formatCurrency(projecaoMes) : 'insuficiente'}
-- Resultado vs meta ROAS: ${roasAboveMeta === true ? 'ACIMA DA META' : roasAboveMeta === false ? 'ABAIXO DA META' : 'meta não definida'}
-- Cliente no prazo (receita vs pacing): ${clienteNoPrazo ? 'SIM' : 'NÃO'}
-- Contexto sazonal: não informado
+  const dadosSistema = [
+    `Origem: mesma base do painel da agência (faturamento, compras, ROAS e ticket médio via GA4, MetricSnapshot.conversionValue; investimento somado das contas de mídia).`,
+    ``,
+    `Metas:`,
+    `- ROAS meta: ${roasMetaStr}`,
+    `- Meta de faturamento mensal: ${faturamentoMetaStr}`,
+    ``,
+    `Semana atual (mesmos números do painel da agência):`,
+    `- Investimento em mídia: ${kpi.investimento > 0 ? formatCurrency(kpi.investimento) : 'sem dados'}`,
+    `- Faturamento (GA4): ${kpi.faturamento > 0 ? formatCurrency(kpi.faturamento) : 'sem dados'}${rwRevChange !== null ? ` (${rwRevChange > 0 ? 'alta' : 'queda'} vs semana anterior)` : ''}`,
+    `- Compras: ${kpi.compras > 0 ? kpi.compras.toLocaleString('pt-BR') : 'sem dados'}${rwPurchasesChange !== null ? ` (${rwPurchasesChange > 0 ? 'alta' : 'queda'} vs semana anterior)` : ''}`,
+    `- Sessões (GA4): ${kpi.sessoes > 0 ? kpi.sessoes.toLocaleString('pt-BR') : 'sem dados'}${rwSessionsChange !== null ? ` (${rwSessionsChange > 0 ? 'alta' : 'queda'} vs semana anterior)` : ''}`,
+    `- ROAS realizado: ${kpi.roas !== null ? `${kpi.roas.toFixed(2)}x` : 'sem dados'}`,
+    `- Taxa de conversão: ${kpi.taxaConversao !== null ? `${kpi.taxaConversao.toFixed(2)}%` : 'sem dados'}`,
+    `- Ticket médio: ${kpi.ticketMedio !== null ? formatCurrency(kpi.ticketMedio) : 'sem dados'}`,
+    `- Custo por sessão: ${kpi.cps !== null ? formatCurrency(kpi.cps) : 'sem dados'}`,
+    ``,
+    `Contexto do mês:`,
+    `- Faturamento acumulado: ${month.revenue > 0 ? formatCurrency(month.revenue) : 'sem dados'} (${daysElapsed} de ${daysInMonth} dias)`,
+    `- Projeção para fechar o mês: ${projecaoMes !== null ? formatCurrency(projecaoMes) : 'insuficiente'}`,
+    `- Resultado vs meta ROAS: ${roasAboveMeta === true ? 'ACIMA DA META' : roasAboveMeta === false ? 'ABAIXO DA META' : 'meta não definida'}`,
+    `- Cliente no prazo (receita vs pacing): ${clienteNoPrazo ? 'SIM' : 'NÃO'}`,
+    `  (Se o cliente NÃO está no prazo, não exponha projeção nem acumulado do mês de forma negativa.)`,
+    ``,
+    `Top produtos da semana (GA4):`,
+    topProductsStr,
+    hasFunnelData ? `\n${funnelBlock}` : '',
+  ].join('\n')
 
-TOP PRODUTOS DA SEMANA (dados reais do GA4):
-${topProductsStr}
+  const checkin = await fetchCheckin(clientId, lastWeekStart, lastWeekEnd)
 
-${hasFunnelData ? funnelBlock : ''}
-
-📊 ESTRUTURA DO RELATÓRIO (siga exatamente):
-
-📊 Semana de ${periodoStr}
-
-[1 frase de abertura honesta e curta:
-→ Se foi boa semana: comemore de forma simples, ex: "Foi uma boa semana!"
-→ Se ficou abaixo: seja direto e tranquilo, ex: "Semana mais fraca, mas já sabemos o que ajustar."
-→ Se houver sazonalidade: 1 frase máximo contextualizando, nada mais]
-
-📈 O que aconteceu essa semana
-[Máximo 5 linhas. Traga faturamento, compras, sessões e ROAS. Escreva como alguém contando os números para um amigo: número + o que isso significa em 3 palavras. Sem adjetivos pomposos.
-${clienteNoPrazo
-  ? 'CLIENTE NO PRAZO: pode mencionar a projeção de fechamento do mês de forma positiva, ex: "No mês, já acumulamos X e a projeção é fechar em torno de Y."'
-  : 'CLIENTE ABAIXO DO PRAZO: NÃO mencione a projeção nem o acumulado do mês neste bloco. Foque só nos números da semana. Não projete números negativos, não gere ansiedade.'}]
-
-🛍️ O que mais vendeu
-[Máximo 4 linhas. Liste os produtos ou categorias que lideraram. Se uma categoria dominar, diga isso em 1 frase simples. Só o essencial.]
-
-${hasFunnelBottleneck ? `🛒 O que está travando as vendas no site
-[OBRIGATÓRIO — há gargalo no funil de compra. Máximo 3 linhas. Use os dados do DIAGNÓSTICO DO FUNIL acima.
-Escreva na linguagem do cliente, sem termos técnicos. Ex: "Muita gente visita o site mas menos de 4% adiciona algo ao carrinho. Isso pode indicar que o site está confuso ou os produtos precisam de mais destaque." ou "Boa parte dos carrinhos é abandonada antes de fechar a compra. Vale checar se o frete só aparece no final do processo." ou "Vários clientes chegam ao checkout mas não finalizam. Pode ser problema na etapa de pagamento."
-Tom: parceiro apontando algo que a equipe já identificou e vai resolver, não alarmista.]` : `NÃO inclua o bloco de funil pois o funil está saudável ou sem dados suficientes.`}
-
-📌 O que vem por aí
-[3 frases curtas sobre o que a equipe vai fazer na próxima semana. Escreva na primeira pessoa do plural.
-${clienteNoPrazo
-  ? 'CLIENTE NO PRAZO: ações de manutenção e escala, ex: "Vamos reforçar o que funcionou...", "Vamos testar..."'
-  : 'CLIENTE ABAIXO DO PRAZO: mostre movimento e plano, ex: "Já estamos ajustando os anúncios...", "Vamos reunir internamente essa semana para rever a estratégia...", "Vamos testar novos criativos...". Transmita que a equipe está agindo, não esperando.'}
-${hasFunnelBottleneck ? 'Como há gargalo no funil, inclua 1 ação específica sobre o site, ex: "Vamos revisar o fluxo do carrinho para reduzir o abandono antes do checkout."' : ''}]
-
-${lw.taxaConversao !== null && lw.taxaConversao < 1 && !hasFunnelBottleneck ? `⚠️ INCLUA este bloco — taxa de conversão abaixo de 1% mas sem gargalo específico identificado:
-
-🔎 Um ponto de atenção
-[Máximo 3 linhas. Explique em linguagem simples que poucas pessoas que entram no site estão comprando, dê 1 possível motivo prático e 1 sugestão clara. Tom de parceiro, não de alarme.]` : `NÃO inclua o bloco de atenção genérico — ${hasFunnelBottleneck ? 'o bloco de funil já cobre isso' : 'a taxa de conversão está adequada (>=1%)'}.`}
-
-⚙️ REGRAS OBRIGATÓRIAS:
-- Linguagem de conversa, não de relatório corporativo
-- Frases curtas, no máximo 12 palavras cada
-- Zero termos técnicos sem explicação
-- Nunca use: estratégico, robusto, potencializar, insights, jornada, pilares, desbloquear, transformação, crucial, significativo, abordagem, conteúdo de valor, sustentável, no cenário atual, no fim do dia, não é sobre X é sobre Y, a chave está em, vamos mergulhar, vamos explorar, vamos destrinchar, isso aqui é ouro, o pulo do gato, a verdade desconfortável
-- Nunca use frases vagas sobre produtos: "peças de maior destaque", "apelo visual", "estão destacando bem", "itens com mais saída", "produtos com boa aceitação", "peças que performaram", "categorias que se sobressaíram", "artigos com relevância", "produtos que chamaram atenção". Essas frases não dizem nada ao cliente.
-- Ao falar de produtos vá direto ao nome: "O que mais vendeu foi o macacão tule", "Partes de cima tiveram mais saída essa semana", "O vestido X vendeu 18 unidades". Nome do produto ou categoria real, sem adjetivo nenhum antes.
-- Nunca use travessão ( — ) no texto
-- Nunca culpe o tráfego pelos resultados
-- PROJEÇÃO DE FECHAMENTO DO MÊS: só mencione se "Cliente no prazo" for SIM. Se for NÃO, nunca projete nem cite o acumulado do mês de forma que exponha um resultado negativo
-- CLIENTE ABAIXO DO PRAZO: o tom deve transmitir movimento e ação da equipe. Mostre que estamos trabalhando, ajustando, reunindo. Nunca deixe o cliente ansioso com números ruins sem resposta
-- Tom calibrado pelo resultado: animado se foi bom, firme e ativo se foi ruim
-- Sem markdown (sem *, #, -)
-- Use emojis só nos títulos dos blocos, não no meio das frases
-- Linha em branco entre cada bloco
-- Gere apenas o texto final, pronto para enviar no WhatsApp`
+  const prompt = buildReportPrompt({
+    businessType: client.businessType ?? 'ECOMMERCE',
+    period: 'weekly',
+    clientName: client.name,
+    periodLabel: periodoStr,
+    checkin,
+    dadosSistema,
+  })
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
@@ -721,66 +678,29 @@ export async function generateMonthlyReportForClient(
         ? `- Leads: ${prev.leads > 0 ? prev.leads.toLocaleString('pt-BR') : 'sem dados'}\n- Alcance: ${prev.reach > 0 ? prev.reach.toLocaleString('pt-BR') : 'sem dados'}\n- Investimento: ${prev.spend > 0 ? formatCurrency(prev.spend) : 'sem dados'}`
         : `- Mensagens: ${prev.mensagens > 0 ? prev.mensagens.toLocaleString('pt-BR') : 'sem dados'}\n- Alcance: ${prev.reach > 0 ? prev.reach.toLocaleString('pt-BR') : 'sem dados'}\n- Investimento: ${prev.spend > 0 ? formatCurrency(prev.spend) : 'sem dados'}`
 
-    const focoMesInstrucao = isRestaurantMode
-      ? 'Foco PRINCIPAL: pedidos e faturamento via anúncio. Mencione alcance como contexto. Os pedidos e o faturamento são as métricas de destaque para este cliente.'
-      : hasLeadsGoalM
-        ? 'Foco PRINCIPAL: leads gerados e custo por lead. Mencione alcance como contexto. O número de leads e o CPL são as métricas de destaque.'
-        : 'Foco PRINCIPAL: mensagens recebidas e pessoas alcançadas. Esses são os indicadores centrais para este cliente.'
+    const dadosSistema = [
+      `OBJETIVO PRINCIPAL DESTE CLIENTE: ${objetivoPrincipal}`,
+      `Origem: mesma base do painel da agência (métricas de mídia via MetricSnapshot).`,
+      ``,
+      `Mês atual:`,
+      dadosPrimarios,
+      ``,
+      `Mês anterior (comparativo):`,
+      prevComparativo,
+      ``,
+      `Foi bom mês (vs meta/mês anterior): ${foiBomMes ? 'SIM' : 'NÃO'}`,
+    ].join('\n')
 
-    const blocoResultadosMes = isRestaurantMode
-      ? `💬 Resultados diretos
-[Máximo 3 linhas. Este cliente mede vendas/pedidos. Traga o total de pedidos do mês via anúncio e o faturamento se disponível. Ex: "No mês, vieram X pedidos direto pelos anúncios." Mostre o impacto concreto.]`
-      : hasLeadsGoalM && curr.leads > 0
-        ? `💬 Resultados diretos
-[Máximo 3 linhas. Este cliente mede geração de leads. Traga o total de leads do mês e o CPL. Ex: "Ao longo do mês, recebemos X novos cadastros." Mostre o impacto concreto.]`
-        : `NÃO inclua o bloco de resultados diretos.`
+    const localCheckin = await fetchCheckin(clientId, monthStart, monthEnd)
 
-    const localMonthlyPrompt = `Você é o gestor de tráfego pago da Arkza enviando o relatório mensal para o cliente via WhatsApp.
-Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrolação, sem cara de relatório corporativo.
-
-OBJETIVO PRINCIPAL DESTE CLIENTE: ${objetivoPrincipal}
-Este relatório deve ser construído em torno desse objetivo. Não fale de métricas que o cliente não está medindo.
-
-🗓️ DADOS DO MÊS:
-- Cliente: ${client.name}
-- Mês: ${monthLabel}
-${dadosPrimarios}
-
-MÊS ANTERIOR (comparativo):
-${prevComparativo}
-
-- Foi bom mês: ${foiBomMes ? 'SIM' : 'NÃO'}
-
-📊 ESTRUTURA DO RELATÓRIO (siga exatamente):
-
-📊 Fechamento de ${monthLabel}
-
-[1 frase de abertura:
-→ Bom mês: simples e honesta, ex: "Fechamos bem o mês!"
-→ Mês fraco: direto e tranquilo, ex: "Mês mais desafiador, mas já temos ajustes em andamento."]
-
-📈 O que aconteceu em ${monthLabel}
-[Máximo 5 linhas. ${focoMesInstrucao} Compare com mês anterior quando relevante. Número + o que significa.
-${foiBomMes ? 'BOM MÊS: celebre os resultados e mencione metas atingidas.' : 'MÊS FRACO: foco nos números, sem expor negatividade. Mostre o que foi feito e o que será ajustado.'}]
-
-${blocoResultadosMes}
-
-📌 O que vem aí no próximo mês
-[3 frases curtas sobre as ações do próximo mês. Primeira pessoa do plural.
-${foiBomMes ? 'Ações de escala e manutenção do que funcionou.' : 'Mostre movimento e plano claro. Transmita que a equipe está agindo.'}]
-
-⚙️ REGRAS:
-- Linguagem de conversa, não de relatório
-- Frases curtas, máximo 12 palavras cada
-- Zero termos técnicos (sem CPC, CTR, impressões, frequência, funil)
-- Não mencionar seguidores
-- Nunca use travessão ( — )
-- Nunca culpe fatores externos
-- Tom calibrado: animado se foi bom mês, firme e ativo se foi fraco
-- Sem markdown (sem *, #, -)
-- Emojis só nos títulos, nunca no meio das frases
-- Linha em branco entre cada bloco
-- Gere apenas o texto final, pronto para enviar no WhatsApp`
+    const localMonthlyPrompt = buildReportPrompt({
+      businessType: client.businessType ?? 'LOCAL',
+      period: 'monthly',
+      clientName: client.name,
+      periodLabel: monthLabel,
+      checkin: localCheckin,
+      dadosSistema,
+    })
 
     const localMonthlyResponse = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
@@ -859,58 +779,45 @@ ${foiBomMes ? 'Ações de escala e manutenção do que funcionou.' : 'Mostre mov
     }
   }
 
-  const ecomMonthlyPrompt = `Você é o gestor de tráfego pago da Arkza enviando o relatório mensal para o cliente via WhatsApp.
-Escreva como uma pessoa real falaria, com linguagem simples e direta. Sem enrolação, sem cara de relatório corporativo.
+  // Mesmos números do painel (getClientKPIs), na janela do mês fechado.
+  const kpi = await getClientKPIs(
+    clientId,
+    toLocalDateStr(monthStart),
+    toLocalDateStr(monthEnd),
+  )
 
-🗓️ DADOS DO MÊS:
-- Cliente: ${client.name}
-- Mês: ${monthLabel}
-- Investimento: ${curr.spend > 0 ? formatCurrency(curr.spend) : 'sem dados'}
-- Faturamento (GA4): ${curr.revenue > 0 ? formatCurrency(curr.revenue) : 'sem dados'}${revChange !== null ? ` (${revChange > 0 ? '+' : ''}${revChange.toFixed(1)}% vs mês anterior)` : ''}
-- Compras: ${curr.purchases > 0 ? curr.purchases.toLocaleString('pt-BR') : 'sem dados'}${purcChange !== null ? ` (${purcChange > 0 ? '+' : ''}${purcChange.toFixed(0)}% vs mês anterior)` : ''}
-- Sessões (GA4): ${curr.sessions > 0 ? curr.sessions.toLocaleString('pt-BR') : 'sem dados'}
-- ROAS: ${curr.roas !== null ? `${curr.roas.toFixed(2)}x` : 'sem dados'}
-- Ticket médio: ${curr.ticketMedio !== null ? formatCurrency(curr.ticketMedio) : 'sem dados'}
-- Meta faturamento: ${faturamentoGoal ? `${formatCurrency(Number(faturamentoGoal.targetValue))} (atingido: ${fatAchieved ?? '—'}%)` : 'não definida'}
-- Meta ROAS: ${roasGoal ? `${Number(roasGoal.targetValue).toFixed(2)}x (${roasAchieved === true ? 'ATINGIDA' : 'não atingida'})` : 'não definida'}
-- Budget: ${spendGoal ? formatCurrency(Number(spendGoal.targetValue)) : 'não definido'}
-- Foi bom mês: ${foiBomMes ? 'SIM' : 'NÃO'}
+  const dadosSistema = [
+    `Origem: mesma base do painel da agência (faturamento, compras, ROAS e ticket médio via GA4, MetricSnapshot.conversionValue; investimento somado das contas de mídia).`,
+    ``,
+    `Mês atual:`,
+    `- Investimento: ${kpi.investimento > 0 ? formatCurrency(kpi.investimento) : 'sem dados'}`,
+    `- Faturamento (GA4): ${kpi.faturamento > 0 ? formatCurrency(kpi.faturamento) : 'sem dados'}${revChange !== null ? ` (${revChange > 0 ? 'alta' : 'queda'} vs mês anterior)` : ''}`,
+    `- Compras: ${kpi.compras > 0 ? kpi.compras.toLocaleString('pt-BR') : 'sem dados'}${purcChange !== null ? ` (${purcChange > 0 ? 'alta' : 'queda'} vs mês anterior)` : ''}`,
+    `- Sessões (GA4): ${kpi.sessoes > 0 ? kpi.sessoes.toLocaleString('pt-BR') : 'sem dados'}`,
+    `- ROAS: ${kpi.roas !== null ? `${kpi.roas.toFixed(2)}x` : 'sem dados'}`,
+    `- Ticket médio: ${kpi.ticketMedio !== null ? formatCurrency(kpi.ticketMedio) : 'sem dados'}`,
+    ``,
+    `Metas:`,
+    `- Meta faturamento: ${faturamentoGoal ? `${formatCurrency(Number(faturamentoGoal.targetValue))} (atingido: ${fatAchieved ?? '—'}%)` : 'não definida'}`,
+    `- Meta ROAS: ${roasGoal ? `${Number(roasGoal.targetValue).toFixed(2)}x (${roasAchieved === true ? 'ATINGIDA' : 'não atingida'})` : 'não definida'}`,
+    `- Budget: ${spendGoal ? formatCurrency(Number(spendGoal.targetValue)) : 'não definido'}`,
+    ``,
+    `Foi bom mês (vs meta/mês anterior): ${foiBomMes ? 'SIM' : 'NÃO'}`,
+    ``,
+    `Top produtos do mês (GA4):`,
+    topProductsStr,
+  ].join('\n')
 
-TOP PRODUTOS DO MÊS:
-${topProductsStr}
+  const checkin = await fetchCheckin(clientId, monthStart, monthEnd)
 
-📊 ESTRUTURA DO RELATÓRIO (siga exatamente):
-
-📊 Fechamento de ${monthLabel}
-
-[1 frase de abertura honesta:
-→ Bom mês: comemore de forma simples, ex: "Fechamos bem o mês!"
-→ Mês fraco: direto e tranquilo, ex: "Mês mais desafiador, mas já ajustamos a rota."]
-
-📈 O que aconteceu em ${monthLabel}
-[Máximo 5 linhas. Faturamento, compras, sessões e ROAS com os números reais. Número + o que significa.
-${foiBomMes ? 'BOM MÊS: celebre e mencione metas atingidas.' : 'MÊS FRACO: foco nos números, sem expor negatividade. Transmita que a equipe já está agindo.'}]
-
-🛍️ O que mais vendeu no mês
-[Máximo 4 linhas. Produtos ou categorias que lideraram. Direto ao nome, sem adjetivos.]
-
-📌 O que vem aí no próximo mês
-[3 frases curtas. Primeira pessoa do plural.
-${foiBomMes ? 'Escala e manutenção do que funcionou.' : 'Mostre movimento e plano. Transmita ação da equipe.'}]
-
-⚙️ REGRAS:
-- Linguagem de conversa, não de relatório
-- Frases curtas, máximo 12 palavras cada
-- Zero termos técnicos sem explicação
-- Nunca use: estratégico, robusto, potencializar, insights, jornada, pilares, desbloquear, transformação
-- Nunca use frases vagas sobre produtos — nome real ou categoria real
-- Nunca use travessão ( — )
-- Nunca culpe o tráfego pelos resultados
-- Tom calibrado: animado se foi bom mês, firme e ativo se foi fraco
-- Sem markdown (sem *, #, -)
-- Emojis só nos títulos dos blocos
-- Linha em branco entre cada bloco
-- Gere apenas o texto final, pronto para enviar no WhatsApp`
+  const ecomMonthlyPrompt = buildReportPrompt({
+    businessType: client.businessType ?? 'ECOMMERCE',
+    period: 'monthly',
+    clientName: client.name,
+    periodLabel: monthLabel,
+    checkin,
+    dadosSistema,
+  })
 
   const ecomResponse = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
