@@ -25,6 +25,7 @@ export function PipelineBoard({ initialClients }: Props) {
   const [clients, setClients] = useState<PipelineClient[]>(initialClients)
   const draggingId = useRef<string | null>(null)
   const [dragOverStage, setDragOverStage] = useState<PipelineStage | null>(null)
+  const [churnConfirm, setChurnConfirm] = useState<{ id: string; name: string } | null>(null)
 
   function handleDragStart(clientId: string) {
     draggingId.current = clientId
@@ -47,6 +48,20 @@ export function PipelineBoard({ initialClients }: Props) {
     const client = clients.find((c) => c.id === id)
     if (!client || client.pipelineStage === stage) return
 
+    // Marcar como perdido (churn) exige confirmação — dispara offboarding.
+    if (stage === 'CHURNED') {
+      setChurnConfirm({ id, name: client.name })
+      return
+    }
+
+    await applyStage(id, stage)
+  }
+
+  async function applyStage(id: string, stage: PipelineStage) {
+    const client = clients.find((c) => c.id === id)
+    if (!client) return
+    const previousStage = client.pipelineStage
+
     // Optimistic update
     setClients((prev) =>
       prev.map((c) => (c.id === id ? { ...c, pipelineStage: stage } : c))
@@ -54,7 +69,7 @@ export function PipelineBoard({ initialClients }: Props) {
 
     const rollback = (msg: string) => {
       setClients((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, pipelineStage: client.pipelineStage } : c))
+        prev.map((c) => (c.id === id ? { ...c, pipelineStage: previousStage } : c))
       )
       toast(msg, 'err')
     }
@@ -71,6 +86,38 @@ export function PipelineBoard({ initialClients }: Props) {
     clients.filter((c) => c.pipelineStage === stage)
 
   return (
+    <>
+    {churnConfirm && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/60" onClick={() => setChurnConfirm(null)} />
+        <div className="relative w-full max-w-md rounded-xl border border-[#EF4444]/30 bg-[#0F1623] p-5 shadow-xl">
+          <h3 className="text-base font-semibold text-[#EBEBEB]">
+            Marcar {churnConfirm.name} como perdido (churn)?
+          </h3>
+          <p className="mt-2 text-sm text-[#87919E]">
+            Isso dispara o offboarding e cancela as tarefas recorrentes.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              onClick={() => setChurnConfirm(null)}
+              className="rounded-lg border border-[#38435C] px-3 py-1.5 text-sm text-[#87919E] hover:bg-[#38435C]/30"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => {
+                const c = churnConfirm
+                setChurnConfirm(null)
+                if (c) applyStage(c.id, 'CHURNED')
+              }}
+              className="rounded-lg bg-[#EF4444] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#dc2626]"
+            >
+              Marcar como perdido
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     <div className="flex gap-4 overflow-x-auto pb-4 flex-1 min-h-0">
       {STAGES.map((stage) => {
         const stageClients = byStage(stage.key)
@@ -117,6 +164,7 @@ export function PipelineBoard({ initialClients }: Props) {
         )
       })}
     </div>
+    </>
   )
 }
 

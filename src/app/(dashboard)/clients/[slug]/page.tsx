@@ -899,7 +899,10 @@ function ClientTasksCard({ tarefas }: { tarefas: ClienteTarefas }) {
 function ClientTaskRow({ t }: { t: ClienteTarefaRow }) {
   const atrasada = t.dueDate != null && new Date(t.dueDate).getTime() < Date.now()
   return (
-    <div className={`flex items-center gap-3 px-3 py-2 rounded-lg border bg-[#0F1623] ${atrasada ? 'border-[#EF4444]/30' : 'border-[#1F2937]'}`}>
+    <Link
+      href={`/operacional?task=${t.id}`}
+      className={`flex items-center gap-3 px-3 py-2 rounded-lg border bg-[#0F1623] hover:bg-[#141C2B] transition-colors ${atrasada ? 'border-[#EF4444]/30' : 'border-[#1F2937]'}`}
+    >
       <span className={`text-[11px] shrink-0 ${PRIORITY_COLORS[t.priority] ?? 'text-[#87919E]'}`}>
         {opLabel(PRIORITY_LABELS, t.priority)}
       </span>
@@ -912,6 +915,6 @@ function ClientTaskRow({ t }: { t: ClienteTarefaRow }) {
       <span className={`text-[11px] shrink-0 w-14 text-right ${atrasada ? 'text-[#EF4444]' : 'text-[#87919E]'}`}>
         {t.dueDate ? new Date(t.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'}
       </span>
-    </div>
+    </Link>
   )
 }

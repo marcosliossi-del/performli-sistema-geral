@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import Link from 'next/link'
 import { requireSession, getCheckinBoard } from '@/lib/dal'
 import { Card } from '@/components/ui/card'
 import { CheckinReviewCard } from '@/components/checkins/CheckinReviewCard'
@@ -73,9 +74,9 @@ export default async function CheckinsPage() {
               <Card className="p-3">
                 <div className="flex flex-wrap gap-2">
                   {semCheckin.map((r) => (
-                    <span key={r.clientId} className="text-xs text-[#EBEBEB] bg-[#0A1E2C]/60 border border-[#38435C]/50 rounded px-2.5 py-1">
+                    <Link key={r.clientId} href={`/clients/${r.clientSlug}`} className="text-xs text-[#EBEBEB] bg-[#0A1E2C]/60 border border-[#38435C]/50 rounded px-2.5 py-1 hover:border-[#95BBE2]/50 hover:bg-[#0A1E2C] transition-colors">
                       {r.clientName} <span className="text-[#87919E]">· {r.managerName ?? 'sem gestor'}</span>
-                    </span>
+                    </Link>
                   ))}
                 </div>
               </Card>
@@ -88,9 +89,9 @@ export default async function CheckinsPage() {
               <Card className="p-3">
                 <div className="flex flex-wrap gap-2">
                   {reprovados.map((r) => (
-                    <span key={r.clientId} className="text-xs text-[#EF4444] bg-[#EF4444]/10 border border-[#EF4444]/20 rounded px-2.5 py-1">
+                    <Link key={r.clientId} href={`/clients/${r.clientSlug}`} className="text-xs text-[#EF4444] bg-[#EF4444]/10 border border-[#EF4444]/20 rounded px-2.5 py-1 hover:bg-[#EF4444]/20 transition-colors">
                       {r.clientName}
-                    </span>
+                    </Link>
                   ))}
                 </div>
               </Card>
