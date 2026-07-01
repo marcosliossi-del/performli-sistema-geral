@@ -311,3 +311,12 @@ calendário, DnD, skeletons).
     destacados), navegação de mês.
 - Workflow de auditoria de paridade rodou (8 comparadores ok; síntese estourou
   retry) — pente-fino feito inline.
+
+- **Paridade sidebar** — branch feat/paridade-sidebar: estrutura igual ao protótipo iOS.
+  Seções: (topo sem label) Meu Dia · Minha Semana · Central de Tarefas · Cockpit ·
+  Aceite; ÁREAS com ITENS EXPANSÍVEIS + sub-menu aninhado (nav-tree): Tráfego
+  (→ Check-ins/Prestações/Processos), Sucesso do Cliente (→ Clientes/Validação CS/
+  Relatórios), War Room, Comercial (→ Pipeline/CRM), Financeiro (→ DRE/Jurídico),
+  Onboarding; VISÕES POR PAPEL (Visão CS/Gestor/CEO); INTELIGÊNCIA (Alertas/IA/
+  Base/Metas&Equipe/Painel). NavGroup (expansível, abre se filho ativo) + NavLeaf
+  (nested com ·). Contadores mantidos. Nova rota /minha-semana (reusa Meu Dia).

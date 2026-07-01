@@ -4,7 +4,7 @@ import { jwtVerify } from 'jose'
 const SESSION_COOKIE = 'performli_session'
 
 const PUBLIC_ROUTES = ['/login']
-const PROTECTED_PREFIX = ['/cockpit', '/operacional', '/meu-dia', '/validacoes', '/aceite', '/check-ins', '/processos', '/dashboard', '/clients', '/tasks', '/operations', '/reports', '/anti-churn', '/ai-agents', '/alerts', '/team', '/agency', '/managers', '/pipeline', '/comercial', '/financeiro', '/knowledge', '/settings']
+const PROTECTED_PREFIX = ['/cockpit', '/operacional', '/meu-dia', '/minha-semana', '/validacoes', '/aceite', '/check-ins', '/processos', '/dashboard', '/clients', '/tasks', '/operations', '/reports', '/anti-churn', '/ai-agents', '/alerts', '/team', '/agency', '/managers', '/pipeline', '/comercial', '/financeiro', '/knowledge', '/settings']
 
 function getSecretKey() {
   const secret = process.env.SESSION_SECRET
