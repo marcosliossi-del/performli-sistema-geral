@@ -52,7 +52,7 @@ export function PipelineBoard({ initialClients }: Props) {
       prev.map((c) => (c.id === id ? { ...c, pipelineStage: stage } : c))
     )
 
-    function rollback(msg: string) {
+    const rollback = (msg: string) => {
       setClients((prev) =>
         prev.map((c) => (c.id === id ? { ...c, pipelineStage: client.pipelineStage } : c))
       )
@@ -61,7 +61,7 @@ export function PipelineBoard({ initialClients }: Props) {
 
     try {
       const r = await updatePipelineStage(id, stage)
-      if (r && 'error' in r && r.error) { rollback(r.error); return }
+      if (r && 'error' in r && r.error) rollback(r.error)
     } catch {
       rollback('Não foi possível mover o cliente. A mudança não foi salva.')
     }
