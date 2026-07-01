@@ -325,3 +325,8 @@ calendário, DnD, skeletons).
   Onboarding; VISÕES POR PAPEL (Visão CS/Gestor/CEO); INTELIGÊNCIA (Alertas/IA/
   Base/Metas&Equipe/Painel). NavGroup (expansível, abre se filho ativo) + NavLeaf
   (nested com ·). Contadores mantidos. Nova rota /minha-semana (reusa Meu Dia).
+
+- **Fonte iOS (San Francisco) global** — fixada como token do Tailwind (--font-sans/
+  --font-mono/--default-font-family) = -apple-system → SF em Apple, Inter fallback.
+  Sem webfont (zero download = mais rápido). body com text-rendering optimizeLegibility
+  + font-optical-sizing auto.
