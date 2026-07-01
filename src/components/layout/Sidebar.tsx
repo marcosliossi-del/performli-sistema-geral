@@ -7,7 +7,6 @@ import {
   Gauge,
   Sun,
   ShieldCheck,
-  CalendarRange,
   FileText,
   ListTodo,
   LayoutDashboard,
@@ -32,12 +31,13 @@ import {
   MessagesSquare,
   Repeat,
   Headset,
+  Settings,
 } from 'lucide-react'
 import { useState } from 'react'
 
 type Role = 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS'
 
-type CountKey = 'meuDia' | 'abertas' | 'checkins' | 'validacoes' | 'warRooms' | 'alertas'
+type CountKey = 'meuDia' | 'abertas' | 'checkins' | 'validacoes' | 'warRooms' | 'alertas' | 'suporte'
 
 type NavItemDef = {
   name: string
@@ -51,6 +51,8 @@ type NavItemDef = {
   alert?: boolean
   /** Sub-itens aninhados (nav-tree) — item vira expansível. */
   children?: NavItemDef[]
+  /** Grupo abre expandido por padrão (mesmo sem filho ativo). */
+  defaultOpen?: boolean
 }
 
 type NavSection = {
@@ -60,76 +62,76 @@ type NavSection = {
   items: NavItemDef[]
 }
 
-// Estrutura espelhada do protótipo iOS: atalhos no topo · ÁREAS (com sub-menus
-// aninhados / nav-tree) · Visões por papel · Inteligência.
+// Navegação ÁREA→FUNÇÃO, rasa: bloco fixo do núcleo diário no topo, depois
+// ÁREAS colapsáveis (nav-tree) e leaves acionáveis de 1º nível. 1 rota = 1 rótulo.
 const navigation: NavSection[] = [
   {
+    // Bloco fixo — núcleo diário, sempre visível.
     label: '',
     items: [
-      { name: 'Meu Dia',            href: '/meu-dia',      icon: Sun,          countKey: 'meuDia', alert: true },
-      { name: 'Hub de Suporte',     href: '/suporte',      icon: Headset,      roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
-      { name: 'Minha Semana',       href: '/minha-semana', icon: CalendarRange },
-      { name: 'Central de Tarefas', href: '/operacional',  icon: ListTodo,     countKey: 'abertas' },
-      { name: 'Recorrências',       href: '/recorrencias', icon: Repeat,       roles: ['ADMIN' as Role] },
-      { name: 'Cockpit',            href: '/cockpit',      icon: Gauge },
-      { name: 'Aceite Operacional', href: '/aceite',       icon: ShieldCheck,  roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
+      { name: 'Meu Dia',            href: '/meu-dia',     icon: Sun,     countKey: 'meuDia',  alert: true },
+      { name: 'Hub de Suporte',     href: '/suporte',     icon: Headset, countKey: 'suporte' },
+      { name: 'Central de Tarefas', href: '/operacional', icon: ListTodo, countKey: 'abertas' },
+      { name: 'Cockpit',            href: '/cockpit',     icon: Gauge },
     ],
   },
   {
-    label: 'ÁREAS',
+    label: '',
     items: [
       {
-        name: 'Tráfego', href: '/operacional', icon: Activity, countKey: 'abertas',
+        name: 'Clientes', href: '/clients', icon: Users, defaultOpen: true,
         children: [
-          { name: 'Check-ins da semana',  href: '/check-ins',  icon: CheckSquare, countKey: 'checkins', alert: true },
-          { name: 'Prestações de contas', href: '/operacional', icon: FileText },
-          { name: 'Processos & POPs',     href: '/processos',  icon: BookOpen },
-        ],
-      },
-      {
-        name: 'Sucesso do Cliente', href: '/clients', icon: Users,
-        children: [
-          { name: 'Meus Clientes',          href: '/clients',    icon: Users },
+          { name: 'Clientes',               href: '/clients',    icon: Users },
+          { name: 'Check-ins da semana',    href: '/check-ins',  icon: CheckSquare,     countKey: 'checkins',   alert: true },
+          { name: 'Validação da CS',        href: '/validacoes', icon: ShieldCheck,     countKey: 'validacoes', alert: true, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
           { name: 'Central de Comunicação', href: '/canais',     icon: MessagesSquare },
-          { name: 'Validação da CS',        href: '/validacoes', icon: ShieldCheck, countKey: 'validacoes', alert: true, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
           { name: 'Relatórios',             href: '/reports',    icon: BarChart3 },
         ],
       },
+      {
+        name: 'Operação de Tráfego', href: '/processos', icon: Activity, defaultOpen: true,
+        children: [
+          { name: 'Aceite Operacional',     href: '/aceite',       icon: ShieldCheck, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
+          { name: 'Processos & POPs',       href: '/processos',    icon: BookOpen },
+          { name: 'Recorrências',           href: '/recorrencias', icon: Repeat, roles: ['ADMIN' as Role] },
+          { name: 'Registro de Operações',  href: '/operations',   icon: FileText },
+        ],
+      },
       { name: 'War Room', href: '/anti-churn', icon: ShieldAlert, countKey: 'warRooms', alert: true },
+      { name: 'Alertas',  href: '/alerts',     icon: Bell,        countKey: 'alertas',  alert: true },
       {
         name: 'Comercial', href: '/comercial', icon: Target,
         children: [
-          { name: 'Pipeline CRM',  href: '/pipeline',  icon: Kanban },
-          { name: 'CRM Comercial', href: '/comercial', icon: Target },
+          { name: 'Funil de Vendas',      href: '/pipeline',           icon: Kanban },
+          { name: 'CRM',                  href: '/comercial',          icon: Target },
+          { name: 'Dashboard Comercial',  href: '/comercial/dashboard', icon: BarChart3 },
         ],
       },
       {
         name: 'Financeiro', href: '/financeiro', icon: TrendingUp, roles: ['ADMIN' as Role],
         children: [
-          { name: 'DRE — Financeiro', href: '/financeiro', icon: TrendingUp },
-          { name: 'Jurídico',         href: '/juridico',   icon: Scale, roles: ['ADMIN' as Role] },
+          { name: 'DRE — Financeiro',       href: '/financeiro', icon: TrendingUp },
+          { name: 'Jurídico & Contratos',   href: '/juridico',   icon: Scale },
         ],
       },
-      { name: 'Onboarding', href: '/clients/new', icon: UserPlus, roles: ['ADMIN' as Role] },
-    ],
-  },
-  {
-    label: 'VISÕES POR PAPEL',
-    roles: ['ADMIN', 'CS'],
-    items: [
-      { name: 'Visão CS',     href: '/clients',  icon: Users },
-      { name: 'Visão Gestor', href: '/managers', icon: PieChart },
-      { name: 'Visão CEO',    href: '/agency',   icon: Building2, roles: ['ADMIN' as Role] },
-    ],
-  },
-  {
-    label: 'INTELIGÊNCIA',
-    items: [
-      { name: 'Alertas',              href: '/alerts',    icon: Bell, countKey: 'alertas', alert: true },
-      { name: 'Agentes IA',           href: '/ai-agents', icon: Bot },
-      { name: 'Base de Conhecimento', href: '/knowledge', icon: BookMarked, roles: ['ADMIN' as Role] },
-      { name: 'Metas & Equipe',       href: '/agency/metas', icon: Target, roles: ['ADMIN' as Role] },
-      { name: 'Painel Analítico',     href: '/dashboard', icon: LayoutDashboard },
+      {
+        name: 'Gestão & Equipe', href: '/team', icon: Building2, roles: ['ADMIN' as Role],
+        children: [
+          { name: 'Equipe',                  href: '/team',                 icon: Users },
+          { name: 'Atribuições de Clientes', href: '/managers/assignments', icon: UserPlus },
+          { name: 'Metas da Agência',        href: '/agency/metas',         icon: Target },
+          { name: 'Visão CEO',               href: '/agency',               icon: Building2 },
+          { name: 'Visão Gestor',            href: '/managers',             icon: PieChart },
+        ],
+      },
+      {
+        name: 'Inteligência', href: '/ai-agents', icon: Bot,
+        children: [
+          { name: 'Agentes IA',           href: '/ai-agents', icon: Bot },
+          { name: 'Base de Conhecimento', href: '/knowledge', icon: BookMarked, roles: ['ADMIN' as Role] },
+          { name: 'Painel Analítico',     href: '/dashboard', icon: LayoutDashboard },
+        ],
+      },
     ],
   },
 ]
@@ -168,12 +170,12 @@ export function Sidebar({ role, counts }: SidebarProps) {
       <nav className="flex-1 overflow-y-auto py-3 px-2.5 space-y-1">
         {navigation
           .filter((section) => canSee(section.roles, role))
-          .map((section) => {
+          .map((section, idx) => {
             const visibleItems = section.items.filter((item) => canSee(item.roles, role))
             if (visibleItems.length === 0) return null
 
             return (
-              <div key={section.label || 'top'} className="mb-3">
+              <div key={section.label || `sec-${idx}`} className="mb-3">
                 {section.label && (
                   <p className="text-[10px] font-semibold text-[#647488] tracking-[0.09em] uppercase px-2 pt-2.5 pb-1">
                     {section.label}
@@ -195,6 +197,21 @@ export function Sidebar({ role, counts }: SidebarProps) {
 
       {/* Bottom */}
       <div className="p-3 border-t border-[#38435C]">
+        {role === 'ADMIN' && (
+          <Link
+            href="/settings"
+            prefetch
+            className={cn(
+              'group flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ease-out mb-1',
+              pathname === '/settings' || pathname.startsWith('/settings/')
+                ? 'bg-[#95BBE2]/15 text-[#95BBE2] font-semibold'
+                : 'text-[#a3b2c2] hover:bg-white/[0.05] hover:text-[#f2f6fa]',
+            )}
+          >
+            <Settings size={16} className="flex-shrink-0" />
+            <span className="truncate">Configurações</span>
+          </Link>
+        )}
         <div className="flex items-center gap-2 px-2 py-1">
           <div className="relative flex-shrink-0">
             <Activity size={14} className="text-[#22C55E]" />
@@ -268,7 +285,7 @@ function NavGroup({
   const Icon = item.icon
   const kids = (item.children ?? []).filter((c) => canSee(c.roles, role))
   const childActive = kids.some((c) => pathname === c.href || pathname.startsWith(c.href + '/'))
-  const [open, setOpen] = useState(childActive)
+  const [open, setOpen] = useState(childActive || Boolean(item.defaultOpen))
   const count = item.countKey ? counts?.[item.countKey] ?? 0 : 0
 
   return (

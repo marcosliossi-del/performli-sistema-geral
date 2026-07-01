@@ -50,7 +50,7 @@ export default async function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#EBEBEB]">Dashboard</h1>
+          <h1 className="text-2xl font-bold text-[#EBEBEB]">Painel Analítico</h1>
           <p className="text-[#87919E] text-sm mt-0.5">
             {session.role === 'ADMIN' || session.role === 'CS'
               ? 'Visão geral de todos os clientes'

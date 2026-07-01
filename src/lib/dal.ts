@@ -3363,6 +3363,7 @@ export type SidebarCounts = {
   validacoes: number      // aguardando validação da CS
   warRooms: number        // War Rooms ativas
   alertas: number         // alertas não lidos
+  suporte: number         // demandas de suporte abertas
 }
 
 /** Contadores leves para badges da sidebar. Role-scoped, tudo em paralelo. */
@@ -3380,16 +3381,17 @@ export const getSidebarCounts = cache(
     const endToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
     const openStatus: Prisma.TaskWhereInput['status'] = { notIn: ['CONCLUIDO', 'CANCELADO'] }
 
-    const [meuDia, abertas, checkins, validacoes, warRooms, alertas] = await Promise.all([
+    const [meuDia, abertas, checkins, validacoes, warRooms, alertas, suporte] = await Promise.all([
       prisma.task.count({ where: { assignedTo: userId, status: openStatus, dueDate: { lt: endToday } } }),
       prisma.task.count({ where: { ...taskScope, status: openStatus } }),
       prisma.task.count({ where: { ...taskScope, status: openStatus, pop: { code: 'OPE-06' } } }),
       prisma.task.count({ where: { ...taskScope, status: { in: ['AGUARDANDO_CS', 'EM_VALIDACAO'] } } }),
       prisma.criticalProtocol.count({ where: { status: { not: 'ENCERRADO' }, client: clientScope } }),
       prisma.alert.count({ where: { read: false, client: clientScope } }),
+      prisma.task.count({ where: { ...taskScope, isSupport: true, status: { in: ['A_FAZER', 'EM_ANDAMENTO', 'AJUSTES_SOLICITADOS'] } } }),
     ])
 
-    return { meuDia, abertas, checkins, validacoes, warRooms, alertas }
+    return { meuDia, abertas, checkins, validacoes, warRooms, alertas, suporte }
   },
 )
 
