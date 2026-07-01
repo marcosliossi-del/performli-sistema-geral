@@ -29,7 +29,8 @@ Data: 2026-07-01.
 - `README.md` — descreve a **estrutura de subagents** (maestro, guardião etc.)
   e as 4 fases. **Não** é um README de setup do app (não há passos de
   instalação, `.env`, migrate, seed, rodar dev).
-- `PROJECT_STATE.md` — estado global detalhado (23 KB), atualizado 2026-07-01.
+- `PROJECT_STATE.md` — estado global detalhado (23 KB), "Última atualização:
+  2026-06-30" (véspera; convém revisar após cada merge).
 
 **Documentação (`docs/`)**
 - `PERFORMLI_CONTEXTO.md`, `Arkza_Dossie_POPs.html`, `ficha_clinica.docx`
@@ -45,8 +46,8 @@ Data: 2026-07-01.
 
 1. **Documentação de contexto/produto excelente.** CLAUDE.md + PROJECT_STATE +
    docs/ cobrem regras, POPs, lacunas e propostas com profundidade rara.
-2. **PROJECT_STATE.md vivo** — atualizado hoje, serve de fonte de verdade do
-   progresso.
+2. **PROJECT_STATE.md vivo** — mantido append-only pelo maestro, serve de fonte
+   de verdade do progresso (cabeçalho em 2026-06-30).
 3. **Guia de integração** existe para Nuvemshop (`nuvemshop-instalacao.md`).
 4. **Build faz type-check e migrate** — pega quebras de compilação e schema
    antes do deploy.

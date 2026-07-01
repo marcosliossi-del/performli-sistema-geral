@@ -1,33 +1,30 @@
-# MAPA DE ARQUITETURA — Performli
+# MAPA_ARQUITETURA.md — Performli (Arkza)
 
-> Documento de referência da arquitetura técnica do Performli, o sistema
-> operacional interno da Arkza. Sintetiza as 10 seções de auditoria em
-> `docs/_audit/*.md` e o estado real do código em `src/`.
-> **Fonte da verdade da operação: PostgreSQL.** "Arkza em processo, não em memória."
+> Mapa de arquitetura do sistema operacional interno da Arkza.
+> Base: `AUDITORIA_SISTEMA.md` + `docs/_audit/*.md` (arquitetura, backend, banco, integracoes, performance, seguranca, stack).
+> Referência: 2026-07-01 · 34 páginas · 44 API routes · 27 arquivos de actions · 29 serviços · 64 models Prisma · 46 migrations · ~42k LOC.
 
 ---
 
 ## 1. Visão geral da arquitetura
 
+O Performli é um monólito **Next.js 16 (App Router)** com renderização majoritariamente
+server-side (RSC + Server Actions). A fonte única da verdade é o **PostgreSQL (Neon)**
+acessado via **Prisma 7** (`@prisma/adapter-pg` + `pg`). O ClickUp está praticamente
+desacoplado — o estado canônico vive no banco.
+
 | Camada | Tecnologia |
-|--------|-----------|
-| Framework | **Next.js 16** (App Router) |
-| UI | **React 19** (Server Components por padrão) + Radix/shadcn (`src/components/ui`) |
-| Linguagem | **TypeScript** |
-| ORM | **Prisma 7** |
-| Banco | **PostgreSQL** (Neon) |
-| Deploy | **Vercel** (functions + Vercel Cron) |
-| Auth | **JWT** (`jose`, HS256) em cookie httpOnly `performli_session` |
+|---|---|
+| Framework | Next.js `16.2.1` (App Router, RSC, Server Actions) |
+| UI | React `19.2.4` + TypeScript (`strict: true`) |
+| Estilo | Tailwind CSS v4 (`@tailwindcss/postcss`) + design system em `src/app/globals.css` |
+| ORM / DB | Prisma `^7.5.0` + `@prisma/adapter-pg` · PostgreSQL serverless (Neon) |
+| Auth | JWT HS256 (`jose`) em cookie httpOnly `performli_session` (7 dias) |
+| IA | `@anthropic-ai/sdk` (`claude-sonnet-4-6`, `claude-haiku-4-5`) |
+| Deploy | Vercel (build: `prisma generate && migrate:deploy && next build`; crons via `vercel.json`) |
 
-Integrações externas: Meta Ads, Google Ads, GA4, Nuvemshop, Asaas, Z-API /
-Evolution (WhatsApp), Windsor, base de conhecimento (RAG) e ClickUp. Chaves
-dinâmicas vivem em `IntegrationSetting` (nunca hardcoded).
-
-Princípios estruturantes já materializados no código:
-- **Leitura via DAL** (`src/lib/dal.ts`, `import 'server-only'`).
-- **Mutação via Server Actions** (`src/app/actions/*`) com `auth + papel + posse`.
-- **Rotinas via crons** (`src/app/api/cron/*`) → serviços (`src/services/*`).
-- **Estado canônico no PostgreSQL**; syncs escrevem `MetricSnapshot`/`CampaignSnapshot`.
+Regra de frescor: `(dashboard)/layout.tsx` usa `force-dynamic` (SSR a cada request) —
+decisão de frescor operacional em vez de cache de rota.
 
 ---
 
@@ -35,255 +32,213 @@ Princípios estruturantes já materializados no código:
 
 ```
 performli-sistema-geral/
-├── prisma/                       # schema.prisma + migrations (aditivas)
-├── vercel.json                   # crons + maxDuration (sync/cron = 300s)
+├── prisma/
+│   ├── schema.prisma          # 64 models — fonte única da verdade
+│   ├── migrations/            # 46 migrations (aditivas/idempotentes desde 2026-06-30)
+│   └── seed.ts                # seed via tsx (protegido por SEED_SECRET)
+│
 ├── src/
-│   ├── middleware.ts             # guarda de borda JWT por prefixo de rota
+│   ├── middleware.ts          # protege PÁGINAS (PROTECTED_PREFIX); exclui /api do matcher
 │   │
 │   ├── app/
-│   │   ├── (auth)/login/         # route group público — única tela sem sessão
-│   │   ├── (dashboard)/          # route group protegido — ~30 telas operacionais
-│   │   │                         #   layout.tsx compartilhado (navegação/sidebar)
-│   │   ├── api/                  # 45 route handlers (backend HTTP)
-│   │   │   ├── cron/             # daily · digest · recurrences · resultados
-│   │   │   ├── sync/             # meta · google-ads · ga4 · nuvemshop · health · stream
-│   │   │   ├── webhooks/         # whatsapp
-│   │   │   ├── comercial/        # leads · activities (CRM)
-│   │   │   ├── financeiro/       # cashflow · expenses · summary
-│   │   │   ├── asaas/            # webhook + endpoints de cobrança
-│   │   │   ├── nuvemshop/        # OAuth + webhooks e-commerce
-│   │   │   ├── leads/ ai/ clients/ team/ settings/ admin/ whatsapp/ debug/ seed/
-│   │   └── actions/              # 27 arquivos de Server Actions (mutações)
-│   │                             #   clients, tasks, checkin, warRoom, contracts,
-│   │                             #   antiChurn, goals, operacional, team, ...
+│   │   ├── layout.tsx         # root layout
+│   │   ├── globals.css        # design system Arkza (tokens, glass, overrides de cor)
+│   │   ├── page.tsx           # raiz → redirect
+│   │   │
+│   │   ├── (auth)/            # route group público
+│   │   │   └── login/page.tsx
+│   │   │
+│   │   ├── (dashboard)/       # route group protegido — 33 page.tsx (+ login = 34)
+│   │   │   ├── layout.tsx     # shell protegido + force-dynamic
+│   │   │   ├── cockpit/       # tela-referência (6 perguntas de UX por card)
+│   │   │   ├── clients/       # lista + [slug] (Client 360) + new
+│   │   │   ├── financeiro/    # FIN (contas a receber/pagar) — ADMIN-only
+│   │   │   ├── comercial/ pipeline/  # CRM / CAP
+│   │   │   ├── operacional/ operations/ tasks/ processos/  # Central Operacional (OPE)
+│   │   │   ├── anti-churn/ check-ins/ juridico/ reports/    # CSX / WAR
+│   │   │   └── ...            # agency, alerts, managers, team, settings, etc.
+│   │   │
+│   │   ├── actions/           # 27 Server Actions — MUTAÇÃO (auth+papel+posse+AuditLog)
+│   │   │   ├── operacional.ts # referência de ouro do padrão de mutação
+│   │   │   ├── clients.ts updateClient.ts contracts.ts goals.ts warRoom.ts ...
+│   │   │
+│   │   └── api/               # 44 route.ts em 17 subdomínios (cron, sync, webhooks, ...)
 │   │
-│   ├── lib/                      # utilidades transversais
-│   │   ├── dal.ts                # DAL de leitura (server-only, cache, unstable_cache)
-│   │   ├── auth.ts session.ts    # emissão/verificação de JWT e sessão
-│   │   ├── audit.ts              # assertClientMutationAccess + writeAuditLog
-│   │   ├── prisma.ts             # singleton PrismaClient
-│   │   ├── knowledge-search.ts   # RAG · whatsapp.ts · email.ts · pops-catalog.ts
+│   ├── lib/                   # núcleo transversal
+│   │   ├── dal.ts             # DAL de LEITURA (~3.5k linhas, 52 exports, guard de auth+posse)
+│   │   ├── session.ts         # JWT httpOnly (jose), fail-closed sem SESSION_SECRET
+│   │   ├── audit.ts           # writeAuditLog + assertClientMutationAccess (RBAC+posse)
+│   │   ├── auth.ts prisma.ts  # helpers de auth · singleton Prisma
+│   │   ├── health.ts benchmarks.ts knowledge-search.ts pops-catalog.ts
+│   │   └── whatsapp.ts toast.ts utils.ts
 │   │
-│   ├── services/                 # ~30 serviços de integração/automação (chamados por crons)
-│   │   ├── meta-ads/ google-ads/ ga4/ nuvemshop/ asaas/   # sync de plataformas
-│   │   ├── zapi/ evolution/ notifications/ windsor/        # mensageria/dados
-│   │   ├── health-scorer.ts churn-scorer.ts               # scoring
-│   │   ├── recurrence-engine.ts resultado-engine.ts       # engines idempotentes
-│   │   └── *-monitor.ts *-checker.ts *-escalation.ts       # monitores/escalações
+│   ├── services/             # 29 serviços — INTEGRAÇÕES + AUTOMAÇÕES (crons)
+│   │   ├── meta-ads/ google-ads/ ga4/ nuvemshop/ asaas/ windsor/ zapi/ evolution/ notifications/
+│   │   ├── health-scorer.ts churn-scorer.ts antichurn-monitor.ts budget-monitor.ts
+│   │   ├── warroom-monitor.ts inadimplencia-checker.ts contract-expiry-checker.ts
+│   │   ├── weekly-report-generator.ts weekly-checklist-generator.ts recurrence-engine.ts
+│   │   └── alert-dispatcher.ts campaign-insight-generator.ts resultado-engine.ts ...
 │   │
-│   └── components/               # componentes React por domínio de tela + ui/
-│       └── cockpit/ comercial/ financeiro/ agency/ clients/ tasks/ ... ui/
+│   └── components/           # 108 arquivos por domínio + ui/ + layout/
+│       ├── layout/           # Sidebar (RBAC), CommandPalette, DashboardShell, TopNav
+│       ├── ui/               # primitivos: Skeleton, ToastViewport, badge, button, card, input, progress
+│       └── cockpit/ clients/ financeiro/ comercial/ operacional/ ...
+│
+└── vercel.json               # 4 crons + maxDuration por família de rota
 ```
+
+> Dívida conhecida: pastas duplicadas `components/clientes/` (pt) vs `components/clients/` (en);
+> áreas mistas `operacional/` vs `operations/`. Ver AUDITORIA §Arquitetura.
 
 ---
 
 ## 3. Camadas e responsabilidades
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ page.tsx / Server Component  (src/app/(dashboard)/**/page.tsx)       │
-│   → só apresentação; NÃO fala com prisma direto                     │
-├─────────────────────────────────────────────────────────────────────┤
-│ LEITURA:  src/lib/dal.ts   (requireSession + filtro por papel/posse) │
-│ MUTAÇÃO:  src/app/actions/*.ts  (auth + papel + posse + AuditLog)    │
-├─────────────────────────────────────────────────────────────────────┤
-│ Prisma (src/lib/prisma.ts)  → PostgreSQL/Neon  ← fonte da verdade    │
-├─────────────────────────────────────────────────────────────────────┤
-│ src/services/*  → integrações externas (Meta, GA4, Asaas, Z-API...)  │
-└─────────────────────────────────────────────────────────────────────┘
-```
+| Camada | Onde | Responsabilidade | Regra |
+|---|---|---|---|
+| **Middleware** | `src/middleware.ts` | Redireciona páginas não autenticadas p/ login. **Não** cobre `/api` (matcher exclui) nem checa papel. | Autenticação de página |
+| **Leitura (DAL)** | `src/lib/dal.ts` | Toda leitura de tela. Guard `requireSession`, `canViewAll` (ADMIN/CS) e filtro por `ClientAssignment` (MANAGER/ANALYST). `cache()` por request; `unstable_cache` em 2 pontos. | Regra 1 |
+| **Mutação (Actions)** | `src/app/actions/*.ts` | Server Actions. Padrão: `requireSession()` → `assertClientMutationAccess(session, clientId)` → mutação Prisma → `writeAuditLog(...)`. | Regra 2 (auth+papel+posse+log) |
+| **RBAC / posse** | `src/lib/audit.ts` | `assertClientMutationAccess`: ADMIN livre · CS só com `allowCS` · MANAGER só cliente atribuído · ANALYST nunca muta. `writeAuditLog` append-only, nunca lança. | Regras 2, 3, 8 |
+| **Sessão** | `src/lib/session.ts` | Emite/verifica JWT HS256 com `SESSION_SECRET`. Fail-closed se env ausente. | Regra 4 |
+| **Persistência** | `src/lib/prisma.ts` → PostgreSQL/Neon | Singleton Prisma. Fonte da verdade canônica. | — |
+| **Integrações / cron** | `src/services/*`, `src/app/api/cron/*` | Chamadas externas com timeout; try/catch por cliente; `SyncLog`/`lastRunAt`. Auth de cron via `CRON_SECRET`. | Regras 6, 7, 9 |
 
-- **`page.tsx` / Server Component** — busca dados chamando a DAL; renderiza.
-- **DAL (`src/lib/dal.ts`)** — `requireSession()` (`cache()`, redirect `/login`);
-  `canViewAll(role)` decide ADMIN/CS (tudo) vs MANAGER/ANALYST (só atribuídos via
-  `ClientAssignment`); usa `unstable_cache` para leituras caras.
-- **Server Actions (`src/app/actions/*`)** — toda mutação passa por
-  `requireSession()` + `assertClientMutationAccess(session, clientId, {allowCS})`
-  (`src/lib/audit.ts:17`) + `writeAuditLog(...)` (`audit.ts:44`, append-only).
-  Retorno padronizado `{ ok: true } | { error }`. Referência de ouro:
-  `actions/warRoom.ts:25` (`saveWarRoomPlan`).
-- **Prisma → PostgreSQL** — estado canônico. Nenhuma tela lê de planilha/WhatsApp.
-- **Serviços** — cada chamada externa deve ter timeout; escrevem snapshots/scores.
-
-Regras inegociáveis materializadas: leitura pela DAL, mutação valida
-`auth + papel + posse`, sem bypass, sem endpoint público desprotegido,
-segredos em `IntegrationSetting`, `AuditLog` em automação crítica.
+**Bordas de API** (não cobertas pelo middleware) protegem-se individualmente:
+webhooks financeiros `asaas/webhook` e `nuvemshop/webhooks` são **fail-closed** (token / HMAC SHA-256, 503 sem secret);
+crons exigem `CRON_SECRET` (Bearer ou `x-cron-secret`); financeiro/contratos são ADMIN-only.
 
 ---
 
 ## 4. Fluxo de dados
 
-### 4.1 Requisição de tela (leitura/mutação)
-
 ```
-Browser
-  │  GET /cockpit  (cookie performli_session)
-  ▼
-src/middleware.ts ── jwtVerify (jose, HS256) ── prefixo protegido?
-  │  não autenticado → redirect /login?callbackUrl=...
-  ▼ autenticado
-src/app/(dashboard)/cockpit/page.tsx  (Server Component)
+request
   │
-  ├── leitura ──► src/lib/dal.ts  (requireSession + filtro papel/posse)
-  │                    └──► prisma ──► PostgreSQL/Neon
+  ▼
+middleware.ts ── página protegida? sem sessão → /login
+  │ (rotas /api NÃO passam aqui — cada handler checa sessão/segredo)
+  ▼
+Server Component (page.tsx em (dashboard)/…)
   │
-  └── mutação (form/action) ──► src/app/actions/*.ts
-                                   ├── requireSession()
-                                   ├── assertClientMutationAccess(...)
-                                   ├── prisma.update(...)  ──► PostgreSQL
-                                   └── writeAuditLog(...) + revalidate
+  ├── LEITURA ──► src/lib/dal.ts ──► requireSession + canViewAll/assignment ──► prisma ──► PostgreSQL/Neon
+  │
+  └── MUTAÇÃO ──► src/app/actions/*.ts ──► requireSession
+                     └► assertClientMutationAccess (papel + posse)  [src/lib/audit.ts]
+                     └► prisma.$transaction (mutação)
+                     └► writeAuditLog  ──► AuditLog (append-only)
+                     └► return { ok } | { error }
+
+  cron / webhook / sync (fora do request de página)
+      api/cron/* ──(CRON_SECRET)──► src/services/*  ──► integrações externas (timeout)
+                                        └► prisma (MetricSnapshot, Alert, SyncLog, lastRunAt)
 ```
 
-`middleware.ts` protege todos os prefixos do dashboard (lista `PROTECTED_PREFIX`)
-e **não** intercepta `/api/*` (matcher exclui `api`). Rotas `/api` fazem sua
-própria autorização (sessão, `CRON_SECRET`, `SEED_SECRET`, assinatura de webhook).
-
-### 4.2 Fluxo dos crons (Vercel Cron)
-
-```
-Vercel Cron (schedule em vercel.json)
-  │  GET /api/cron/daily
-  │  Authorization: Bearer <CRON_SECRET>   (ou x-cron-secret)
-  ▼
-src/app/api/cron/daily/route.ts ── isAuthorized() valida CRON_SECRET
-  │   (env ausente → 401; nunca roda sem segredo)
-  ▼
-runDailySync() — orquestra ~20 passos, cada passo em try/catch isolado
-  │   (falha de um passo NÃO derruba os demais; summary ok/error por passo)
-  ▼
-src/services/*  (syncAllMetaAccounts, recalculateAllClientsHealth,
-  │              scoreAllClientsChurnRisk, checkInadimplencia, ...)
-  ▼
-prisma ──► PostgreSQL   +   Alert / AuditLog / AutomationLog / lastRunAt
-```
-
-**Ideal (regra nº 7):** cada loop por cliente tem `try/catch`, para que um
-cliente com dado corrompido não quebre o lote. Regra nº 9/10: registrar
-`lastRunAt` e mostrar "última atualização" na tela.
-
-**Estado real (auditoria `docs/_audit/crons.md`):**
-- ✅ Isolamento por passo no `daily`; `CRON_SECRET` em todas as 4 rotas.
-- ✅ Idempotência: `recurrence-engine` (`idempotencyKey`), `resultado-engine`
-  (`Client.resultadoWeek`); `digest` separado do sync.
-- ⚠️ **Loops batch sem try/catch por cliente** em `health-scorer.ts:477`,
-  `churn-scorer.ts:147`, `oscillation-detector.ts:199`, `budget-monitor.ts:36`,
-  `critical-account-detector.ts:46`, `contract-expiry-checker.ts:25`,
-  `weekly-report-generator.ts:945`, `weekly-checklist-generator.ts:57/149`.
-- ⚠️ `lastRunAt`/SyncLog persistido só em recurrence/resultado; o `summary` do
-  `daily` não é persistido (dificulta responder "qual rotina não rodou").
-
-Schedules (`vercel.json`, UTC):
-
-| Rota | Schedule | Função |
-|------|----------|--------|
-| `/api/cron/daily` | `0 11 * * *` (08:00 BRT) | ~20 passos: syncs, health, churn, anti-churn, check-ins, inadimplência, follow-up leads, escalações, budget, contas críticas, war room, contract expiry; domingo → weekly reports/checklists |
-| `/api/cron/digest` | `30 11 * * *` | Digest diário via WhatsApp (Z-API) |
-| `/api/cron/recurrences` | `0 10 * * *` | Gera tarefas recorrentes (idempotente) |
-| `/api/cron/resultados` | `0 9 * * 1` (segunda) | Resultado semanal ROAS/GA4 + Etapa |
+Direção geral: as **integrações externas escrevem no PostgreSQL** (fonte da verdade);
+as **telas leem do PostgreSQL** via DAL. O ClickUp não é sistema central.
 
 ---
 
 ## 5. Mapa de rotas
 
-### 5.1 Páginas do dashboard (`src/app/(dashboard)/**/page.tsx`)
+### 5.1 Páginas (34) por área
 
-| Área | Rota | Papel operacional |
-|------|------|-------------------|
-| Home operacional | `/meu-dia`, `/minha-semana` | O que preciso fazer hoje/na semana |
-| Comando | `/cockpit`, `/dashboard`, `/` | Visão única da agência (saudável/atenção/crítico) |
-| Tarefas | `/tasks`, `/operations`, `/processos` | Central de tarefas e POPs |
-| Clientes | `/clients`, `/clients/[slug]`, `/clients/new` | Client 360 |
-| Canais/Métricas | `/canais`, `/reports` | Meta/Google/GA4/Nuvemshop |
-| CS / Anti-churn | `/anti-churn`, `/check-ins`, `/validacoes`, `/aceite` | Sucesso do cliente |
-| War Room | via `/operacional` | Contas críticas |
-| Comercial (CRM) | `/comercial`, `/comercial/dashboard`, `/pipeline` | Leads e funil |
-| Financeiro | `/financeiro` | Contas a receber/pagar |
-| Jurídico/Contratos | `/juridico` | Contratos e regularidade |
-| Agência/Gestão | `/agency`, `/agency/metas`, `/managers`, `/managers/assignments`, `/team` | Metas e atribuições |
-| IA / Conhecimento | `/ai-agents`, `/knowledge` | Copiloto + RAG |
-| Alertas / Config | `/alerts`, `/settings` | Alertas e integrações |
+| Área | Rotas (`src/app/(dashboard)/…` salvo login) |
+|---|---|
+| Auth | `(auth)/login` |
+| Home / visão geral | `/` (redirect) · `dashboard` · `cockpit` · `agency` · `agency/metas` |
+| Clientes (Client 360) | `clients` · `clients/[slug]` · `clients/new` |
+| Comercial / CRM (CAP) | `comercial` · `comercial/dashboard` · `pipeline` |
+| Operação de tráfego (OPE) | `operacional` · `operations` · `tasks` · `processos` · `canais` |
+| Sucesso do cliente (CSX) | `anti-churn` · `check-ins` · `reports` |
+| War Room / crítico (WAR) | `alerts` · `validacoes` · `aceite` |
+| Financeiro (FIN) | `financeiro` · `juridico` |
+| Time / gestão | `managers` · `managers/assignments` · `team` |
+| Meu trabalho | `meu-dia` · `minha-semana` |
+| IA / conhecimento | `ai-agents` · `knowledge` |
+| Config | `settings` |
 
-### 5.2 API routes (`src/app/api/*`)
+### 5.2 API routes (44) por grupo
 
-- **`cron/*`** — `daily`, `digest`, `recurrences`, `resultados` (CRON_SECRET).
-- **`sync/*`** — `meta`, `google-ads`, `ga4`, `nuvemshop`, `health`, `stream`.
-- **`webhooks/*`** — `whatsapp`. (Também `nuvemshop/webhooks`, `asaas/webhook` — HMAC).
-- **`comercial/*`** — `leads`, `activities`. **`leads/*`** — captação (Zod).
-- **`financeiro/*`** — `cashflow`, `expenses`, `summary`.
-- **`asaas/*`**, **`nuvemshop/*`** — cobrança e e-commerce (OAuth + webhook).
-- **`ai/*`**, **`clients/*`**, **`team/*`**, **`settings/*`**, **`admin/*`**,
-  **`whatsapp/*`**, **`seed/*`** (SEED_SECRET), **`debug/*`**.
+| Grupo | Rotas | Proteção |
+|---|---|---|
+| `cron/*` | `daily`, `digest`, `recurrences`, `resultados` | `CRON_SECRET` (fail-closed) |
+| `sync/*` | `ga4`, `google-ads`, `meta`, `nuvemshop`, `health`, `stream` | sessão ADMIN/MANAGER + posse, ou `x-cron-secret` |
+| `webhooks/*` | `whatsapp`, `whatsapp/test` | `client-token` (⚠️ inbound fail-open — AUDITORIA §Integrações) |
+| `asaas/*` | `sync`, `webhook` | webhook token `asaas-access-token` fail-closed (503) |
+| `nuvemshop/*` | `auth`, `callback`, `install`, `webhooks`, `reconciliation` | webhooks HMAC-SHA256 fail-closed; ⚠️ `callback` state não assinado (IDOR) |
+| `financeiro/*` | `summary`, `cashflow`, `expenses`, `expenses/[id]` | ADMIN-only |
+| `comercial/*` | `leads`, `leads/[id]`, `leads/[id]/convert`, `activities` | sessão (⚠️ mutação sem checagem de papel) |
+| `whatsapp/*` | `groups`, `test-digest` | sessão |
+| `admin/*` | `contract-fee`, `knowledge`, `knowledge/[id]`, `knowledge/upload`, `seed-contracts`, `trigger-digest` | ADMIN / `x-seed-secret` |
+| `ai/*` | `chat`, `clients`, `dashboard-chat` | sessão |
+| `settings/*` | `asaas`, `whatsapp` | ADMIN (chave mascarada na resposta) |
+| `clients/*` | `[clientId]/budget` | sessão + posse |
+| `leads/*` | `capture` | público por design (⚠️ CORS `*`, sem rate-limit) |
+| Outros | `team/members`, `seed` | sessão / `SEED_SECRET` |
 
 ---
 
-## 6. Diagrama textual do fluxo principal
+## 6. Diagrama textual do fluxo (ASCII)
 
 ```
-                         ┌──────────────┐
-                         │   Browser    │  cookie httpOnly: performli_session
-                         └──────┬───────┘
-                                │
-                 ┌──────────────▼───────────────┐
-                 │   src/middleware.ts (JWT)     │  jose HS256 · prefixos protegidos
-                 └───────┬───────────────┬───────┘
-        autenticado      │               │  não autenticado → /login
-                         ▼               │
-        ┌────────────────────────┐       │
-        │ (dashboard)/**/page.tsx│       │
-        │   Server Component     │       │
-        └───────┬────────┬───────┘       │
-       leitura  │        │ mutação       │
-                ▼        ▼               │
-        ┌───────────┐ ┌───────────────┐  │        ┌───────────────────────┐
-        │ lib/dal.ts│ │ app/actions/* │  │        │  Vercel Cron          │
-        │ (papel/   │ │ auth+papel+   │  │        │  → api/cron/* (SECRET) │
-        │  posse)   │ │ posse+AuditLog│  │        │  → services/* (loops)  │
-        └─────┬─────┘ └──────┬────────┘  │        └───────────┬───────────┘
-              │              │           │                    │
-              └──────────────┴───────────┴────────────────────┘
-                                │
-                    ┌───────────▼────────────┐
-                    │  Prisma (lib/prisma.ts) │
-                    └───────────┬────────────┘
-                                ▼
-                    ┌────────────────────────┐        ┌──────────────────────┐
-                    │  PostgreSQL / Neon      │◄──────►│ Integrações externas │
-                    │  ★ FONTE DA VERDADE ★   │  sync  │ Meta·Google·GA4·     │
-                    │  snapshots·scores·audit │        │ Nuvemshop·Asaas·Z-API│
-                    └────────────────────────┘        └──────────────────────┘
+                         ┌──────────────────────────────────────────────┐
+                         │                  NAVEGADOR                     │
+                         └───────────────┬──────────────────────────────┘
+                                         │ HTTP
+                    ┌────────────────────▼─────────────────────┐
+                    │            middleware.ts                  │
+                    │  (só páginas; /api excluído do matcher)   │
+                    └───────┬──────────────────────┬────────────┘
+                            │ página               │ /api/*
+                            ▼                      ▼
+              ┌──────────────────────┐   ┌───────────────────────────┐
+              │  Server Component     │   │  route.ts handler          │
+              │  (dashboard)/*/page   │   │  getSession()/CRON_SECRET/ │
+              │                       │   │  webhook token/HMAC        │
+              └───┬──────────────┬────┘   └───────────┬───────────────┘
+                  │ leitura      │ mutação            │
+                  ▼              ▼                    ▼
+          ┌────────────┐  ┌──────────────┐   ┌──────────────────────┐
+          │  lib/dal.ts│  │ app/actions/*│   │  services/* (cron/    │
+          │  auth+posse│  │ auth+papel+  │   │  sync/webhook)        │
+          │            │  │ posse+audit  │   │  timeout+try/catch    │
+          └─────┬──────┘  └──────┬───────┘   └──────────┬───────────┘
+                │                │                       │  ▲
+                │                │  writeAuditLog        │  │ integrações externas
+                ▼                ▼         │             ▼  │ (Meta/Google/GA4/
+          ┌─────────────────────────────────────────────┐  │  Nuvemshop/Asaas/
+          │        prisma  (lib/prisma.ts, singleton)     │  │  Z-API/Evolution/
+          │              PostgreSQL / Neon                │──┘  Windsor/Anthropic)
+          │           FONTE ÚNICA DA VERDADE              │
+          └───────────────────────────────────────────────┘
 ```
 
 ---
 
-## 7. Fonte da verdade e desacoplamento do ClickUp
+## 7. Camada de integrações e direção de sync
 
-**A fonte única da verdade é o PostgreSQL (Neon).** Todo estado canônico
-(clientes, tarefas, check-ins, war room, financeiro, leads, contratos, métricas)
-vive no banco. Syncs de plataforma gravam `MetricSnapshot` e `CampaignSnapshot`;
-automações registram em `Alert`, `AuditLog`, `AutomationLog`. Telas leem sempre
-via DAL a partir do banco — nunca de memória, planilha ou WhatsApp.
+Todas as chamadas externas têm **timeout** (`AbortSignal.timeout`, 25–30s). Config via
+`IntegrationSetting` (chaves dinâmicas) onde já migrado; caso contrário env var.
 
-**Direção estratégica (CLAUDE.md):** o Performli deve **substituir gradualmente
-o ClickUp** nas rotinas críticas (tarefas recorrentes, check-ins, CRM, follow-ups,
-onboarding, war room, financeiro, contratos, comissões, visão geral). O ClickUp
-pode ser fonte de dados de origem numa fase de transição, mas o estado canônico
-já é o Performli.
+| Integração | Finalidade | Arquivos | Config | Direção |
+|---|---|---|---|---|
+| **Meta Ads** | Insights conta/campanha → `MetricSnapshot` | `services/meta-ads/*`, `api/sync/meta` | env (`META_SYSTEM_TOKEN`) | externa → Performli |
+| **Google Ads** | Métricas por campanha → `MetricSnapshot` | `services/google-ads/*`, `api/sync/google-ads` | env (SA JWT + dev token) | externa → Performli |
+| **GA4** | Métricas diárias → `MetricSnapshot` (`purchaseRevenue`) | `services/ga4/*`, `api/sync/ga4` | env (Service Account JWT) | externa → Performli |
+| **Nuvemshop** | Pedidos e-commerce → `NuvemshopOrder` + `MetricSnapshot` | `services/nuvemshop/*`, `api/nuvemshop/*`, `api/sync/nuvemshop` | env (OAuth por loja) | externa → Performli (webhook HMAC) |
+| **Asaas** | Financeiro: entradas → `AsaasPayment`; saídas DEBIT → `Expense` | `services/asaas/*`, `api/asaas/*` | IntegrationSetting (fallback env) | externa → Performli (webhook token) |
+| **Z-API** | WhatsApp: envio, QR, status + inbound → lead | `services/zapi/*`, `lib/whatsapp.ts`, `api/webhooks/whatsapp` | IntegrationSetting (`ZAPI_*`) | bidirecional |
+| **Evolution** | WhatsApp alternativo (envio/QR/webhook) | `services/evolution/*` | IntegrationSetting (`EVOLUTION_*`) | bidirecional |
+| **Windsor** | GA4 legado (connector) | `services/windsor/*` | env (`WINDSOR_API_KEY`) | externa → Performli |
+| **Anthropic (Claude)** | Relatórios, insights, copiloto, RAG | `services/*-generator.ts`, `actions/planoAcao.ts`, `api/ai/*` | env (`ANTHROPIC_API_KEY`) | Performli → LLM |
+| **ClickUp** | Referência residual (transição) | 2 refs incidentais | — | desacoplado (exit strategy quase completa) |
 
-**Estado atual do desacoplamento:** os processos-núcleo já rodam dentro do
-Performli com ownership no PostgreSQL:
-- Tarefas recorrentes → `recurrence-engine.ts` (idempotente, `AutomationLog`).
-- Check-ins semanais / validação CS → `actions/checkin.ts`, `checkin-monitor.ts`.
-- CRM comercial / follow-up → `api/comercial/*`, `lead-followup-checker.ts`.
-- War Room / contas críticas → `actions/warRoom.ts`, `warroom-*`, `critical-account-detector.ts`.
-- Financeiro / contas a receber → `api/financeiro/*`, integração Asaas + `inadimplencia-checker.ts`.
-- Contratos → `actions/contracts.ts`, `contract-expiry-checker.ts`.
-
-Toda integração ClickUp deve ser classificada (`clickup→performli`,
-`performli→clickup`, `bidirecional`) com o alvo de **reduzir** a dependência.
-Não criar acoplamentos que dificultem o desligamento futuro do ClickUp.
+Resiliência: sync por conta grava `SyncLog RUNNING→SUCCESS/FAILED`, cria alerta `SYNC_FAILED`
+e auto-dismiss em sucesso; falha de uma conta não derruba as demais (`Promise.allSettled` no Asaas).
 
 ---
 
-> Referências de auditoria: `docs/_audit/{arquitetura,backend,crons,frontend,`
-> `integracoes,banco,seguranca,performance,stack,testes-docs}.md`.
-> Regras transversais: `CLAUDE.md` e `AGENTS.md`.
+> Este mapa reflete o estado auditado em 2026-07-01. Travas conhecidas (webhook WhatsApp fail-open,
+> callback Nuvemshop com state não assinado, mutações legadas sem posse em `tasks.ts`/`operations.ts`,
+> ausência de testes/CI e de `error.tsx`) estão detalhadas em `AUDITORIA_SISTEMA.md`.

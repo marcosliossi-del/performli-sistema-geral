@@ -51,11 +51,13 @@ aderência às 6 perguntas de UX e acessibilidade básica.
 ### (c) Riscos / inconsistências por severidade
 
 **ALTA**
-- **Cobertura de `loading.tsx` baixíssima: 6 de ~34 rotas.** 25 rotas sem
-  skeleton (`aceite`, `alerts`, `anti-churn`, `check-ins`, `clients/[slug]`,
-  `pipeline`, `processos`, `reports`, `tasks`, `validacoes`, `agency`, …). Como
-  as páginas são `force-dynamic`/server async, o usuário vê tela em branco
-  durante o fetch. `PageSkeleton` já existe — falta plugar.
+- **Nenhuma `error.tsx` em todo `src/app`.** Zero error boundaries do App Router:
+  qualquer exceção de RSC/DAL derruba a árvore para a tela de erro genérica do
+  Next (mensagem técnica, sem "tentar de novo"). Viola "linguagem operacional".
+- **Falha silenciosa no Pipeline (`pipeline/PipelineBoard.tsx:56`).** `catch {}`
+  faz rollback do drag-and-drop **sem toast**: o card volta sozinho e nada
+  explica o porquê — o "processo que quebra sem ninguém ver" que o sistema
+  deveria eliminar.
 - **Modais/drawers sem `role="dialog"`, sem focus-trap e (na maioria) sem Esc.**
   `grep` por `role="dialog"`/focus-trap = 0 resultados. `TaskDrawer.tsx`,
   `TaskFormModal.tsx`, `ClientChatPanel`, drawers de anti-churn abrem sem
@@ -100,9 +102,10 @@ aderência às 6 perguntas de UX e acessibilidade básica.
 
 Melhorias concretas de fluidez, ordenadas por impacto/esforço:
 
-1. **Plugar `loading.tsx` nas ~25 rotas sem skeleton.** Reutilizar
-   `PageSkeleton` (variar `kpis`/`rows`). Elimina flash de tela branca em
-   páginas server async. Baixo risco, alto ganho percebido.
+1. **Criar `error.tsx` (dashboard) com copy operacional + "tentar de novo".**
+   Hoje não há nenhuma error boundary; qualquer falha de RSC/DAL cai na tela
+   nativa do Next. Baixo risco, alto ganho. (Obs.: `loading.tsx` do grupo
+   `(dashboard)` já cobre rotas aninhadas via Suspense — não é lacuna.)
 2. **Componente `EmptyState` com CTA obrigatório.** Props: ícone, título
    operacional, subtítulo (o porquê), ação (label+href). Substituir os "Nenhum
    X" secos por versões acionáveis (ex.: "Nenhum gestor com clientes ativos →
