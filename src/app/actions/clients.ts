@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { slugify } from '@/lib/utils'
 import { PipelineStage, BusinessType } from '@prisma/client'
+import { runClientOnboarding } from '@/services/client-onboarding'
 
 export type ClientFormState = {
   error?: string
@@ -105,6 +106,17 @@ export async function createClient(
     })
   } catch {
     // tarefa de onboarding é best-effort; cliente já foi criado
+  }
+
+  // ClientOnboardingAgent — materializa as recorrentes + tarefas iniciais na
+  // hora (sem esperar o cron). Best-effort: falha aqui NÃO quebra a criação do
+  // cliente. Só roda se o cliente nasceu ACTIVE.
+  if (client.status === 'ACTIVE') {
+    try {
+      await runClientOnboarding(client.id)
+    } catch (err) {
+      console.error('[onboarding] falha ao rodar runClientOnboarding:', err)
+    }
   }
 
   redirect(`/clients/${client.slug}`)
