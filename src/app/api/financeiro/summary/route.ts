@@ -34,6 +34,8 @@ export async function GET(request: NextRequest) {
     prevPayments,
     transfers,
     prevTransfers,
+    expenses,
+    prevExpenses,
     subscriptions,
     allClients,
   ] = await Promise.all([
@@ -64,6 +66,16 @@ export async function GET(request: NextRequest) {
     prisma.asaasTransfer.findMany({
       where: { status: 'DONE', transferDate: { gte: prevFrom, lte: prevTo } },
     }),
+    // Current period expenses (saídas manuais / DRE)
+    prisma.expense.findMany({
+      where: { date: { gte: from, lte: to } },
+      select: { value: true, category: true },
+    }),
+    // Previous period expenses
+    prisma.expense.findMany({
+      where: { date: { gte: prevFrom, lte: prevTo } },
+      select: { value: true },
+    }),
     // Active subscriptions for MRR
     prisma.asaasSubscription.findMany({
       where: { status: 'ACTIVE' },
@@ -80,9 +92,12 @@ export async function GET(request: NextRequest) {
   const entradas     = payments.reduce((s, p) => s + Number(p.value), 0)
   const prevEntradas = prevPayments.reduce((s, p) => s + Number(p.value), 0)
 
-  // ── Saídas ────────────────────────────────────────────────────────────────
-  const saidas     = transfers.reduce((s, t) => s + Number(t.value), 0)
-  const prevSaidas = prevTransfers.reduce((s, t) => s + Number(t.value), 0)
+  // ── Saídas (transferências Asaas + despesas manuais/DRE) ────────────────────
+  const saidasTransfers = transfers.reduce((s, t) => s + Number(t.value), 0)
+  const saidasExpenses  = expenses.reduce((s, e) => s + Number(e.value), 0)
+  const saidas          = saidasTransfers + saidasExpenses
+  const prevSaidas       = prevTransfers.reduce((s, t) => s + Number(t.value), 0)
+                         + prevExpenses.reduce((s, e) => s + Number(e.value), 0)
 
   // ── Lucro ─────────────────────────────────────────────────────────────────
   const lucro     = entradas - saidas
@@ -142,13 +157,18 @@ export async function GET(request: NextRequest) {
   }
   const distribuicaoEntradas = buildTop5(entradaByCustomer)
 
-  // ── Distribuição saídas por categoria ────────────────────────────────────
+  // ── Distribuição saídas por categoria (transferências + despesas) ─────────
   const saidaByCategory = new Map<string, { value: number; color: string }>()
   for (const t of transfers) {
     const label = t.category?.name ?? 'Sem categoria'
     const color = t.category?.color ?? '#6B7280'
     const prev  = saidaByCategory.get(label) ?? { value: 0, color }
     saidaByCategory.set(label, { value: prev.value + Number(t.value), color })
+  }
+  for (const e of expenses) {
+    const cfg   = EXPENSE_CATEGORY[e.category] ?? { label: e.category, color: '#6B7280' }
+    const prev  = saidaByCategory.get(cfg.label) ?? { value: 0, color: cfg.color }
+    saidaByCategory.set(cfg.label, { value: prev.value + Number(e.value), color: cfg.color })
   }
   const distribuicaoSaidas = Array.from(saidaByCategory.entries())
     .map(([name, d]) => ({ name, value: d.value, color: d.color }))
@@ -191,6 +211,16 @@ export async function GET(request: NextRequest) {
     deltaSaidas:   pct(saidas, prevSaidas),
     deltaLucro:    pct(lucro, prevLucro),
   })
+}
+
+const EXPENSE_CATEGORY: Record<string, { label: string; color: string }> = {
+  SALARIOS:      { label: 'Salários',      color: '#a98cff' },
+  MARKETING:     { label: 'Marketing',     color: '#4d96ff' },
+  FERRAMENTAS:   { label: 'Ferramentas',   color: '#54e0ee' },
+  IMPOSTOS:      { label: 'Impostos',      color: '#ff5e6a' },
+  CONTABILIDADE: { label: 'Contabilidade', color: '#e3ad45' },
+  ESCRITORIO:    { label: 'Escritório',    color: '#34c97a' },
+  OUTROS:        { label: 'Outros',        color: '#647488' },
 }
 
 function pct(current: number, previous: number): number {
