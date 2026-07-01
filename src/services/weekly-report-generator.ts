@@ -850,8 +850,13 @@ export async function generateAllWeeklyReports(): Promise<{
 
   let reportsGenerated = 0
   for (const client of clients) {
-    const report = await generateWeeklyReportForClient(client.id)
-    if (report) reportsGenerated++
+    // Resiliência: falha em um cliente não pode quebrar a rotina inteira.
+    try {
+      const report = await generateWeeklyReportForClient(client.id)
+      if (report) reportsGenerated++
+    } catch (err) {
+      console.error(`[generateAllWeeklyReports] falha no cliente ${client.id}:`, err)
+    }
   }
 
   return { clientsProcessed: clients.length, reportsGenerated }

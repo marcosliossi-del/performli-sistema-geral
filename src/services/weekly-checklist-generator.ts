@@ -147,8 +147,13 @@ export async function generateAllWeeklyChecklists(): Promise<{
 
   let totalItems = 0
   for (const manager of managers) {
-    const result = await generateWeeklyChecklistForManager(manager.id)
-    totalItems += result.itemCount
+    // Resiliência: falha em um gestor não pode quebrar a rotina inteira.
+    try {
+      const result = await generateWeeklyChecklistForManager(manager.id)
+      totalItems += result.itemCount
+    } catch (err) {
+      console.error(`[generateAllWeeklyChecklists] falha no gestor ${manager.id}:`, err)
+    }
   }
 
   return { managersProcessed: managers.length, totalItems }
