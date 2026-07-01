@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
+import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 
 const schema = z.object({
   clientId: z.string().min(1, 'Selecione um cliente'),
@@ -15,7 +16,8 @@ const schema = z.object({
 })
 
 export async function createOperation(formData: FormData) {
-  const { userId } = await requireSession()
+  const session = await requireSession()
+  const { userId, role } = session
 
   const raw = {
     clientId:  formData.get('clientId'),
@@ -33,7 +35,10 @@ export async function createOperation(formData: FormData) {
 
   const { clientId, subject, requested, done, notes } = parsed.data
 
-  await prisma.operation.create({
+  // Mutação: valida autenticação + papel + posse (CS pode registrar operações).
+  await assertClientMutationAccess(session, clientId, { allowCS: true })
+
+  const op = await prisma.operation.create({
     data: {
       clientId,
       userId,
@@ -42,6 +47,16 @@ export async function createOperation(formData: FormData) {
       done,
       notes: notes || null,
     },
+  })
+
+  await writeAuditLog({
+    actorId: userId,
+    actorRole: role,
+    action: 'operation.created',
+    entityType: 'Operation',
+    entityId: op.id,
+    clientId,
+    metadata: { subject },
   })
 
   revalidatePath('/operations')
