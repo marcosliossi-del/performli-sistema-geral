@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Sidebar } from './Sidebar'
 import { TopNav } from './TopNav'
+import { CommandPalette } from './CommandPalette'
 import type { SessionPayload } from '@/lib/session'
 import type { SidebarCounts } from '@/lib/dal'
 
@@ -17,6 +18,19 @@ export function DashboardShell({ children, session, unreadAlerts, counts }: Dash
   const [viewMode, setViewMode] = useState<'ADMIN' | 'GESTOR'>(
     session.role === 'ADMIN' ? 'ADMIN' : 'GESTOR'
   )
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  // ⌘K / Ctrl+K abre a busca global de qualquer tela.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        setPaletteOpen((o) => !o)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <div className="ak-app-bg flex h-screen overflow-hidden bg-[#05141C] print:block print:h-auto print:bg-white">
@@ -30,10 +44,12 @@ export function DashboardShell({ children, session, unreadAlerts, counts }: Dash
             viewMode={viewMode}
             onViewModeChange={session.role === 'ADMIN' ? setViewMode : undefined}
             unreadAlerts={unreadAlerts}
+            onOpenSearch={() => setPaletteOpen(true)}
           />
         </div>
         <main className="flex-1 overflow-y-auto p-6 print:overflow-visible print:p-4">{children}</main>
       </div>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   )
 }

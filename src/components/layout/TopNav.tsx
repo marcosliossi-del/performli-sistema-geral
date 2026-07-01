@@ -12,6 +12,7 @@ interface TopNavProps {
   viewMode?: 'ADMIN' | 'GESTOR'
   onViewModeChange?: (mode: 'ADMIN' | 'GESTOR') => void
   unreadAlerts?: number
+  onOpenSearch?: () => void
 }
 
 const roleLabels: Record<SessionPayload['role'], string> = {
@@ -21,7 +22,7 @@ const roleLabels: Record<SessionPayload['role'], string> = {
   CS:      'Succ. Clientes',
 }
 
-export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAlerts = 0 }: TopNavProps) {
+export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAlerts = 0, onOpenSearch }: TopNavProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
 
   const initials = session.name
@@ -33,17 +34,17 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
 
   return (
     <header className="ak-topbar h-16 flex items-center justify-between px-6 bg-[#05141C] border-b border-[#38435C] sticky top-0 z-40">
-      {/* Search — estilo protótipo (pílula translúcida + ⌘K) */}
+      {/* Search — abre o command palette (⌘K) */}
       <div className="flex-1 max-w-[440px]">
-        <div className="flex items-center gap-2.5 h-9 px-3 rounded-[11px] bg-white/[0.05] border border-white/[0.09] hover:bg-white/[0.07] transition-colors">
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          className="w-full flex items-center gap-2.5 h-9 px-3 rounded-[11px] bg-white/[0.05] border border-white/[0.09] hover:bg-white/[0.07] transition-colors text-left"
+        >
           <Search size={14} className="text-[#647488] flex-shrink-0" />
-          <input
-            type="text"
-            placeholder="Buscar tarefas, clientes, POPs…"
-            className="flex-1 min-w-0 bg-transparent text-[12.5px] text-[#EBEBEB] placeholder-[#647488] focus:outline-none"
-          />
+          <span className="flex-1 min-w-0 truncate text-[12.5px] text-[#647488]">Buscar tarefas, clientes, POPs…</span>
           <kbd className="font-mono text-[10.5px] text-[#a3b2c2] bg-white/[0.08] rounded-md px-1.5 py-0.5 flex-shrink-0">⌘K</kbd>
-        </div>
+        </button>
       </div>
 
       {/* Right controls */}
