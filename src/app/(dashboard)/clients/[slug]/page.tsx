@@ -729,8 +729,8 @@ export default async function ClientDetailPage({
 
       {/* ── Chat do Cliente ───────────────────────────────────────────────── */}
       {chat && (
-        <div className="print:hidden">
-          <h2 className="text-sm font-semibold text-[#EBEBEB] mb-3">Chat Interno</h2>
+        <div id="chat" className="print:hidden scroll-mt-20">
+          <h2 className="text-sm font-semibold text-[#EBEBEB] mb-3">Canal interno do cliente</h2>
           <ClientChatPanel
             chatId={chat.id}
             clientSlug={slug}

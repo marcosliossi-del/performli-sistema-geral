@@ -29,6 +29,7 @@ import {
   TrendingUp,
   Target,
   Scale,
+  MessagesSquare,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -84,9 +85,10 @@ const navigation: NavSection[] = [
       {
         name: 'Sucesso do Cliente', href: '/clients', icon: Users,
         children: [
-          { name: 'Meus Clientes',   href: '/clients',    icon: Users },
-          { name: 'Validação da CS', href: '/validacoes', icon: ShieldCheck, countKey: 'validacoes', alert: true, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
-          { name: 'Relatórios',      href: '/reports',    icon: BarChart3 },
+          { name: 'Meus Clientes',          href: '/clients',    icon: Users },
+          { name: 'Central de Comunicação', href: '/canais',     icon: MessagesSquare },
+          { name: 'Validação da CS',        href: '/validacoes', icon: ShieldCheck, countKey: 'validacoes', alert: true, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
+          { name: 'Relatórios',             href: '/reports',    icon: BarChart3 },
         ],
       },
       { name: 'War Room', href: '/anti-churn', icon: ShieldAlert, countKey: 'warRooms', alert: true },
