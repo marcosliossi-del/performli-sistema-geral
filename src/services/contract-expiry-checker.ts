@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { writeAuditLog } from '@/lib/audit'
 
 /**
  * Runs daily. Finds VIGENTE contracts expiring within 30 days and creates
@@ -44,6 +45,15 @@ export async function checkContractExpiry(): Promise<{ alertsFired: number }> {
         body:     `O contrato vence em ${daysLeft} dia${daysLeft !== 1 ? 's' : ''}. Verifique a renovação.`,
         read:     false,
       },
+    })
+
+    await writeAuditLog({
+      actorRole: 'SYSTEM',
+      action: 'contract.expiring_soon',
+      entityType: 'Contract',
+      entityId: contract.id,
+      clientId: contract.clientId,
+      metadata: { daysLeft },
     })
 
     alertsFired++

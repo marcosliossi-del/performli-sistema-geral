@@ -15,6 +15,7 @@
 import { prisma } from '@/lib/prisma'
 import { getWeekRange } from '@/lib/utils'
 import { broadcastWhatsApp } from '@/lib/whatsapp'
+import { writeAuditLog } from '@/lib/audit'
 import { AlertType } from '@prisma/client'
 
 export async function detectCriticalAccounts(): Promise<{
@@ -191,8 +192,18 @@ async function fireProtocol(
     },
   })
 
-  await prisma.criticalProtocol.create({
+  const protocol = await prisma.criticalProtocol.create({
     data: { clientId, trigger },
+  })
+
+  // Auditoria (CLAUDE.md regra 8): automação crítica gera log.
+  await writeAuditLog({
+    actorRole: 'SYSTEM',
+    action: 'critical_protocol.opened',
+    entityType: 'CriticalProtocol',
+    entityId: protocol.id,
+    clientId,
+    metadata: { trigger, clientName, managerName },
   })
 
   try {

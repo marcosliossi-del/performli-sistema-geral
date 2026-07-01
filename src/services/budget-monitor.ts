@@ -7,6 +7,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getMonthRange } from '@/lib/utils'
+import { writeAuditLog } from '@/lib/audit'
 
 export async function checkBudgetWarnings(): Promise<{
   clientsChecked: number
@@ -85,6 +86,15 @@ export async function checkBudgetWarnings(): Promise<{
             title: `⚠️ Budget quase esgotado — ${goal.client.name}`,
             body: `${pct}% do budget mensal consumido (${spendLabel} de ${budgetLabel}). Avalie pausar ou redistribuir verba.`,
           },
+        })
+
+        await writeAuditLog({
+          actorRole: 'SYSTEM',
+          action: 'budget.warning',
+          entityType: 'Client',
+          entityId: goal.clientId,
+          clientId: goal.clientId,
+          metadata: { pct, spend: spendLabel, budget: budgetLabel },
         })
 
         warningsFired++
