@@ -330,3 +330,10 @@ calendário, DnD, skeletons).
   --font-mono/--default-font-family) = -apple-system → SF em Apple, Inter fallback.
   Sem webfont (zero download = mais rápido). body com text-rendering optimizeLegibility
   + font-optical-sizing auto.
+
+## INOVAÇÕES FUNCIONAIS
+- **⌘K Command Palette** — branch feat/command-palette: action globalSearch(q)
+  role-scoped (tarefas/clientes/POPs, insensitive, take 6 cada). Componente
+  CommandPalette (modal vidro, atalhos rápidos quando vazio, busca com debounce,
+  navegação ↑↓/Enter/Esc, agrupado Tarefas/Clientes/POPs). Aberto por ⌘K/Ctrl+K
+  global (listener no DashboardShell) e pelo botão de busca do TopNav.
