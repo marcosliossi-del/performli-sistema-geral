@@ -6,6 +6,7 @@ import { PipelineClient } from '@/lib/dal'
 import { updatePipelineStage } from '@/app/actions/interactions'
 import { PipelineStage } from '@prisma/client'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from '@/lib/toast'
 import { Phone, Mail, Tag, GripVertical } from 'lucide-react'
 
 const STAGES: { key: PipelineStage; label: string; color: string; bg: string }[] = [
@@ -51,13 +52,18 @@ export function PipelineBoard({ initialClients }: Props) {
       prev.map((c) => (c.id === id ? { ...c, pipelineStage: stage } : c))
     )
 
-    try {
-      await updatePipelineStage(id, stage)
-    } catch {
-      // Rollback
+    const rollback = (msg: string) => {
       setClients((prev) =>
         prev.map((c) => (c.id === id ? { ...c, pipelineStage: client.pipelineStage } : c))
       )
+      toast(msg, 'err')
+    }
+
+    try {
+      const r = await updatePipelineStage(id, stage)
+      if (r && 'error' in r && r.error) rollback(r.error)
+    } catch {
+      rollback('Não foi possível mover o cliente. A mudança não foi salva.')
     }
   }
 
