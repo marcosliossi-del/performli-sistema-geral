@@ -465,6 +465,7 @@ export async function recalculateAllClientsHealth(): Promise<{
   clientsProcessed: number
   totalCreated: number
   totalUpdated: number
+  failed: number
 }> {
   const clients = await prisma.client.findMany({
     where:  { status: 'ACTIVE' },
@@ -473,13 +474,21 @@ export async function recalculateAllClientsHealth(): Promise<{
 
   let totalCreated = 0
   let totalUpdated = 0
+  let failed = 0
 
+  // Resiliência (CLAUDE.md regra 7): a falha em um cliente NÃO pode derrubar a
+  // rotina inteira — isola cada cliente em try/catch e segue para o próximo.
   for (const client of clients) {
-    const result = await recalculateClientHealth(client.id)
-    totalCreated += result.created
-    totalUpdated += result.updated
-    await updateStreak(client.id)
+    try {
+      const result = await recalculateClientHealth(client.id)
+      totalCreated += result.created
+      totalUpdated += result.updated
+      await updateStreak(client.id)
+    } catch (err) {
+      failed++
+      console.error(`[health-scorer] falha ao recalcular cliente ${client.id}:`, err)
+    }
   }
 
-  return { clientsProcessed: clients.length, totalCreated, totalUpdated }
+  return { clientsProcessed: clients.length, totalCreated, totalUpdated, failed }
 }

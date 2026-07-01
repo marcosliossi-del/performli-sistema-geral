@@ -137,6 +137,7 @@ export async function scoreClientChurnRisk(clientId: string): Promise<{
 export async function scoreAllClientsChurnRisk(): Promise<{
   clientsProcessed: number
   avgScore: number
+  failed: number
 }> {
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
@@ -144,13 +145,23 @@ export async function scoreAllClientsChurnRisk(): Promise<{
   })
 
   let totalScore = 0
+  let scored = 0
+  let failed = 0
+  // Resiliência (CLAUDE.md regra 7): isola cada cliente; falha de um não derruba a rotina.
   for (const client of clients) {
-    const { score } = await scoreClientChurnRisk(client.id)
-    totalScore += score
+    try {
+      const { score } = await scoreClientChurnRisk(client.id)
+      totalScore += score
+      scored++
+    } catch (err) {
+      failed++
+      console.error(`[churn-scorer] falha ao pontuar cliente ${client.id}:`, err)
+    }
   }
 
   return {
     clientsProcessed: clients.length,
-    avgScore: clients.length > 0 ? Math.round(totalScore / clients.length) : 0,
+    avgScore: scored > 0 ? Math.round(totalScore / scored) : 0,
+    failed,
   }
 }
