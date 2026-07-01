@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/card'
 import { BookOpen } from 'lucide-react'
 import { timeAgo } from '@/lib/utils'
 import { OperationForm } from '@/components/clients/OperationForm'
+import { EmptyState } from '@/components/ui/EmptyState'
 import Link from 'next/link'
 
 interface Props {
@@ -78,11 +79,11 @@ export default async function OperationsPage({ searchParams }: Props) {
           </div>
 
           {items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <BookOpen size={32} className="text-[#38435C] mb-3" />
-              <p className="text-[#87919E] text-sm">Nenhuma operação encontrada</p>
-              <p className="text-[#87919E]/60 text-xs mt-1">Use o formulário ao lado para registrar a primeira</p>
-            </div>
+            <EmptyState
+              icon={<BookOpen size={20} />}
+              title="Nenhuma operação registrada ainda"
+              description="Registre a primeira prestação de contas no formulário ao lado, assim fica o histórico do que foi feito para o cliente."
+            />
           ) : (
             <div className="space-y-3">
               {items.map((op) => (
