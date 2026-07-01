@@ -343,3 +343,7 @@ calendário, DnD, skeletons).
   fiado no TaskDrawer (enviar/aprovar/ajustes/concluir/comentar) e na
   ValidationQueue (aprovar/ajustes). ClientesTable container → .card (hairline +
   sombra + brilho). Demais telas já herdam a paleta via overrides globais.
+
+- **Fluidez: Skeletons** — branch feat/skeletons: Skeleton + PageSkeleton (shimmer
+  .ak-skeleton no globals) + loading.tsx em /operacional /clients /cockpit
+  /financeiro /meu-dia — transição suave durante o fetch (percepção de rapidez).
