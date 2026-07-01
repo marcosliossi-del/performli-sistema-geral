@@ -23,10 +23,18 @@ model User {
   role         Role     @default(ANALYST)
   avatarUrl    String?
   active       Boolean  @default(true)
+  // Papel operacional (rotina Arkza) — separado do RBAC. Rastreabilidade ClickUp.
+  operationalRole OperationalRole?
+  externalId      String?          @unique
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   managedClients       ClientAssignment[]
+  clientsAsGestor      Client[]             @relation("ClientGestor")
+  clientsAsCS          Client[]             @relation("ClientCS")
+  clientsAsSupervisor  Client[]             @relation("ClientSupervisor")
+  clientsAsHead        Client[]             @relation("ClientHead")
+  clientsAsCRM         Client[]             @relation("ClientCRM")
   tasks                Task[]
   operations           Operation[]
   aiConversations      AIConversation[]
@@ -54,6 +62,28 @@ enum ClientStatus {
 enum BusinessType {
   ECOMMERCE
   LOCAL
+  B2B
+}
+
+/// Papel operacional na rotina da Arkza (Head/Supervisor/Gestor/CRM/CS/Acompanhamento).
+/// Separado do RBAC (Role) — este NÃO governa autorização, só a operação/roteamento.
+enum OperationalRole {
+  HEAD
+  SUPERVISOR
+  GESTOR
+  CRM
+  CS
+  ACOMPANHAMENTO
+}
+
+/// Saúde operacional do cliente (derivada por agente/serviço).
+enum ClientHealthStatus {
+  SAUDAVEL
+  ATENCAO
+  CRITICO
+  POSSIVEL_CHURN
+  WAR_ROOM
+  ARQUIVADO
 }
 
 // Resultado semanal do cliente (calculado a partir do ROAS para ecommerce)
@@ -138,9 +168,45 @@ model Client {
   // ── Ficha de CS (manual) ─────────────────────────────────────────────────
   nps            ClientNps?
   relacionamento ClientRelacionamento?
+  engajamento    ClientRelacionamento?   // mesma escala (Ótimo→Péssimo)
   curva          ClientCurva?
   feedbackNegativo Int      @default(0)  // reclamações registradas na semana
+  possivelChurn    Boolean  @default(false)
+  salaDeGuerra     Boolean  @default(false)
+  healthStatus     ClientHealthStatus?
   fichaCsUpdatedAt DateTime?
+
+  // ── Rastreabilidade + responsáveis por papel (fonte da verdade da operação) ─
+  externalId   String?  @unique   // id da lista de tráfego no ClickUp
+  gestorId     String?
+  csId         String?
+  supervisorId String?
+  headId       String?
+  crmId        String?
+  gestor       User? @relation("ClientGestor",     fields: [gestorId],     references: [id], onDelete: SetNull)
+  cs           User? @relation("ClientCS",         fields: [csId],         references: [id], onDelete: SetNull)
+  supervisor   User? @relation("ClientSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+  head         User? @relation("ClientHead",       fields: [headId],       references: [id], onDelete: SetNull)
+  crm          User? @relation("ClientCRM",        fields: [crmId],        references: [id], onDelete: SetNull)
+
+  // ── Metas e configuração operacional ───────────────────────────────────────
+  plataformas         String[]  @default([])  // Meta, Google, Tiktok
+  produtos            String[]  @default([])  // Tráfego Pago, CRM Zoppy, Rastreamento
+  roasMinimo          Decimal?  @db.Decimal(8, 2)
+  cpaMaximo           Decimal?  @db.Decimal(12, 2)
+  investimentoMeta    Decimal?  @db.Decimal(12, 2)
+  investimentoGoogle  Decimal?  @db.Decimal(12, 2)
+  investimentoTiktok  Decimal?  @db.Decimal(12, 2)
+  faturamentoEsperado Decimal?  @db.Decimal(12, 2)
+  dashboardLooker     String?
+  painelEcommerce     String?
+  whatsapp            String?
+  // Cache desnormalizado do Contract (Contract continua fonte da verdade)
+  billingDueDay   Int?
+  feeAmount       Decimal?  @db.Decimal(12, 2)
+  contractEndDate DateTime?
+  precisaCompletarCadastro Boolean @default(false)
+
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -165,9 +231,12 @@ model Client {
   contracts           Contract[]
   auditLogs           AuditLog[]
   weeklyCheckins      ClientWeeklyCheckin[]
+  taskLists           TaskList[]
 
   @@index([status])
   @@index([pipelineStage])
+  @@index([gestorId])
+  @@index([csId])
 }
 
 model ClientInteraction {
@@ -644,15 +713,20 @@ model POPFriction {
 }
 
 model TaskList {
-  id        String    @id @default(cuid())
-  name      String
-  areaId    String?
-  area      TaskArea? @relation(fields: [areaId], references: [id])
-  active    Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id         String    @id @default(cuid())
+  name       String
+  areaId     String?
+  area       TaskArea? @relation(fields: [areaId], references: [id])
+  externalId String?   @unique   // id da lista no ClickUp
+  clientId   String?              // quando a lista representa um cliente (recorrentes)
+  client     Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   tasks     Task[]
+
+  @@index([clientId])
 }
 
 model Task {
@@ -887,6 +961,7 @@ model TaskRecurrenceRule {
   dayOfMonth Int?
   hour       Int?
   minute     Int?                @default(0)
+  anchorDate DateTime?           // âncora obrigatória p/ QUINZENAL (dia-base do ciclo)
   active     Boolean             @default(true)
   lastRunAt  DateTime?
   createdAt  DateTime            @default(now())
