@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { seedOperacaoArkza } from '@/services/seed-operacao'
+import { seedCarteiras, createNovosClientes, getCancelCandidates, cancelarForaDaCarteira } from '@/services/seed-carteiras'
 import { materializeRecurringTasksForClient } from '@/services/recurrence-engine'
 
 // Backfill pode processar vários clientes — dá folga ao tempo de execução.
@@ -61,6 +62,18 @@ export async function POST(req: NextRequest) {
       const lastId = clients.length ? clients[clients.length - 1].id : cursor ?? null
       const done = clients.length < batch
       return NextResponse.json({ ok: true, phase, processed: clients.length, created, skipped, failed, lastId, done })
+    }
+
+    if (phase === 'carteiras') {
+      const carteiras = await seedCarteiras()
+      const novos = await createNovosClientes()
+      const candidates = await getCancelCandidates()
+      return NextResponse.json({ ok: true, phase, carteiras, novos, candidates })
+    }
+
+    if (phase === 'cancelar') {
+      const result = await cancelarForaDaCarteira()
+      return NextResponse.json({ ok: true, phase, ...result })
     }
 
     if (phase === 'diagnostico') {
