@@ -775,6 +775,17 @@ model Task {
   blockReason   String?
   delayReason   String?
 
+  // ── FASE 5 — TaskCompletionGuard (aditivo, flag-gated) ─────────────────────
+  reviewerId          String?  // quem valida (id, sem FK — igual requesterId)
+  requiresEvidence    Boolean  @default(false)
+  requiresReview      Boolean  @default(false)
+  qualityScore        Int?
+  riskScore           Int?
+  completionNotes     String?
+  sourcePopCode       String?
+  isGeneratedByAgent  Boolean  @default(false)
+  generatedByAgentName String?
+
   tags          String[]    @default([])
 
   parentId      String?
