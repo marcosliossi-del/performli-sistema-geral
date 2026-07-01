@@ -154,4 +154,3 @@ WHERE "statusId" IS NULL;
 -- 6) TaskList.statusSetId ← default Arkza (só onde ainda NULL)
 UPDATE "TaskList" SET "statusSetId" = 'sset_arkza'
 WHERE "statusSetId" IS NULL;
-</content>
