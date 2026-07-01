@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { phoneMatchVariants } from '@/lib/phone'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -53,11 +54,13 @@ export async function POST(req: NextRequest) {
 
     const source = utmSource ?? utmMedium ?? 'Formulário'
 
-    // Deduplicate by phone — update UTMs if lead already exists
+    // Deduplicate by phone — update UTMs if lead already exists.
+    // Comparação por igualdade NORMALIZADA (não `contains` de 9 dígitos, que
+    // mistura pessoas diferentes com final de número igual). Ver phoneMatchVariants.
     const phone = d.phone?.replace(/\D/g, '') || null
     if (phone && phone.length >= 10) {
       const existing = await prisma.agencyLead.findFirst({
-        where: { phone: { contains: phone.slice(-9) }, deletedAt: null },
+        where: { phone: { in: phoneMatchVariants(phone) }, deletedAt: null },
         select: { id: true },
       })
       if (existing) {

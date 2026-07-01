@@ -247,21 +247,61 @@ export async function syncAsaasData(): Promise<{
   return { customers, payments, subscriptions, transfers, expenses, errors }
 }
 
+/**
+ * Rank de progressão do status de pagamento. Usado como guarda de ordenação:
+ * um evento atrasado/fora de ordem NÃO pode regredir o status para um rank menor.
+ * Ex.: um PAYMENT_OVERDUE reentregue não pode reverter um pagamento já RECEIVED.
+ * Estados de estorno/chargeback têm rank alto por serem transições legítimas a
+ * partir de estados pagos.
+ */
+const PAYMENT_STATUS_RANK: Record<string, number> = {
+  OVERDUE: 0,
+  PENDING: 1,
+  AWAITING_RISK_ANALYSIS: 2,
+  RECEIVED: 3,
+  CONFIRMED: 3,
+  REFUND_REQUESTED: 4,
+  CHARGEBACK_REQUESTED: 4,
+  REFUNDED: 5,
+}
+
+function statusRank(status: string): number {
+  return PAYMENT_STATUS_RANK[status] ?? 1
+}
+
 /** Called by Asaas webhook: update a single payment status in real-time */
 export async function handlePaymentWebhook(payload: {
   event: string
   payment: AsaasPaymentDTO
 }) {
   const { payment } = payload
+  const newStatus = mapPaymentStatus(payment.status)
 
   const customerRow = payment.customer
     ? await prisma.asaasCustomer.findUnique({ where: { asaasId: payment.customer }, select: { id: true } })
     : null
 
+  // Guarda de ordenação/idempotência: se a fatura já existe e o novo status
+  // representa um estado ANTERIOR ao atual (evento fora de ordem/reentregue),
+  // não regredimos o status — apenas atualizamos campos não-regressivos.
+  const existing = await prisma.asaasPayment.findUnique({
+    where: { asaasId: payment.id },
+    select: { status: true },
+  })
+
+  const wouldRegress = !!existing && statusRank(newStatus) < statusRank(existing.status)
+  if (wouldRegress) {
+    console.warn(
+      `[Asaas Webhook] Evento fora de ordem ignorado p/ pagamento ${payment.id}: ` +
+      `${newStatus} não pode regredir ${existing!.status}`,
+    )
+  }
+
   await prisma.asaasPayment.upsert({
     where: { asaasId: payment.id },
     update: {
-      status: mapPaymentStatus(payment.status),
+      // Só atualiza status se NÃO for regressão de estado terminal/mais novo.
+      ...(wouldRegress ? {} : { status: newStatus }),
       paymentDate: payment.paymentDate ? new Date(payment.paymentDate) : null,
       netValue: payment.netValue ?? null,
       customerId: customerRow?.id ?? null,
@@ -270,7 +310,7 @@ export async function handlePaymentWebhook(payload: {
     },
     create: {
       asaasId: payment.id,
-      status: mapPaymentStatus(payment.status),
+      status: newStatus,
       billingType: mapBillingType(payment.billingType),
       value: payment.value,
       netValue: payment.netValue ?? null,

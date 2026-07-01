@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { phoneMatchVariants } from '@/lib/phone'
 
 // Z-API webhook payload for received messages
 interface ZApiPayload {
@@ -37,16 +38,20 @@ export async function POST(req: NextRequest) {
 
     if (phone.length < 10) return NextResponse.json({ ok: true })
 
+    // Match por igualdade NORMALIZADA (não `contains` de 9 dígitos, que mistura
+    // pessoas diferentes com final igual). Ver phoneMatchVariants.
+    const phoneVariants = phoneMatchVariants(phone)
+
     // Skip if already a known client
     const client = await prisma.client.findFirst({
-      where: { phone: { contains: phone.slice(-9) } },
+      where: { phone: { in: phoneVariants } },
       select: { id: true },
     })
     if (client) return NextResponse.json({ ok: true })
 
     // Check existing lead
     const existingLead = await prisma.agencyLead.findFirst({
-      where: { phone: { contains: phone.slice(-9) }, deletedAt: null },
+      where: { phone: { in: phoneVariants }, deletedAt: null },
       select: { id: true },
     })
 
