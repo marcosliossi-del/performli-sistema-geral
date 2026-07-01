@@ -373,6 +373,9 @@ D-001…D-009 em `DECISIONS.md` (estado do cliente = server actions + optimistic
 ## Pendências (arbitragem A0)
 - (nenhuma)
 
+## Fila pós-execução (ordem de entrada)
+1. **Liquid Glass (Apple/iOS) em todo o sistema** — pedido do dono em 01/07/2026: após TODAS as fases do módulo Tasks, executar melhoria de design/UX global aplicando o efeito liquid glass da Apple (translucidez, blur em camadas, bordas luminosas, profundidade). Base já existente: tokens --ak-glass/--ak-glass-strong e tema "Arkza · Apple/iOS" no globals.css. Escopo: superfícies de card/sidebar/modais/painéis, respeitando a allow-list congelada e os tokens semânticos (sem hex novo).
+
 ## Riscos ativos
 - R1: enum TaskStatus → Status FK sem quebrar Hub de Suporte/recorrência/counts em produção (D-004).
 - R2: dupla fonte de verdade ClickUp↔Performli — data de corte por lista/cliente; 21 demandas do Suporte já importadas.
