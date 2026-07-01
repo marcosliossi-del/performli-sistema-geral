@@ -23,7 +23,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // ANALYST é read-only: não pode mutar o pipeline comercial.
+  if (!session || !['ADMIN', 'CS', 'MANAGER'].includes(session.role)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const { id } = await params
   const body   = await request.json()
