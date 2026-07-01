@@ -18,15 +18,18 @@ import { createHmac } from 'crypto'
  */
 export async function POST(request: NextRequest) {
   const body = await request.text()
-  const hmacHeader = request.headers.get('x-linkedstore-hmac-sha256')
 
-  // Verifica HMAC se o secret estiver configurado
+  // Fail-closed: exige NUVEMSHOP_APP_SECRET + HMAC válido. Sem secret configurado,
+  // não aceita nada (evita webhook forjado de pedido/pagamento).
   const appSecret = process.env.NUVEMSHOP_APP_SECRET
-  if (appSecret && hmacHeader) {
-    const computed = createHmac('sha256', appSecret).update(body).digest('base64')
-    if (computed !== hmacHeader) {
-      return NextResponse.json({ error: 'HMAC inválido' }, { status: 401 })
-    }
+  if (!appSecret) {
+    console.error('[Nuvemshop Webhook] NUVEMSHOP_APP_SECRET não configurado — rejeitando (fail-closed)')
+    return NextResponse.json({ error: 'Webhook não configurado' }, { status: 503 })
+  }
+  const hmacHeader = request.headers.get('x-linkedstore-hmac-sha256')
+  const computed = createHmac('sha256', appSecret).update(body).digest('base64')
+  if (!hmacHeader || computed !== hmacHeader) {
+    return NextResponse.json({ error: 'HMAC inválido' }, { status: 401 })
   }
 
   let payload: { store_id: number; event: string; body?: NuvemshopRawOrder }

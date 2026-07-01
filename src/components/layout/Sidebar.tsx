@@ -100,7 +100,7 @@ const navigation: NavSection[] = [
         ],
       },
       {
-        name: 'Financeiro', href: '/financeiro', icon: TrendingUp, roles: ['ADMIN' as Role, 'CS' as Role],
+        name: 'Financeiro', href: '/financeiro', icon: TrendingUp, roles: ['ADMIN' as Role],
         children: [
           { name: 'DRE — Financeiro', href: '/financeiro', icon: TrendingUp },
           { name: 'Jurídico',         href: '/juridico',   icon: Scale, roles: ['ADMIN' as Role] },
