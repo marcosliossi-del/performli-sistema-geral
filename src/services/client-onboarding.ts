@@ -21,6 +21,7 @@ import { prisma } from '@/lib/prisma'
 import { writeAuditLog } from '@/lib/audit'
 import { statusIdFor } from '@/lib/tasks/statusMap'
 import { materializeRecurringTasksForClient } from './recurrence-engine'
+import { resolveClientOwner } from './owner-resolver'
 
 type InitialTaskSpec = {
   slug: string
@@ -62,27 +63,6 @@ const INITIAL_TASKS: InitialTaskSpec[] = [
   },
 ]
 
-/**
- * Resolve o responsável (gestor) das tarefas iniciais de onboarding:
- *   gestorId ?? assignment primária ?? fallback HEAD global.
- * Retorna { assigneeId, usedFallback } — assigneeId pode ser null se nem
- * fallback existir (nesse caso as iniciais não são criadas).
- */
-async function resolveOnboardingOwner(client: {
-  gestorId: string | null
-  assignments: { userId: string }[]
-}): Promise<{ assigneeId: string | null; usedFallback: boolean }> {
-  const direct = client.gestorId ?? client.assignments[0]?.userId ?? null
-  if (direct) return { assigneeId: direct, usedFallback: false }
-
-  const head = await prisma.user.findFirst({
-    where: { operationalRole: 'HEAD', active: true },
-    select: { id: true },
-    orderBy: { createdAt: 'asc' },
-  })
-  return { assigneeId: head?.id ?? null, usedFallback: true }
-}
-
 export async function runClientOnboarding(clientId: string): Promise<{
   recurring: { created: number; skipped: number; failed: number }
   onboardingTasksCreated: number
@@ -123,7 +103,7 @@ export async function runClientOnboarding(clientId: string): Promise<{
     .catch(() => null)
   const areaId = onboardingArea?.id ?? null
 
-  const { assigneeId, usedFallback } = await resolveOnboardingOwner(client)
+  const { assigneeId, usedFallback } = await resolveClientOwner(client)
 
   if (!assigneeId) {
     await prisma.automationLog

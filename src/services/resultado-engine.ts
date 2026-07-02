@@ -15,6 +15,8 @@
 import { prisma } from '@/lib/prisma'
 import { getWeekRange } from '@/lib/utils'
 import { statusIdFor } from '@/lib/tasks/statusMap'
+import { resolveClientOwner } from './owner-resolver'
+import { writeAuditLog } from '@/lib/audit'
 import type { ClientResultado, ClientEtapa } from '@prisma/client'
 
 // Precedência do alvo de ROAS: Goal(ROAS) vigente > Client.roasMinimo (ficha).
@@ -57,6 +59,7 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
       name: true,
       resultadoWeek: true,
       roasMinimo: true, // fallback de alvo quando não há Goal(ROAS) — item 7
+      gestorId: true, // dono canônico (precedência S2-016)
       goals: {
         where: { metric: 'ROAS' },
         orderBy: { startDate: 'desc' },
@@ -177,16 +180,44 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
           })
         }
 
-        // BLOCO 6 — gera tarefa de plano de ação (Otimização) para o gestor.
-        const managerId = c.assignments[0]?.userId
-        if (managerId) {
+        // BLOCO 6 — gera tarefa de plano de ação (Otimização) para o dono.
+        // S2-016: precedência determinística Client.gestorId → assignment
+        // primária → fallback HEAD global. A tarefa SEMPRE nasce (evidência
+        // mínima, CLAUDE.md #14): um cliente crítico NUNCA pode ficar sem
+        // responsável de forma silenciosa. Se nem o fallback resolver, loga
+        // 'resultado.semGestor' e ainda assim NÃO engole.
+        const owner = await resolveClientOwner({
+          gestorId: c.gestorId,
+          assignments: c.assignments,
+        })
+        const managerId = owner.assigneeId
+
+        if (!managerId) {
+          // Sem gestor e sem fallback HEAD: sinaliza cliente crítico órfão.
+          await prisma.automationLog
+            .create({
+              data: {
+                clientId: c.id,
+                status: 'FALHA',
+                reason: `resultado.semGestor — cliente crítico (${resultado}) sem responsável resolvível (sem gestorId, sem assignment primária e sem HEAD fallback). Tarefa de plano de ação NÃO pôde ser atribuída (${windowKey}).`,
+              },
+            })
+            .catch(() => {})
+          await writeAuditLog({
+            action: 'resultado.semGestor',
+            entityType: 'Client',
+            entityId: c.id,
+            clientId: c.id,
+            metadata: { resultado, roas, target, windowKey },
+          })
+        } else {
           const taskKey = `otimizacao:${c.id}:${windowKey}`
           const taskExists = await prisma.task.findUnique({ where: { idempotencyKey: taskKey }, select: { id: true } })
           if (!taskExists) {
             await prisma.task.create({
               data: {
                 title: `Plano de ação (Otimização) — ${c.name}`,
-                description: `Resultado ${resultado === 'PESSIMO' ? 'péssimo' : 'ruim'} na semana de ${windowKey} (ROAS ${roas.toFixed(2)} vs meta ${target.toFixed(2)}). Diagnosticar e recuperar.`,
+                description: `Resultado ${resultado === 'PESSIMO' ? 'péssimo' : 'ruim'} na semana de ${windowKey} (ROAS ${roas.toFixed(2)} vs meta ${target.toFixed(2)}). Diagnosticar e recuperar.${owner.usedFallback ? ' [Atribuída ao HEAD fallback: cliente sem gestor definido — revisar carteira.]' : ''}`,
                 type: 'DEMANDA_INTERNA',
                 priority: 'ALTA',
                 status: 'A_FAZER',
@@ -211,6 +242,22 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
                 activities: { create: { actorId: null, action: 'created' } },
               },
             })
+            if (owner.usedFallback) {
+              await writeAuditLog({
+                action: 'resultado.semGestor',
+                entityType: 'Client',
+                entityId: c.id,
+                clientId: c.id,
+                metadata: {
+                  resultado,
+                  roas,
+                  target,
+                  windowKey,
+                  fallbackAssigneeId: managerId,
+                  note: 'tarefa atribuída ao HEAD fallback — cliente crítico sem gestor definido',
+                },
+              })
+            }
           }
         }
       }
