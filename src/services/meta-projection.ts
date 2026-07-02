@@ -23,6 +23,7 @@
 import { prisma } from '@/lib/prisma'
 import { MetricType, Platform } from '@prisma/client'
 import { getMonthRange } from '@/lib/utils'
+import { parseDateInput } from '@/lib/tasks/dateInput'
 import { writeAuditLog } from '@/lib/audit'
 import { RATE_METRICS } from '@/services/weekly-goals-sync'
 import {
@@ -86,6 +87,18 @@ export async function projetarMetasDoMes(): Promise<{
 }> {
   const now = new Date()
   const novoMes = getMonthRange(now)
+
+  // startDate/endDate CANÔNICOS da Goal do mês — MESMA convenção da UI
+  // (parseDateInput → meio-dia UTC, D-006). Se a projeção gravasse 00:00Z
+  // (getMonthRange), a chave @@unique NÃO colidiria com a meta criada à mão e
+  // duplicaria a Goal do mês. `novoMes` continua sendo usado só como JANELA de
+  // tempo (ex.: dedup de alerta), não como startDate da Goal.
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const gy = now.getUTCFullYear()
+  const gm = now.getUTCMonth() // 0-based
+  const lastDay = new Date(Date.UTC(gy, gm + 1, 0)).getUTCDate()
+  const goalStart = parseDateInput(`${gy}-${pad(gm + 1)}-01`)
+  const goalEnd = parseDateInput(`${gy}-${pad(gm + 1)}-${pad(lastDay)}`)
 
   // Mês anterior (MoM).
   const prevRef = new Date(now.getFullYear(), now.getMonth() - 1, 1)
@@ -172,17 +185,17 @@ export async function projetarMetasDoMes(): Promise<{
             clientId: c.id,
             metric: metricaResultado,
             period: 'MONTHLY',
-            startDate: novoMes.start,
+            startDate: goalStart,
           },
         },
-        update: { targetValue: alvo, endDate: novoMes.end },
+        update: { targetValue: alvo, endDate: goalEnd },
         create: {
           clientId: c.id,
           metric: metricaResultado,
           period: 'MONTHLY',
           targetValue: alvo,
-          startDate: novoMes.start,
-          endDate: novoMes.end,
+          startDate: goalStart,
+          endDate: goalEnd,
         },
       })
 
@@ -223,17 +236,17 @@ export async function projetarMetasDoMes(): Promise<{
               clientId: c.id,
               metric: t.metric,
               period: 'MONTHLY',
-              startDate: novoMes.start,
+              startDate: goalStart,
             },
           },
-          update: { targetValue: val, endDate: novoMes.end },
+          update: { targetValue: val, endDate: goalEnd },
           create: {
             clientId: c.id,
             metric: t.metric,
             period: 'MONTHLY',
             targetValue: val,
-            startDate: novoMes.start,
-            endDate: novoMes.end,
+            startDate: goalStart,
+            endDate: goalEnd,
           },
         })
       }
