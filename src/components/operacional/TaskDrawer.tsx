@@ -5,7 +5,7 @@ import { useEffect, useState, useTransition } from 'react'
 import Link from 'next/link'
 import {
   X, Send, Square, CheckSquare, User as UserIcon, ShieldCheck,
-  RotateCcw, Eye, Tag as TagIcon, Paperclip,
+  RotateCcw, Eye, Tag as TagIcon, Paperclip, ExternalLink,
 } from 'lucide-react'
 import { updateTaskStatus } from '@/app/actions/tasks'
 import {
@@ -119,7 +119,12 @@ export function TaskDrawer({
               {m?.listName && <><span className="text-[#576070]">▸</span><span>{m.listName}</span></>}
               {(task.popCode || m?.popCode) && <><span className="text-[#576070]">▸</span><span className="text-[#95BBE2]">{task.popCode ?? m?.popCode}</span></>}
             </div>
-            <button onClick={onClose} className="text-[#87919E] hover:text-[#EBEBEB] shrink-0"><X size={18} /></button>
+            <div className="flex items-center gap-3 shrink-0">
+              <Link href={`/t/${task.id}`} className="text-[11px] text-[#95BBE2] hover:underline inline-flex items-center gap-1">
+                Abrir painel completo <ExternalLink size={12} />
+              </Link>
+              <button onClick={onClose} className="text-[#87919E] hover:text-[#EBEBEB]"><X size={18} /></button>
+            </div>
           </div>
           <h2 className="text-[17px] font-bold text-[#EBEBEB] leading-snug mt-2">{task.title}</h2>
           <div className="flex items-center gap-2.5 mt-3 flex-wrap">

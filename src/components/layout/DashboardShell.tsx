@@ -15,9 +15,11 @@ interface DashboardShellProps {
   counts?: SidebarCounts
   /** Destino do logo — home do perfil (pouso). */
   homeHref: string
+  /** Slot do parallel route @modal (painel slide-over da task, D-009). */
+  modal?: React.ReactNode
 }
 
-export function DashboardShell({ children, session, unreadAlerts, counts, homeHref }: DashboardShellProps) {
+export function DashboardShell({ children, session, unreadAlerts, counts, homeHref, modal }: DashboardShellProps) {
   const [viewMode, setViewMode] = useState<'ADMIN' | 'GESTOR'>(
     session.role === 'ADMIN' ? 'ADMIN' : 'GESTOR'
   )
@@ -54,6 +56,8 @@ export function DashboardShell({ children, session, unreadAlerts, counts, homeHr
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <ToastViewport />
+      {/* Slot @modal: slide-over da task sobre a view (fixed, não desloca layout). */}
+      {modal}
     </div>
   )
 }
