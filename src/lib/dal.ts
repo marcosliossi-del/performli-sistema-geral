@@ -9,6 +9,7 @@ import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
 import { normalizeRole, stripSensitive, scopeClients, isRevenueMetric } from './rbac'
 import { readCronHeartbeat, CRON_STALE_HOURS } from './cron-heartbeat'
 import { getRealizadoForMetrics } from './metas/realizado'
+import { RATE_METRICS } from '@/services/weekly-goals-sync'
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 
@@ -2535,17 +2536,31 @@ export const getGoalPaceMetrics = cache(async (clientId: string): Promise<GoalPa
 
   return goals.map((goal): GoalPaceMetrics => {
     const target = Number(goal.targetValue)
-    const dailyTarget = daysInMonth > 0 ? target / daysInMonth : null
-    const weeklyTarget = daysInMonth > 0 ? (target / daysInMonth) * 7 : null
+    // S2-015: métricas de RAZÃO/MÉDIA (ROAS, CTR, CPL, CPA, CPC, etc.) NÃO se
+    // acumulam por dia — dividir a meta por dias gera "meta diária" sem sentido
+    // ("0,07x"). Fonte única de classificação: RATE_METRICS (mesma usada na
+    // conversão semanal em weekly-goals-sync). Para RATE, a meta vale para
+    // qualquer janela: dailyTarget/weeklyTarget/paceExpected são null e o
+    // "ritmo" compara realizado vs. a própria meta.
+    const isRate = RATE_METRICS.has(goal.metric)
+    const dailyTarget = isRate ? null : daysInMonth > 0 ? target / daysInMonth : null
+    const weeklyTarget = isRate ? null : daysInMonth > 0 ? (target / daysInMonth) * 7 : null
     const hs = goal.healthScores[0]
     const actualValue = realizadoByMetric.get(goal.metric)?.valor ?? null
-    const paceExpected = dailyTarget !== null ? dailyTarget * daysElapsed : null
+    // Para RATE, o "esperado" é a própria meta (comparação direta realizado × meta).
+    const paceExpected = isRate
+      ? target
+      : dailyTarget !== null
+        ? dailyTarget * daysElapsed
+        : null
     const paceAchievement =
       actualValue !== null && paceExpected !== null && paceExpected > 0
         ? (actualValue / paceExpected) * 100
         : null
-    const projectedMonth =
-      actualValue !== null && daysElapsed > 0
+    // Projeção só faz sentido para métricas acumulativas; RATE já é uma média.
+    const projectedMonth = isRate
+      ? actualValue
+      : actualValue !== null && daysElapsed > 0
         ? (actualValue / daysElapsed) * daysInMonth
         : null
 

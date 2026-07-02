@@ -66,21 +66,25 @@ export function GoalPaceCard({ goals, daysElapsed, daysInMonth }: Props) {
                 </p>
               </div>
 
-              {/* Daily / Weekly targets */}
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <div className="bg-[#38435C]/30 rounded-lg p-2">
-                  <p className="text-[9px] text-[#87919E] uppercase tracking-wide">Meta diária</p>
-                  <p className="text-sm font-semibold text-[#EBEBEB]">
-                    {formatValue(goal.metric, goal.dailyTarget)}
-                  </p>
+              {/* Daily / Weekly targets — só para métricas ACUMULATIVAS.
+                  Métricas de razão/média (ROAS, CTR, CPL...) não têm "meta
+                  diária/semanal": dailyTarget/weeklyTarget vêm null (S2-015). */}
+              {goal.dailyTarget !== null && (
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div className="bg-[#38435C]/30 rounded-lg p-2">
+                    <p className="text-[9px] text-[#87919E] uppercase tracking-wide">Meta diária</p>
+                    <p className="text-sm font-semibold text-[#EBEBEB]">
+                      {formatValue(goal.metric, goal.dailyTarget)}
+                    </p>
+                  </div>
+                  <div className="bg-[#38435C]/30 rounded-lg p-2">
+                    <p className="text-[9px] text-[#87919E] uppercase tracking-wide">Meta semanal</p>
+                    <p className="text-sm font-semibold text-[#EBEBEB]">
+                      {formatValue(goal.metric, goal.weeklyTarget)}
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-[#38435C]/30 rounded-lg p-2">
-                  <p className="text-[9px] text-[#87919E] uppercase tracking-wide">Meta semanal</p>
-                  <p className="text-sm font-semibold text-[#EBEBEB]">
-                    {formatValue(goal.metric, goal.weeklyTarget)}
-                  </p>
-                </div>
-              </div>
+              )}
 
               {/* Current vs expected */}
               <div className="space-y-1.5 text-xs">
@@ -90,18 +94,22 @@ export function GoalPaceCard({ goals, daysElapsed, daysInMonth }: Props) {
                     {formatValue(goal.metric, goal.actualValue)}
                   </span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[#87919E]">Esperado pro dia {daysElapsed}</span>
-                  <span className="text-[#87919E]">
-                    {formatValue(goal.metric, goal.paceExpected)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between border-t border-[#38435C]/50 pt-1.5">
-                  <span className="text-[#87919E]">Projeção p/ fechar mês</span>
-                  <span className="font-semibold" style={{ color: paceColor }}>
-                    {formatValue(goal.metric, goal.projectedMonth)}
-                  </span>
-                </div>
+                {goal.dailyTarget !== null && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#87919E]">Esperado pro dia {daysElapsed}</span>
+                    <span className="text-[#87919E]">
+                      {formatValue(goal.metric, goal.paceExpected)}
+                    </span>
+                  </div>
+                )}
+                {goal.dailyTarget !== null && (
+                  <div className="flex items-center justify-between border-t border-[#38435C]/50 pt-1.5">
+                    <span className="text-[#87919E]">Projeção p/ fechar mês</span>
+                    <span className="font-semibold" style={{ color: paceColor }}>
+                      {formatValue(goal.metric, goal.projectedMonth)}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Pace bar */}

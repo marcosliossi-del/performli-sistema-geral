@@ -2,6 +2,9 @@
 
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
+import { saoPauloDayStart } from '@/lib/utils'
+
+const pad = (n: number) => String(n).padStart(2, '0')
 
 export type ClientProgress = {
   id: string
@@ -39,7 +42,15 @@ export type ClientProgress = {
 export async function fetchMonthProgress(year: number, month: number): Promise<ClientProgress[]> {
   await requireSession()
 
-  const monthStart = new Date(year, month, 1)
+  // S2-014 (borda): fronteira INFERIOR do mês alinhada ao fuso São Paulo, igual
+  // ao helper canônico realizado.ts (resolveJanela → saoPauloDayStart). `month`
+  // é 0-indexado (getMonth), por isso `month + 1` no rótulo YYYY-MM-DD.
+  // MetricSnapshot.date é @db.Date, então a comparação usa só a parte de data;
+  // o alinhamento evita divergência quando o servidor não roda em UTC e casa a
+  // borda exatamente com /agency/metas. monthEnd permanece local: é usado apenas
+  // como limite superior de mês PASSADO (parte de data) e para totalDays via
+  // getDate() — mantê-lo preserva os números históricos.
+  const monthStart = saoPauloDayStart(`${year}-${pad(month + 1)}-01`)
   const monthEnd   = new Date(year, month + 1, 0)
 
   const today      = new Date()
