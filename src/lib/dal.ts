@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { HealthStatus, Prisma } from '@prisma/client'
 import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
 import { normalizeRole, stripSensitive, scopeClients, isRevenueMetric } from './rbac'
+import { readCronHeartbeat, CRON_STALE_HOURS } from './cron-heartbeat'
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 
@@ -3659,3 +3660,46 @@ export const getAceiteOperacional = cache(
     return { signals, geradoEm: now }
   },
 )
+
+// ─── Watchdog de cron (S1-007) ─────────────────────────────────────────────────
+
+export type CronHealth = {
+  lastRunAt: Date | null
+  horasAtras: number | null
+  stale: boolean
+}
+
+/**
+ * WATCHDOG de cron (S1-007) — camada 2: detecção que NÃO depende do cron vivo.
+ *
+ * Lê o heartbeat CRON_DAILY_LAST_RUN (gravado ao fim de /api/cron/daily). Como
+ * esta função roda quando o Marcos abre o sistema, ela detecta o cron morto
+ * mesmo que o próprio cron esteja fora do ar (um watchdog interno morreria junto).
+ *
+ * `stale` = última execução há mais de 26h (margem sobre o ciclo de 24h) OU
+ * nunca rodou (lastRunAt null → stale, para não mostrar dado velho como atual).
+ *
+ * Escopo ADMIN (dado operacional interno): para os demais papéis retorna
+ * `stale: false` — o banner some, sem vazar o estado da infraestrutura.
+ */
+export async function getCronHealth(role: string): Promise<CronHealth> {
+  if (normalizeRole(role) !== 'ADMIN') {
+    return { lastRunAt: null, horasAtras: null, stale: false }
+  }
+  try {
+    const lastRun = await readCronHeartbeat('DAILY')
+    if (!lastRun) {
+      return { lastRunAt: null, horasAtras: null, stale: true }
+    }
+    const horasAtras = (Date.now() - lastRun.getTime()) / 3_600_000
+    return {
+      lastRunAt: lastRun,
+      horasAtras: Math.floor(horasAtras),
+      stale: horasAtras > CRON_STALE_HOURS,
+    }
+  } catch (err) {
+    // Falha de leitura não pode quebrar a página — trata como "nunca rodou".
+    console.error('[dal.getCronHealth] falha ao ler heartbeat:', err)
+    return { lastRunAt: null, horasAtras: null, stale: true }
+  }
+}

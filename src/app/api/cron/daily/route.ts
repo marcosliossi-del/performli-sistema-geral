@@ -25,6 +25,7 @@ import { checkContractExpiry } from '@/services/contract-expiry-checker'
 import { renewExpiredContracts } from '@/services/contract-renewal'
 import { projetarMetasDoMes } from '@/services/meta-projection'
 import { isCronAuthorized } from '@/lib/cron-auth'
+import { recordCronHeartbeat } from '@/lib/cron-heartbeat'
 
 /**
  * GET /api/cron/daily  ← Vercel Cron triggers GET requests
@@ -379,6 +380,12 @@ async function runDailySync() {
   // WhatsApp digest is sent by /api/cron/digest (runs at 08:30 BRT/São Paulo),
   // 30 minutes after this cron finishes — ensures fresh health scores are
   // available when the digest is built.
+
+  // ── WATCHDOG (S1-007) camada 1: heartbeat da última execução ──────────────
+  // Grava CRON_DAILY_LAST_RUN. A leitura (getCronHealth) alimenta o banner do
+  // Cockpit, que avisa se esta rotina parar de rodar (dado velho ≠ dado atual).
+  // NUNCA derruba o cron — recordCronHeartbeat trata seu próprio erro.
+  await recordCronHeartbeat('DAILY')
 
   return summary
 }
