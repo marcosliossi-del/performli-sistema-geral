@@ -5,6 +5,8 @@ import { seedOperacaoArkza } from '@/services/seed-operacao'
 import { seedCarteiras, createNovosClientes, getCancelCandidates, cancelarForaDaCarteira } from '@/services/seed-carteiras'
 import { materializeRecurringTasksForClient } from '@/services/recurrence-engine'
 import { importarSuporteClickUp } from '@/services/seed-suporte'
+import { migrarClickUp, type LoteName } from '@/services/clickup-migration'
+import { reconcileAsaasTasks } from '@/services/asaas-task-reconciler'
 
 // Backfill pode processar vários clientes — dá folga ao tempo de execução.
 export const maxDuration = 60
@@ -82,6 +84,19 @@ export async function POST(req: NextRequest) {
     if (phase === 'suporte') {
       const suporte = await importarSuporteClickUp()
       return NextResponse.json({ ok: true, phase, suporte })
+    }
+
+    if (phase === 'migrar-clickup') {
+      const loteParam = (req.nextUrl.searchParams.get('lote') ?? 'tudo') as LoteName
+      const lotesValidos: LoteName[] = ['internas', 'rituais', 'pagar', 'metas', 'contratos', 'tudo']
+      const lote = lotesValidos.includes(loteParam) ? loteParam : 'tudo'
+      const migracao = await migrarClickUp(lote)
+      return NextResponse.json({ ok: true, phase, lote, migracao })
+    }
+
+    if (phase === 'reconciliar-asaas') {
+      const reconcile = await reconcileAsaasTasks()
+      return NextResponse.json({ ok: true, phase, reconcile })
     }
 
     if (phase === 'diagnostico') {

@@ -4,6 +4,20 @@ import { useState } from 'react'
 import { Loader2, PlayCircle } from 'lucide-react'
 import { toast } from '@/lib/toast'
 
+type LoteResult = {
+  criadas: number
+  puladas: number
+  naoConciliados: string[]
+  erros: string[]
+}
+
+type ReconcileResult = {
+  geradas: number
+  conciliadas: number
+  reabertas: number
+  erros: string[]
+}
+
 type SeedCounts = {
   usersCreated?: number
   usersUpdated?: number
@@ -22,6 +36,8 @@ export function SeedOperacaoCard() {
   const [novos, setNovos] = useState<{ created: string[]; skipped: string[] } | null>(null)
   const [candidates, setCandidates] = useState<{ name: string; slug: string }[] | null>(null)
   const [suporte, setSuporte] = useState<{ criadas: number; puladas: number; semCliente: string[]; erros: string[] } | null>(null)
+  const [migracao, setMigracao] = useState<Record<string, LoteResult> | null>(null)
+  const [reconcile, setReconcile] = useState<ReconcileResult | null>(null)
 
   async function post(qs: string) {
     const res = await fetch(`/api/admin/seed-operacao${qs}`, { method: 'POST' })
@@ -101,6 +117,39 @@ export function SeedOperacaoCard() {
       toast(`${res.cancelled?.length ?? 0} cliente(s) cancelado(s) (fora da carteira).`, 'ok')
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Não foi possível cancelar.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function runMigrarClickUp() {
+    setLoading(true)
+    setMigracao(null)
+    try {
+      const res = await post('?phase=migrar-clickup&lote=tudo')
+      setMigracao(res.migracao ?? null)
+      const totalCriadas = Object.values(res.migracao ?? {}).reduce(
+        (acc: number, l) => acc + ((l as LoteResult)?.criadas ?? 0),
+        0,
+      )
+      toast(`Migração ClickUp concluída: ${totalCriadas} item(ns) criado(s).`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível migrar do ClickUp.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function runReconciliarAsaas() {
+    setLoading(true)
+    setReconcile(null)
+    try {
+      const res = await post('?phase=reconciliar-asaas')
+      setReconcile(res.reconcile ?? null)
+      const r = res.reconcile
+      toast(`Asaas conciliado: ${r?.geradas ?? 0} gerada(s), ${r?.conciliadas ?? 0} concluída(s), ${r?.reabertas ?? 0} reaberta(s).`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível conciliar o Asaas.', 'err')
     } finally {
       setLoading(false)
     }
@@ -280,6 +329,68 @@ export function SeedOperacaoCard() {
           </button>
         </div>
       )}
+
+      <div className="mt-6 border-t border-[#38435C] pt-4">
+        <p className="text-xs font-semibold text-[#EBEBEB] mb-1">Migração ClickUp</p>
+        <p className="text-xs text-[#87919E] mb-3">
+          Traz (sem duplicar) as tarefas internas, rituais, contas a pagar e metas do ClickUp,
+          e reconcilia os contratos (o Performli vence). A conciliação Asaas gera/conclui as
+          tarefas de cobrança pelo status real das faturas. Pode rodar mais de uma vez.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={runMigrarClickUp}
+            disabled={loading}
+            className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+            Migrar tudo (ClickUp)
+          </button>
+          <button
+            type="button"
+            onClick={runReconciliarAsaas}
+            disabled={loading}
+            className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+            Conciliar Asaas agora
+          </button>
+        </div>
+
+        {migracao && (
+          <div className="mt-4 text-xs text-[#87919E] space-y-1.5">
+            {Object.entries(migracao).map(([lote, r]) => (
+              <div key={lote} className="border-t border-[#38435C]/60 pt-1.5">
+                <p>
+                  <span className="text-[#EBEBEB] capitalize">{lote}</span>:{' '}
+                  <span className="text-[#EBEBEB]">{r.criadas}</span> criada(s)
+                  {' · '}puladas: <span className="text-[#EBEBEB]">{r.puladas}</span>
+                </p>
+                {r.naoConciliados.length > 0 && (
+                  <p className="text-[#F59E0B]">Não conciliados (sem cliente óbvio): {r.naoConciliados.join(', ')}</p>
+                )}
+                {r.erros.length > 0 && (
+                  <p className="text-[#EF4444]">Erros: {r.erros.join(' | ')}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {reconcile && (
+          <div className="mt-4 text-xs text-[#87919E] space-y-0.5 border-t border-[#38435C]/60 pt-1.5">
+            <p>
+              Cobranças geradas: <span className="text-[#EBEBEB]">{reconcile.geradas}</span>
+              {' · '}concluídas (pagas): <span className="text-[#EBEBEB]">{reconcile.conciliadas}</span>
+              {' · '}reabertas (estorno): <span className="text-[#EBEBEB]">{reconcile.reabertas}</span>
+            </p>
+            {reconcile.erros.length > 0 && (
+              <p className="text-[#EF4444]">Erros: {reconcile.erros.join(' | ')}</p>
+            )}
+          </div>
+        )}
+      </div>
 
       {semGestor && semGestor.length > 0 && (
         <div className="mt-4 border border-[#F59E0B]/30 bg-[#F59E0B]/5 rounded-lg p-3">

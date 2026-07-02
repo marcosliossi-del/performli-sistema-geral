@@ -11,6 +11,7 @@ import { generateAllWeeklyReports } from '@/services/weekly-report-generator'
 import { generateAllWeeklyChecklists } from '@/services/weekly-checklist-generator'
 import { sendDailyDigest } from '@/services/notifications/daily-digest'
 import { syncAsaasData } from '@/services/asaas/sync'
+import { reconcileAsaasTasks } from '@/services/asaas-task-reconciler'
 import { detectCriticalAccounts } from '@/services/critical-account-detector'
 import { escalateStaleWarRooms } from '@/services/warroom-escalation'
 import { monitorWarRooms } from '@/services/warroom-monitor'
@@ -46,6 +47,7 @@ async function runDailySync() {
     synced: { meta: { ok: false }, ga4: { ok: false }, googleAds: { ok: false }, nuvemshop: { ok: false } },
     weeklyGoalsSync: isMonday ? { ok: false } : { ok: true, skipped: true },
     asaas: { ok: false },
+    asaasReconcile: { ok: false },
     healthScores: { ok: false },
     alerts: { ok: false },
     churnRisk: { ok: false },
@@ -199,6 +201,14 @@ async function runDailySync() {
     summary.asaas = { ok: true, ...asaasResult }
   } catch (err) {
     summary.asaas = { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+
+  // ── Step 5b.1: Asaas — concilia faturas ↔ tasks de cobrança (após o sync) ──
+  try {
+    const reconcileResult = await reconcileAsaasTasks()
+    summary.asaasReconcile = { ok: true, ...reconcileResult }
+  } catch (err) {
+    summary.asaasReconcile = { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 
   // ── Step 5c: Inadimplência — régua de cobrança + cliente sem cobrança ─────
