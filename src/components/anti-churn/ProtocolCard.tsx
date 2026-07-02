@@ -62,6 +62,7 @@ const TRIGGER_LABELS: Record<AlertType, string> = {
   ANTICHURN_ACTION_NEEDED:       'Cliente em risco sem ação',
   CHECKIN_MISSING:               'Cliente sem check-in',
   CHECKIN_REJECTED_STALE:        'Check-in reprovado sem correção',
+  TASK_AUTOMATION:               'Automação de tarefa',
 }
 
 const NEXT_STATUS: Partial<Record<CriticalProtocolStatus, { to: CriticalProtocolStatus; label: string }>> = {
