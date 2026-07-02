@@ -6,7 +6,7 @@ import { getSession } from './session'
 import { redirect } from 'next/navigation'
 import { HealthStatus, Prisma } from '@prisma/client'
 import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
-import { normalizeRole, stripSensitive } from './rbac'
+import { normalizeRole, stripSensitive, scopeClients, isRevenueMetric } from './rbac'
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 
@@ -1030,10 +1030,15 @@ export function getWeekOptions(count = 8): ReportWeek[] {
 export const getReportData = cache(async (
   clientId: string,
   weekStart: Date,
-  weekEnd: Date
+  weekEnd: Date,
+  viewer: { userId: string; role: string },
 ) => {
-  const client = await prisma.client.findUnique({
-    where: { id: clientId },
+  const role5 = normalizeRole(viewer.role)
+  const isAdmin = role5 === 'ADMIN'
+  // Posse (RBAC v2): GESTOR só lê cliente da carteira; o clientId vem da URL,
+  // então filtramos no banco (findFirst + scopeClients) — fora do escopo = null.
+  const client = await prisma.client.findFirst({
+    where: { id: clientId, ...scopeClients(role5, viewer.userId) },
     select: { id: true, name: true, slug: true },
   })
   if (!client) return null
@@ -1054,7 +1059,11 @@ export const getReportData = cache(async (
     },
   })
 
-  const metrics = goals.map((g) => {
+  const metrics = goals
+    // Metas de RECEITA (FATURAMENTO/SALES/TICKET_MEDIO/CAC) são financeiras —
+    // some da lista para não-ADMIN (regra 5.1 do RBAC; evita vazar em /reports).
+    .filter((g) => isAdmin || !isRevenueMetric(g.metric))
+    .map((g) => {
     const hs = g.healthScores[0]
     return {
       metric: g.metric,

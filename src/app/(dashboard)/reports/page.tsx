@@ -31,7 +31,7 @@ export default async function ReportsPage({ searchParams }: Props) {
 
   const [clients, reportData] = await Promise.all([
     getClientsForSelect(userId, role),
-    clientId ? getReportData(clientId, selectedWeek.start, selectedWeek.end) : null,
+    clientId ? getReportData(clientId, selectedWeek.start, selectedWeek.end, { userId, role }) : null,
   ])
 
   const prevOffset = weekOffset - 1
