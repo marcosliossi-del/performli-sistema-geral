@@ -175,7 +175,9 @@ export const PERMISSION_MATRIX = {
 export function can(role: Role5, action: Action, module: Module): boolean {
   const moduleMatrix = PERMISSION_MATRIX[module]
   if (!moduleMatrix) return false
-  const allowed = moduleMatrix[role]
+  // Widening para ActionSet: sob `satisfies`, células vazias (NONE) têm tipo
+  // `readonly []`, cujo `.includes(action)` exigiria argumento `never`.
+  const allowed: ActionSet = moduleMatrix[role]
   if (!allowed) return false
   return allowed.includes(action)
 }
