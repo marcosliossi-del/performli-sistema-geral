@@ -22,6 +22,11 @@ import { classifyHealth } from '@/lib/health'
 import { MetricType, HealthStatus, BusinessType } from '@prisma/client'
 import { getWeekRange, getMonthRange } from '@/lib/utils'
 
+// Item 7 (fallback de meta via ficha do Client): NÃO plugável aqui sem migration.
+// HealthScore.goalId é FK obrigatória (schema:430, parte do unique), então não há
+// como gerar um score de FATURAMENTO/CPA a partir de Client.faturamentoEsperado/
+// cpaMaximo sem um Goal real. Precedência Goal > Client fica registrada; o plug
+// depende de tornar goalId opcional (fora do escopo da Onda 1). Deixado como está.
 const LOWER_IS_BETTER: Set<MetricType> = new Set([
   'CPL', 'CPA', 'CAC', 'CPC', 'SPEND', 'CPS', 'CPM',
 ])

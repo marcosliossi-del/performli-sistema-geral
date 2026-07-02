@@ -11,7 +11,7 @@
  *   cpc              → 0 (GA4 não tem custo por clique)
  *   spend            → 0 (GA4 não tem gasto em mídia)
  *   conversions      → ecommercePurchases
- *   conversionValue  → purchaseRevenue (ou totalRevenue como fallback)
+ *   conversionValue  → grossPurchaseRevenue (receita BRUTA; sem fallback)
  *   roas             → null (sem spend)
  *   cpl              → null (sem spend)
  *   addToCarts       → addToCarts (eventos add_to_cart)
@@ -40,8 +40,11 @@ export interface GA4TransformedSnapshot {
 }
 
 function parseGA4Date(yyyymmdd: string): Date {
+  // O bucket "date" já vem no fuso America/Sao_Paulo (timeZone fixado no runReport,
+  // client.ts). Carimba meio-dia UTC (regra D-006): o campo é @db.Date, então o
+  // valor persistido é o dia-parede correto em qualquer fuso ±12, sem off-by-one.
   const iso = `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`
-  return new Date(iso + 'T00:00:00Z')
+  return new Date(iso + 'T12:00:00Z')
 }
 
 export function transformGA4Row(row: GA4Row): GA4TransformedSnapshot {
@@ -54,10 +57,10 @@ export function transformGA4Row(row: GA4Row): GA4TransformedSnapshot {
   const purchasesRaw    = parseInt(row.ecommercePurchases || '0')
   const addToCartsRaw   = parseInt(row.addToCarts || '0')
   const checkoutsRaw    = parseInt(row.checkouts || '0')
-  // purchaseRevenue é mais preciso para e-commerce; totalRevenue como fallback
-  const purchaseRevenue = parseFloat(row.purchaseRevenue || '0')
-  const totalRevenue    = parseFloat(row.totalRevenue || '0')
-  const revenue         = purchaseRevenue > 0 ? purchaseRevenue : totalRevenue
+  // S1-002: receita BRUTA de compras como fonte primária e ÚNICA. O fallback
+  // para totalRevenue foi REMOVIDO — ele injetava receita de anúncios/assinatura
+  // (não-vendas). Se grossPurchaseRevenue vier 0, a receita é 0.
+  const revenue = parseFloat(row.grossPurchaseRevenue || '0')
 
   const frequency = sessions > 0 ? pageViews / sessions : 0
 

@@ -18,7 +18,7 @@ export interface GA4Row {
   activeUsers: string
   engagementRate: string
   ecommercePurchases: string
-  purchaseRevenue: string
+  grossPurchaseRevenue: string
   totalRevenue: string
   newUsers: string
   addToCarts: string
@@ -41,7 +41,7 @@ const METRIC_NAMES = [
   'activeUsers',
   'engagementRate',
   'ecommercePurchases',
-  'purchaseRevenue',
+  'grossPurchaseRevenue', // receita BRUTA (sem subtrair estornos) — S1-002
   'totalRevenue',
   'newUsers',
   'addToCarts',
@@ -256,6 +256,10 @@ export class GA4Client {
       dimensions: [{ name: 'date' }],
       metrics:    METRIC_NAMES.map((name) => ({ name })),
       orderBys:   [{ dimension: { dimensionName: 'date' } }],
+      // S1-002: fixa o fuso de agregação em America/Sao_Paulo para que o bucket
+      // "date" seja o dia-parede brasileiro (não o fuso default da propriedade),
+      // consistente com o carimbo do snapshot (@db.Date) e com o resto do sistema.
+      timeZone:   'America/Sao_Paulo',
       limit: 100,
     }
 
@@ -287,7 +291,7 @@ export class GA4Client {
       activeUsers:          row.metricValues[2].value,
       engagementRate:       row.metricValues[3].value,
       ecommercePurchases:   row.metricValues[4].value,
-      purchaseRevenue:      row.metricValues[5].value,
+      grossPurchaseRevenue: row.metricValues[5].value,
       totalRevenue:         row.metricValues[6].value,
       newUsers:             row.metricValues[7].value,
       addToCarts:           row.metricValues[8].value,

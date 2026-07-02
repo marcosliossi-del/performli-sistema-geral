@@ -5,97 +5,35 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { MetricType } from '@prisma/client'
-import { getWeekRange, getMonthRange } from '@/lib/utils'
-
-// Métricas onde a meta é a mesma independente do período (taxas, médias, razões)
-const RATE_METRICS = new Set<MetricType>([
-  'ROAS', 'CTR', 'TAXA_CONVERSAO', 'TICKET_MEDIO', 'CPS', 'CPL', 'CPA', 'CAC', 'CPM',
-])
-const WEEKS_PER_MONTH = 4.33
-
-/** Calcula o valor semanal equivalente a uma meta mensal */
-function weeklyTarget(metric: MetricType, monthlyValue: number): number {
-  const weekly = RATE_METRICS.has(metric)
-    ? monthlyValue
-    : Math.round((monthlyValue / WEEKS_PER_MONTH) * 100) / 100
-  return weekly
-}
+import { getMonthRange } from '@/lib/utils'
+import { parseDateInput } from '@/lib/tasks/dateInput'
+import {
+  upsertWeeklyGoalForMonth,
+  syncWeeklyGoalsFromMonthly as syncWeeklyGoalsFromMonthlyService,
+} from '@/services/weekly-goals-sync'
 
 /**
- * Cria ou atualiza a meta SEMANAL da semana atual para um único cliente/métrica.
- * Chamado automaticamente toda vez que uma meta mensal é salva.
- */
-async function upsertWeeklyGoalForMonth(
-  clientId: string,
-  metric: MetricType,
-  monthlyValue: number,
-): Promise<void> {
-  const { start: weekStart, end: weekEnd } = getWeekRange()
-  const weekly = weeklyTarget(metric, monthlyValue)
-
-  await prisma.goal.upsert({
-    where: {
-      clientId_metric_period_startDate: {
-        clientId,
-        metric,
-        period: 'WEEKLY',
-        startDate: weekStart,
-      },
-    },
-    update: { targetValue: weekly, endDate: weekEnd },
-    create: {
-      clientId,
-      metric,
-      period:      'WEEKLY',
-      targetValue: weekly,
-      startDate:   weekStart,
-      endDate:     weekEnd,
-    },
-  })
-}
-
-/**
- * Sincronização em massa: para cada cliente ativo com meta MENSAL no mês atual,
- * cria/atualiza a meta SEMANAL equivalente para a semana corrente.
+ * Server action: sincroniza metas mensais → semanais.
+ *
+ * Mantém o guard (auth + papel ADMIN) e delega a LÓGICA à função de serviço
+ * pura `@/services/weekly-goals-sync`. O cron chama a função de serviço
+ * diretamente, sem passar por aqui (S0-001: `requireSession` redirecionava e a
+ * sincronização automática de segunda nunca rodava).
  */
 export async function syncWeeklyGoalsFromMonthly(): Promise<{
   created: number
   total: number
   error?: string
 }> {
-  await requireSession()
+  const session = await requireSession()
+  if (session.role !== 'ADMIN') return { created: 0, total: 0, error: 'Sem permissão.' }
 
-  const now = new Date()
-  const { start: weekStart, end: weekEnd } = getWeekRange()
-  const { start: monthStart, end: monthEnd } = getMonthRange(now)
-
-  const monthlyGoals = await prisma.goal.findMany({
-    where: {
-      period:    'MONTHLY',
-      startDate: { lte: monthEnd },
-      endDate:   { gte: monthStart },
-      client:    { status: 'ACTIVE' },
-    },
-    select: { clientId: true, metric: true, targetValue: true },
-  })
-
-  if (monthlyGoals.length === 0) return { created: 0, total: 0 }
-
-  const toCreate = monthlyGoals.map((g) => ({
-    clientId:    g.clientId,
-    metric:      g.metric,
-    period:      'WEEKLY' as const,
-    targetValue: weeklyTarget(g.metric, Number(g.targetValue)),
-    startDate:   weekStart,
-    endDate:     weekEnd,
-  }))
-
-  const result = await prisma.goal.createMany({ data: toCreate, skipDuplicates: true })
+  const result = await syncWeeklyGoalsFromMonthlyService()
 
   revalidatePath('/agency/metas')
   revalidatePath('/clients')
   revalidatePath('/dashboard')
-  return { created: result.count, total: monthlyGoals.length }
+  return { created: result.created, total: result.total }
 }
 
 export type GoalUpsert = {
@@ -106,17 +44,24 @@ export type GoalUpsert = {
   endDate: string   // 'YYYY-MM-DD'
 }
 
-export async function upsertMonthlyGoals(goals: GoalUpsert[]): Promise<{ ok: boolean; error?: string }> {
+export async function upsertMonthlyGoals(
+  goals: GoalUpsert[],
+): Promise<{ ok: boolean; error?: string; saved?: number; ignored?: number }> {
   const session = await requireSession()
   if (session.role !== 'ADMIN') return { ok: false, error: 'Sem permissão.' }
 
   const now = new Date()
   const { start: monthStart, end: monthEnd } = getMonthRange(now)
 
+  let saved = 0
+  let ignored = 0
+
   for (const g of goals) {
-    if (isNaN(g.value) || g.value < 0) continue
-    const startDate = new Date(g.startDate)
-    const endDate   = new Date(g.endDate)
+    // Valor 0/negativo/NaN NÃO é alvo válido: tratado como "sem meta" e ignorado
+    // (S1-012). Um 0 gravado faria "meta batida"/"péssimo" falso nos motores.
+    if (isNaN(g.value) || g.value <= 0) { ignored++; continue }
+    const startDate = parseDateInput(g.startDate)
+    const endDate   = parseDateInput(g.endDate)
 
     await prisma.goal.upsert({
       where: {
@@ -143,6 +88,7 @@ export async function upsertMonthlyGoals(goals: GoalUpsert[]): Promise<{ ok: boo
     if (isCurrentMonth) {
       await upsertWeeklyGoalForMonth(g.clientId, g.metric, g.value)
     }
+    saved++
   }
 
   await writeAuditLog({
@@ -153,6 +99,8 @@ export async function upsertMonthlyGoals(goals: GoalUpsert[]): Promise<{ ok: boo
     entityId: 'bulk',
     metadata: {
       count: goals.length,
+      saved,
+      ignored,
       clientIds: Array.from(new Set(goals.map((g) => g.clientId))),
     },
   })
@@ -160,7 +108,7 @@ export async function upsertMonthlyGoals(goals: GoalUpsert[]): Promise<{ ok: boo
   revalidatePath('/agency/metas')
   revalidatePath('/clients')
   revalidatePath('/dashboard')
-  return { ok: true }
+  return { ok: true, saved, ignored }
 }
 
 export type MonthlyGoalsRow = {
@@ -230,12 +178,13 @@ export async function createGoal(prevState: GoalState, formData: FormData): Prom
   }
 
   const target = parseFloat(targetValue)
-  if (isNaN(target) || target < 0) {
-    return { error: 'Valor da meta inválido.' }
+  // 0/negativo = "sem meta": não é alvo válido (S1-012)
+  if (isNaN(target) || target <= 0) {
+    return { error: 'Valor da meta deve ser maior que zero.' }
   }
 
-  const start = new Date(startDate)
-  const end   = new Date(endDate)
+  const start = parseDateInput(startDate)
+  const end   = parseDateInput(endDate)
   if (end < start) {
     return { error: 'A data de fim deve ser após a data de início.' }
   }
