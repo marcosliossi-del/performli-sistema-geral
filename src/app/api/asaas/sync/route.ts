@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     const result = await syncAsaasData()
     return NextResponse.json({ ok: true, ...result, partialErrors: result.errors.length ? result.errors : undefined })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+    console.error('[asaas/sync]', err)
+    return NextResponse.json({ ok: false, error: 'Não foi possível sincronizar os dados do Asaas agora. Tente novamente.' }, { status: 500 })
   }
 }

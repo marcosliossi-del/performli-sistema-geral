@@ -15,6 +15,7 @@ export async function POST() {
     }
     return NextResponse.json({ ok: true, sent: result.sent })
   } catch (err) {
-    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, { status: 500 })
+    console.error('[admin/trigger-digest]', err)
+    return NextResponse.json({ ok: false, error: 'Não foi possível enviar o resumo diário agora. Tente novamente.' }, { status: 500 })
   }
 }
