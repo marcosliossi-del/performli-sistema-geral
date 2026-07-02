@@ -62,3 +62,10 @@
 - **Contexto:** anti-feature 2.11 §5 (sem modais aninhados) + deep-links já implementados hoje via `?task=<id>`.
 - **Decisão:** painel slide-over com rota interceptada `/t/[taskId]` (parallel routes). Os deep-links `?task=` existentes continuam funcionando e passam a redirecionar para `/t/[taskId]` quando o painel novo entrar (Fase 4).
 - **Consequência:** protótipo da rota interceptada é a PRIMEIRA entrega da Fase 4 (risco #4 do BLOCO 7).
+
+## D-010 — Recorrência por task: campo `Task.recurrenceRule Json?` (migration aditiva na Fase 2)
+
+- **Contexto:** o alvo (BLOCO 2.10/3.1) e o pedido explícito do dono (recorrência estilo ClickUp na task individual) exigem regra NA task; o motor existente (`TaskRecurrenceRule`) é template+cliente, inadequado para regra individual. A Fase 1 não incluiu o campo.
+- **Decisão:** o A2 adiciona `Task.recurrenceRule Json?` (shape `{ freq: 'DAILY'|'WEEKLY'|'MONTHLY', interval, byWeekday?: number[], mode: 'onComplete'|'schedule', skipWeekends?: boolean }`) com migration aditiva idempotente própria, e implementa `computeNextOccurrence` puro + clone on-complete com dedupe `recur:{originTaskId}:{occurrenceDate}`.
+- **Descartado:** reusar TaskRecurrenceRule para regras por task (acoplaria o motor de templates a um caso individual).
+- **Consequência:** dois mecanismos de recorrência coexistem com papéis claros: templates por cliente (15 fixas) e regra individual por task (ClickUp-style).
