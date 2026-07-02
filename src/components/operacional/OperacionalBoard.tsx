@@ -328,7 +328,9 @@ export function OperacionalBoard({
 
     onChangeDueDate: async (task, iso) => {
       const prev = task.dueDate
-      patchTask(task.id, { dueDate: iso ? new Date(iso) : null })
+      // Meio-dia UTC = mesmo dia em America/Sao_Paulo (espelha parseDateInput
+      // do servidor; meia-noite UTC mostraria o dia anterior no chip).
+      patchTask(task.id, { dueDate: iso ? new Date(`${iso}T12:00:00Z`) : null })
       const res = await updateTaskFields(task.id, { dueDate: iso })
       if ('error' in res) { patchTask(task.id, { dueDate: prev }); throw new Error(res.error) }
     },
@@ -359,6 +361,34 @@ export function OperacionalBoard({
       patchTask(taskId, { orderIndex: newIndex })
       const res = await reorderTask(taskId, before, after)
       if ('error' in res) { patchTask(taskId, { orderIndex: prev }); throw new Error(res.error) }
+    },
+
+    onReorderSeed: async (orderedIds) => {
+      // Semeia a coluna inteira na ordem visual: chaves sequenciais determinís-
+      // ticas (orderBetween é puro — o servidor, recebendo os mesmos vizinhos,
+      // chega às MESMAS chaves). Optimistic em bloco + rollback total no erro.
+      const prevById = new Map<string, string | null>()
+      for (const id of orderedIds) {
+        const t = tasks.find((x) => x.id === id)
+        prevById.set(id, t?.orderIndex ?? null)
+      }
+      const keys: string[] = []
+      let prevKey: string | null = null
+      for (let i = 0; i < orderedIds.length; i++) {
+        const k: string = orderBetween(prevKey, null)
+        keys.push(k)
+        prevKey = k
+      }
+      orderedIds.forEach((id, i) => patchTask(id, { orderIndex: keys[i] }))
+      try {
+        for (let i = 0; i < orderedIds.length; i++) {
+          const res = await reorderTask(orderedIds[i], i === 0 ? null : keys[i - 1], null)
+          if ('error' in res) throw new Error(res.error)
+        }
+      } catch (e) {
+        orderedIds.forEach((id) => patchTask(id, { orderIndex: prevById.get(id) ?? null }))
+        throw e instanceof Error ? e : new Error('Não foi possível reordenar a coluna.')
+      }
     },
 
     onQuickCreate: async (title) => {

@@ -30,7 +30,11 @@ export function DueDateEditor({
     return <DueDateChip dueDate={dueDate} recurring={recurring} size={size} />
   }
 
-  const isoValue = dueDate ? new Date(dueDate).toISOString().slice(0, 10) : ''
+  // Dia no fuso Arkza (não UTC): toISOString() mostraria o dia ANTERIOR para
+  // datas gravadas antes das 03:00 UTC (off-by-one vs o DueDateChip).
+  const isoValue = dueDate
+    ? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dueDate))
+    : ''
 
   async function commit(next: string | null) {
     setPending(true)

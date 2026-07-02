@@ -282,6 +282,16 @@ function fmtDate(d: Date | null | undefined): string {
   return d ? d.toISOString().slice(0, 10) : '—'
 }
 
+/**
+ * Converte data de <input type="date"> ('YYYY-MM-DD') para meio-dia UTC:
+ * meia-noite UTC vira 21h do dia ANTERIOR em America/Sao_Paulo (off-by-one);
+ * meio-dia UTC cai no MESMO dia em qualquer fuso ±12. Strings com hora passam
+ * direto.
+ */
+function parseDateInput(s: string): Date {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T12:00:00Z`) : new Date(s)
+}
+
 export async function updateTaskFields(taskId: string, patch: UpdateTaskFieldsInput): Promise<ActionResult> {
   const session = await requireSession()
 
@@ -325,14 +335,14 @@ export async function updateTaskFields(taskId: string, patch: UpdateTaskFieldsIn
     activities.push({ action: 'field_changed', fromValue: `responsável: ${oldUser?.name ?? current.assignedTo}`, toValue: `responsável: ${newAssigneeName}` })
   }
   if (input.dueDate !== undefined) {
-    const newDue = input.dueDate ? new Date(input.dueDate) : null
+    const newDue = input.dueDate ? parseDateInput(input.dueDate) : null
     if ((newDue?.getTime() ?? null) !== (current.dueDate?.getTime() ?? null)) {
       data.dueDate = newDue
       activities.push({ action: 'field_changed', fromValue: `prazo: ${fmtDate(current.dueDate)}`, toValue: `prazo: ${fmtDate(newDue)}` })
     }
   }
   if (input.startDate !== undefined) {
-    const newStart = input.startDate ? new Date(input.startDate) : null
+    const newStart = input.startDate ? parseDateInput(input.startDate) : null
     if ((newStart?.getTime() ?? null) !== (current.startDate?.getTime() ?? null)) {
       data.startDate = newStart
       activities.push({ action: 'field_changed', fromValue: `início: ${fmtDate(current.startDate)}`, toValue: `início: ${fmtDate(newStart)}` })

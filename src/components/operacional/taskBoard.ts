@@ -23,6 +23,13 @@ export type BoardHandlers = {
   onToggleAssignee: (task: OperacionalTask, userId: string, willAssign: boolean) => Promise<void>
   /** Reordena dentro da coluna (Kanban): índices dos vizinhos (null nas bordas). */
   onReorder: (taskId: string, before: string | null, after: string | null) => Promise<void>
+  /**
+   * Semeia a coluna inteira na ordem visual dada (ids em ordem). Usado no
+   * primeiro reorder de uma coluna com orderIndex majoritariamente NULL —
+   * sem isso, a chave nova não reflete a posição visual (nulls ordenam depois)
+   * e o card "pula" após refresh.
+   */
+  onReorderSeed: (orderedIds: string[]) => Promise<void>
   /** Criação rápida — cria SEMPRE em "A fazer" (createOperacionalTask). */
   onQuickCreate: (title: string) => Promise<void>
   canEdit: boolean
@@ -155,7 +162,9 @@ export function compareTasks(a: OperacionalTask, b: OperacionalTask): number {
   const ad = a.dueDate ? new Date(a.dueDate).getTime() : Infinity
   const bd = b.dueDate ? new Date(b.dueDate).getTime() : Infinity
   if (ad !== bd) return ad - bd
-  return a.createdAt < b.createdAt ? 1 : -1 // mais recente primeiro no empate final
+  // Mais recente primeiro no empate final; 0 em igualdade (contrato de comparador).
+  if (a.createdAt === b.createdAt) return 0
+  return a.createdAt < b.createdAt ? 1 : -1
 }
 
 /** Ordena as encerradas por conclusão mais recente (coluna/‌grupo Concluído/Cancelado). */

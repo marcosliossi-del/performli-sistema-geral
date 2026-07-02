@@ -63,6 +63,15 @@ export function TasksKanbanView({
       const col = columns.find((c) => c.status === destStatus)
       if (!col) return
       const without = col.items.filter((t) => t.id !== draggableId)
+      // Coluna com itens SEM orderIndex: chaves de vizinhos nulos não refletem
+      // a posição visual (nulls ordenam depois) — semeia a coluna inteira na
+      // nova ordem visual, uma única vez; depois disso o caminho barato assume.
+      const newOrder = [...without]
+      newOrder.splice(destination.index, 0, task)
+      if (newOrder.some((t) => t.orderIndex == null)) {
+        await handlers.onReorderSeed(newOrder.map((t) => t.id))
+        return
+      }
       const before = without[destination.index - 1]?.orderIndex ?? null
       const after = without[destination.index]?.orderIndex ?? null
       await handlers.onReorder(draggableId, before, after)
