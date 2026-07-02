@@ -313,7 +313,7 @@ function PanelSections({
     void commit(() => setStartDate(next), () => setStartDate(prev), () => updateTaskFields(data.id, { startDate: next }))
   }
   function saveDescription() {
-    const next = descDraft.trim() ? descDraft : null
+    const next = descDraft.trim() || null
     if (next === (description ?? null)) return
     const prev = description
     void commit(
