@@ -53,6 +53,8 @@ export async function createOperacionalTask(input: CreateOperacionalTaskInput): 
       description: input.description?.trim() || null,
       type: input.type ?? 'SIMPLES',
       priority: input.priority ?? 'MEDIA',
+      status: 'A_FAZER',
+      statusId: statusIdFor('A_FAZER'),
       origin: 'MANUAL',
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
       clientId: input.clientId || null,
