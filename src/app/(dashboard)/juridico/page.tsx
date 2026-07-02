@@ -62,7 +62,10 @@ async function getData() {
     .filter(c => c.status !== 'CANCELADO')
     .map(c => ({
       contractId: c.id,
-      clientName: c.client.name,
+      // Identidade no padrão "Fantasia — Razão" usado no resto do sistema.
+      clientName: c.client.razaoSocial
+        ? `${c.client.name} — ${c.client.razaoSocial}`
+        : c.client.name,
       status:     c.status,
       startDate:  c.startDate,
       endDate:    c.endDate,

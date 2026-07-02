@@ -345,15 +345,43 @@ export function SeedOperacaoCard() {
               <span key={c.slug} className="text-[11px] px-2 py-0.5 rounded-full bg-[#38435C]/60 text-[#EBEBEB]">{c.name}</span>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={runCancelar}
-            disabled={loading}
-            className="flex items-center gap-2 text-xs font-semibold text-white bg-[#EF4444] rounded-lg px-3 py-2 transition-colors hover:bg-[#EF4444]/90 disabled:opacity-50"
-          >
-            {loading ? <Loader2 size={13} className="animate-spin" /> : null}
-            Cancelar {candidates.length} cliente{candidates.length > 1 ? 's' : ''} fora da carteira
-          </button>
+          {confirmCancel ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-semibold text-[#EF4444]">
+                Confirmar cancelamento de {candidates.length} cliente{candidates.length > 1 ? 's' : ''}?
+                Isso dispara o offboarding e suspende as recorrências. Ação não reversível por aqui.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={runCancelar}
+                  disabled={loading}
+                  className="flex items-center gap-2 text-xs font-semibold text-white bg-[#EF4444] rounded-lg px-3 py-2 transition-colors hover:bg-[#EF4444]/90 disabled:opacity-50"
+                >
+                  {loading ? <Loader2 size={13} className="animate-spin" /> : null}
+                  Confirmar cancelamento
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmCancel(false)}
+                  disabled={loading}
+                  className="flex items-center gap-2 text-xs font-semibold text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+                >
+                  Voltar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmCancel(true)}
+              disabled={loading}
+              className="flex items-center gap-2 text-xs font-semibold text-white bg-[#EF4444] rounded-lg px-3 py-2 transition-colors hover:bg-[#EF4444]/90 disabled:opacity-50"
+            >
+              {loading ? <Loader2 size={13} className="animate-spin" /> : null}
+              Cancelar {candidates.length} cliente{candidates.length > 1 ? 's' : ''} fora da carteira
+            </button>
+          )}
         </div>
       )}
 

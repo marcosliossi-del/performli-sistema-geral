@@ -2324,6 +2324,7 @@ export const getClientChat = cache(async (clientId: string) => {
 export type ClientChannelSummary = {
   clientId: string
   clientName: string
+  clientRazaoSocial: string | null   // razão social (como no Asaas) p/ identidade completa
   clientSlug: string
   status: string
   primaryManager: string | null
@@ -2350,7 +2351,7 @@ export const getClientChannels = cache(async (userId: string, role: string): Pro
   const clients = await prisma.client.findMany({
     where,
     select: {
-      id: true, name: true, slug: true, status: true,
+      id: true, name: true, razaoSocial: true, slug: true, status: true,
       assignments: {
         select: { isPrimary: true, user: { select: { name: true } } },
       },
@@ -2374,6 +2375,7 @@ export const getClientChannels = cache(async (userId: string, role: string): Pro
     return {
       clientId: c.id,
       clientName: c.name,
+      clientRazaoSocial: c.razaoSocial ?? null,
       clientSlug: c.slug,
       status: c.status,
       primaryManager: primary,
