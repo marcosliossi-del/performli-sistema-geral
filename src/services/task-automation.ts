@@ -18,9 +18,11 @@
  * / FALHA). Nenhuma chamada externa (sem timeout necessário aqui).
  */
 
+import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { TaskStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { writeAuditLog } from '@/lib/audit'
 
 export type TaskAutomationEvent = {
   type: 'task.created' | 'task.status_changed'
@@ -288,5 +290,16 @@ async function runAssign(
       reason: `Tarefa ${task.id} reatribuída a ${user.name} por automação`,
     },
   })
+  // Automação crítica gera AuditLog (CLAUDE.md #8); actor null = sistema.
+  await writeAuditLog({
+    action: 'automation.assign',
+    entityType: 'Task',
+    entityId: task.id,
+    clientId: task.clientId ?? null,
+    metadata: { ruleId, ruleName, assignedTo: userId },
+  })
+  // Reflete a reatribuição na UI sem esperar o próximo load. Best-effort:
+  // fora de contexto de request (cron), revalidate pode não se aplicar.
+  try { revalidatePath('/operacional'); revalidatePath('/meu-dia') } catch { /* cron */ }
   return 'SUCESSO'
 }

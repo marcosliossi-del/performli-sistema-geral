@@ -122,8 +122,9 @@ export async function runScheduledTaskRecurrences(
       }
 
       // Âncora = data da próxima ocorrência a materializar (dueDate). Sem
-      // dueDate cai para createdAt (garante uma âncora estável no fuso).
-      let anchor = t.dueDate ?? t.createdAt
+      // Série sem dueDate: âncora = AGORA (materializa a 1ª ocorrência hoje).
+      // Ancorar no createdAt faria backfill de ocorrências vencidas (ruído).
+      let anchor = t.dueDate ?? new Date()
       let iterations = 0
       let produced = false
 

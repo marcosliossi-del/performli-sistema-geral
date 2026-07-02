@@ -36,13 +36,22 @@ export type CreateOperacionalTaskInput = {
  */
 async function assertTaskWrite(
   session: { userId: string; role: string },
-  task: { clientId: string | null; assignedTo: string | null },
+  task: { id?: string; clientId: string | null; assignedTo: string | null },
 ): Promise<void> {
   if (task.clientId) {
     await assertClientMutationAccess(session, task.clientId, { allowCS: true })
     return
   }
   if (task.assignedTo === session.userId) return
+  // Paridade com a leitura (loadTaskDetail/panel): responsável auxiliar da
+  // task interna também pode escrever nela.
+  if (task.id) {
+    const aux = await prisma.taskAuxAssignee.findUnique({
+      where: { taskId_userId: { taskId: task.id, userId: session.userId } },
+      select: { taskId: true },
+    })
+    if (aux) return
+  }
   await assertCan(session, 'task.write', {})
 }
 
@@ -161,7 +170,7 @@ export async function toggleChecklistItem(itemId: string, done: boolean): Promis
   const session = await requireSession()
   const item = await prisma.taskChecklistItem.findUnique({
     where: { id: itemId },
-    select: { id: true, task: { select: { clientId: true, assignedTo: true } } },
+    select: { id: true, task: { select: { id: true, clientId: true, assignedTo: true } } },
   })
   if (!item || !item.task) return { error: 'Item não encontrado.' }
 
@@ -215,7 +224,7 @@ export async function removeChecklistItem(itemId: string): Promise<ActionResult>
   const session = await requireSession()
   const item = await prisma.taskChecklistItem.findUnique({
     where: { id: itemId },
-    select: { id: true, taskId: true, label: true, done: true, required: true, task: { select: { clientId: true, assignedTo: true } } },
+    select: { id: true, taskId: true, label: true, done: true, required: true, task: { select: { id: true, clientId: true, assignedTo: true } } },
   })
   if (!item || !item.task) return { error: 'Item não encontrado.' }
 
