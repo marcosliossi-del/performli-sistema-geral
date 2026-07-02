@@ -1170,7 +1170,10 @@ export const getOperacionalBoard = cache(
       : []
     const auxNameMap = new Map(auxUsers.map((u) => [u.id, u.name]))
 
-    const now = Date.now()
+    // Atraso: só conta como atrasada se o prazo caiu ANTES do início de hoje em
+    // SP (dueDate é meio-dia UTC; comparar com Date.now() marcava atraso às 09h
+    // do próprio dia do prazo).
+    const atrasoLimite = startOfTodaySaoPaulo().getTime()
     const tasks: OperacionalTask[] = rows.map((t) => {
       const primaryName = t.user?.name ?? '—'
       const assignees = [
@@ -1210,7 +1213,7 @@ export const getOperacionalBoard = cache(
 
     const abertasList = tasks.filter((t) => t.status !== 'CONCLUIDO' && t.status !== 'CANCELADO')
     const abertas = abertasList.length
-    const atrasadas = abertasList.filter((t) => t.dueDate != null && new Date(t.dueDate).getTime() < now).length
+    const atrasadas = abertasList.filter((t) => t.dueDate != null && new Date(t.dueDate).getTime() < atrasoLimite).length
     const aguardando = abertasList.filter((t) => AGUARDANDO_STATUS.has(t.status)).length
     const warRoom = tasks.filter((t) => t.type === 'WAR_ROOM' && t.status !== 'CONCLUIDO' && t.status !== 'CANCELADO').length
     const noPrazoPct = abertas > 0 ? Math.round(((abertas - atrasadas) / abertas) * 100) : 100

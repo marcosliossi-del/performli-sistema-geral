@@ -121,6 +121,24 @@ export async function deleteClient(clientId: string): Promise<UpdateClientState>
   const session = await requireSession()
   if (session.role !== 'ADMIN') return { error: 'Sem permissão.' }
 
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { name: true, slug: true },
+  })
+  if (!client) return { error: 'Cliente não encontrado.' }
+
+  // Registra a exclusão ANTES do delete — depois o cliente não existe mais para
+  // consultar nome/slug (regra CLAUDE.md #8: automação crítica gera AuditLog).
+  await writeAuditLog({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: 'client.deleted',
+    entityType: 'Client',
+    entityId: clientId,
+    clientId,
+    metadata: { name: client.name, slug: client.slug },
+  })
+
   await prisma.client.delete({ where: { id: clientId } })
   revalidatePath('/clients')
   redirect('/clients')
