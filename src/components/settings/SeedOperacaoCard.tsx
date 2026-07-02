@@ -16,6 +16,7 @@ type VinculoResult = {
   jaVinculados: number
   clienteNaoEncontrado: string[]
   semVinculo: string[]
+  duplicadosNoAsaas: string[]
   customersReligados: number
 }
 
@@ -401,10 +402,18 @@ export function SeedOperacaoCard() {
             {vinculo.clienteNaoEncontrado.length > 0 && (
               <p className="text-[#ff5e6a]">Cliente não encontrado: {vinculo.clienteNaoEncontrado.join(' · ')}</p>
             )}
+            {vinculo.duplicadosNoAsaas.length > 0 && (
+              <p className="text-[#e3ad45]">
+                Duplicados no Asaas (limpar lá quando puder): {vinculo.duplicadosNoAsaas.join(' · ')}
+              </p>
+            )}
             {vinculo.semVinculo.length > 0 && (
               <p className="text-[#e3ad45]">
-                Customers do Asaas SEM vínculo (me diga quem são): {vinculo.semVinculo.join(' · ')}
+                Customers com fatura recente SEM vínculo: {vinculo.semVinculo.join(' · ')}
               </p>
+            )}
+            {vinculo.semVinculo.length === 0 && (
+              <p className="text-[#34c97a]">Todos os customers com fatura recente estão vinculados. ✓</p>
             )}
           </div>
         )}
