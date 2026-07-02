@@ -7,7 +7,9 @@ import { ClientesTable } from '@/components/clientes/ClientesTable'
 export const dynamic = 'force-dynamic'
 
 async function getClientesData(userId: string, role: string) {
-  const canViewAll = ['ADMIN', 'CS', 'MANAGER'].includes(role)
+  // Posse (CLAUDE.md #2): ADMIN/CS veem toda a carteira; MANAGER/ANALYST só
+  // veem clientes atribuídos.
+  const canViewAll = ['ADMIN', 'CS'].includes(role)
   const where = canViewAll ? {} : { assignments: { some: { userId } } }
 
   const now        = new Date()
@@ -30,7 +32,16 @@ async function getClientesData(userId: string, role: string) {
     prisma.client.count({
       where: { ...where, createdAt: { gte: prevStart, lte: prevEnd } },
     }),
-    prisma.asaasPayment.count({ where: { status: 'OVERDUE' } }),
+    prisma.asaasPayment.count({
+      where: {
+        status: 'OVERDUE',
+        // Escopo de posse: ADMIN/CS contam a inadimplência global; MANAGER/ANALYST
+        // só contam faturas dos clientes que enxergam.
+        ...(canViewAll
+          ? {}
+          : { customer: { client: { assignments: { some: { userId } } } } }),
+      },
+    }),
   ])
 
   const active   = clients.filter(c => c.status === 'ACTIVE')

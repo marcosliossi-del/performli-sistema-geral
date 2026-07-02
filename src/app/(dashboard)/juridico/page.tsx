@@ -1,4 +1,5 @@
 import { Scale, FileText, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
+import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { formatCurrency } from '@/lib/utils'
@@ -72,7 +73,9 @@ async function getData() {
 }
 
 export default async function JuridicoPage() {
-  await requireSession()
+  const session = await requireSession()
+  // Contratos/jurídico são sensíveis: só ADMIN acessa.
+  if (session.role !== 'ADMIN') redirect('/')
   const { serialized, clients, users, vigentes, renovacoes, expirando, mrr, semFee, feesData } = await getData()
 
   const stats = [

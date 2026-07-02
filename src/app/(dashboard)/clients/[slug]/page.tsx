@@ -120,7 +120,8 @@ export default async function ClientDetailPage({
 }) {
   const { slug } = await params
   const { from, to } = await searchParams
-  const [session, client] = await Promise.all([requireSession(), getClientDetail(slug)])
+  const session = await requireSession()
+  const client = await getClientDetail(slug, { userId: session.userId, role: session.role })
   if (!client) notFound()
 
   // Default: 1st of current month → yesterday

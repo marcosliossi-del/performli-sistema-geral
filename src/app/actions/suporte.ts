@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { statusIdFor } from '@/lib/tasks/statusMap'
+import { parseDateInput } from '@/lib/tasks/dateInput'
 import { SupportDirection, SupportCategory, TaskPriority } from '@prisma/client'
 
 const createSchema = z.object({
@@ -72,7 +73,7 @@ export async function createSupportDemand(
       status: 'A_FAZER',
       statusId: statusIdFor('A_FAZER'), // espelho FK (D-004)
       priority,
-      dueDate: dueDate ? new Date(dueDate) : null,
+      dueDate: dueDate ? parseDateInput(dueDate) : null,
       clientId,
       assignedTo: assigneeId ?? client.csId ?? userId,
       requesterId: userId,

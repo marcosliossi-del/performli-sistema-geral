@@ -11,6 +11,7 @@ import { checkTaskCompletion } from '@/services/task-completion-guard'
 import { statusIdFor } from '@/lib/tasks/statusMap'
 import { mutateTask, type TaskFieldPatch, type ActivityEntry } from '@/lib/tasks/mutate'
 import { orderBetween } from '@/lib/tasks/fractional'
+import { parseDateInput } from '@/lib/tasks/dateInput'
 import {
   parseRecurrenceRule,
   computeNextOccurrence,
@@ -63,7 +64,7 @@ export async function createTask(formData: FormData) {
       priority,
       status: 'A_FAZER',
       statusId: statusIdFor('A_FAZER'),
-      dueDate: dueDate ? new Date(dueDate) : null,
+      dueDate: dueDate ? parseDateInput(dueDate) : null,
       clientId: clientId || null,
       assignedTo: userId,
       requesterId: userId,
@@ -113,6 +114,14 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
   // Mutação em tarefa de cliente: valida papel + posse (CS acompanha, pode atualizar).
   if (current.clientId) {
     await assertClientMutationAccess(session, current.clientId, { allowCS: true })
+  } else {
+    // Tarefa interna (sem cliente): permitida ao responsável principal ou a um
+    // responsável auxiliar; nas demais, assertCan barra papéis sem escrita.
+    const isOwner = current.assignedTo === session.userId
+    const isAux = current.auxAssignees.some((a) => a.userId === session.userId)
+    if (!isOwner && !isAux) {
+      await assertCan(session, 'task.write', {})
+    }
   }
 
   const isConcluir = status === 'CONCLUIDO'
@@ -282,16 +291,6 @@ function fmtDate(d: Date | null | undefined): string {
   return d ? d.toISOString().slice(0, 10) : '—'
 }
 
-/**
- * Converte data de <input type="date"> ('YYYY-MM-DD') para meio-dia UTC:
- * meia-noite UTC vira 21h do dia ANTERIOR em America/Sao_Paulo (off-by-one);
- * meio-dia UTC cai no MESMO dia em qualquer fuso ±12. Strings com hora passam
- * direto.
- */
-function parseDateInput(s: string): Date {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T12:00:00Z`) : new Date(s)
-}
-
 export async function updateTaskFields(taskId: string, patch: UpdateTaskFieldsInput): Promise<ActionResult> {
   const session = await requireSession()
 
@@ -371,7 +370,18 @@ export async function updateTaskFields(taskId: string, patch: UpdateTaskFieldsIn
 
   if (activities.length === 0) return { ok: true }
 
-  const result = await mutateTask(taskId, session, data, activities)
+  // D-005: se o novo responsável principal já existia como auxiliar da task,
+  // remove-o de TaskAuxAssignee na MESMA transação do update (não pode ser
+  // principal e auxiliar ao mesmo tempo). O antigo principal é descartado
+  // (não é rebaixado a auxiliar) — comportamento desejado.
+  const extraOps: Prisma.PrismaPromise<unknown>[] = []
+  if (data.assignedTo !== undefined && typeof data.assignedTo === 'string') {
+    extraOps.push(
+      prisma.taskAuxAssignee.deleteMany({ where: { taskId, userId: data.assignedTo } }),
+    )
+  }
+
+  const result = await mutateTask(taskId, session, data, activities, extraOps)
   if ('error' in result) return result
 
   revalidatePath('/operacional')

@@ -284,6 +284,14 @@ function statusRank(status: string): number {
   return PAYMENT_STATUS_RANK[status] ?? 1
 }
 
+// Estados EM ANÁLISE (não terminais): o estorno/chargeback ainda pode ser
+// NEGADO, devolvendo a fatura a um estado recebido. Apesar do rank alto, eles
+// NÃO devem travar a volta para RECEIVED/CONFIRMED (estorno negado) nem para
+// REFUNDED (estorno confirmado). Já RECEIVED/CONFIRMED/REFUNDED permanecem
+// protegidos contra regressão.
+const NON_TERMINAL_ANALYSIS = new Set(['REFUND_REQUESTED', 'CHARGEBACK_REQUESTED'])
+const RESOLUTION_FROM_ANALYSIS = new Set(['RECEIVED', 'CONFIRMED', 'REFUNDED'])
+
 /** Called by Asaas webhook: update a single payment status in real-time */
 export async function handlePaymentWebhook(payload: {
   event: string
@@ -304,7 +312,16 @@ export async function handlePaymentWebhook(payload: {
     select: { status: true },
   })
 
-  const wouldRegress = !!existing && statusRank(newStatus) < statusRank(existing.status)
+  // Resolução de um estado EM ANÁLISE: se a fatura estava em REFUND_REQUESTED/
+  // CHARGEBACK_REQUESTED e o Asaas resolve (estorno negado → RECEIVED/CONFIRMED,
+  // ou confirmado → REFUNDED), a transição é legítima mesmo com rank menor.
+  const resolvesAnalysis =
+    !!existing &&
+    NON_TERMINAL_ANALYSIS.has(existing.status) &&
+    RESOLUTION_FROM_ANALYSIS.has(newStatus)
+
+  const wouldRegress =
+    !!existing && !resolvesAnalysis && statusRank(newStatus) < statusRank(existing.status)
   if (wouldRegress) {
     console.warn(
       `[Asaas Webhook] Evento fora de ordem ignorado p/ pagamento ${payment.id}: ` +

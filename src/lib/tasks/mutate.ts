@@ -47,6 +47,11 @@ export async function mutateTask(
   session: SessionLike,
   patch: TaskFieldPatch,
   activity: ActivityEntry | ActivityEntry[],
+  /**
+   * Operações adicionais anexadas à MESMA prisma.$transaction do update
+   * (ex.: reconciliar TaskAuxAssignee ao trocar o responsável principal — D-005).
+   */
+  extraOps: Prisma.PrismaPromise<unknown>[] = [],
 ): Promise<MutateResult> {
   const current = await prisma.task.findUnique({
     where: { id: taskId },
@@ -89,6 +94,7 @@ export async function mutateTask(
           },
         }),
       ),
+      ...extraOps,
     ])
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Falha ao atualizar a tarefa.' }

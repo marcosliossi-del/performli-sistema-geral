@@ -5,7 +5,7 @@ import { prisma } from './prisma'
 import { getSession } from './session'
 import { redirect } from 'next/navigation'
 import { HealthStatus, Prisma } from '@prisma/client'
-import { getWeekRange, getMonthRange } from './utils'
+import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 
@@ -416,12 +416,21 @@ export const getClientsList = unstable_cache(_fetchClientsList, ['getClientsList
 
 // ─── Client detail ────────────────────────────────────────────────────────────
 
-export const getClientDetail = cache(async (slug: string) => {
+export const getClientDetail = cache(async (
+  slug: string,
+  viewer: { userId: string; role: string },
+) => {
   const { start: weekStart, end: weekEnd } = getWeekRange()
   const { start: monthStart, end: monthEnd } = getMonthRange()
 
-  const client = await prisma.client.findUnique({
-    where: { slug },
+  // Posse (CLAUDE.md #1/#2): ADMIN/CS veem qualquer cliente; MANAGER/ANALYST
+  // só veem clientes atribuídos. Sem atribuição, o cliente é invisível (null).
+  const ownershipWhere: Prisma.ClientWhereInput = canViewAll(viewer.role)
+    ? {}
+    : { assignments: { some: { userId: viewer.userId } } }
+
+  const client = await prisma.client.findFirst({
+    where: { slug, ...ownershipWhere },
     include: {
       assignments: {
         include: { user: { select: { id: true, name: true, email: true, role: true } } },

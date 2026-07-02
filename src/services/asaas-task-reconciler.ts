@@ -211,6 +211,29 @@ export async function reconcileAsaasTasks(): Promise<ReconcileResult> {
         result.reabertas++
         continue
       }
+
+      // ── 3b. ESTORNO SEM TAREFA ATIVA (task CANCELADA) ────────────────────────
+      // Não reabrimos silenciosamente uma cobrança que foi CANCELADA (decisão
+      // humana). Mas o dinheiro voltou a estar em risco: registramos auditoria e
+      // criamos um Alert para o financeiro verificar — nada some silencioso.
+      if (estorno && existing.status === 'CANCELADO') {
+        await writeAuditLog({
+          action: 'asaas.estornoSemTarefa',
+          entityType: 'Task',
+          entityId: existing.id,
+          clientId,
+          metadata: { paymentId: p.id, valorEstornado: Number(valorEfetivo), statusAsaas: p.status, taskStatus: existing.status },
+        })
+        await prisma.alert.create({
+          data: {
+            clientId,
+            type: 'INVOICE_OVERDUE',
+            title: `Estorno de fatura de ${clientName} sem tarefa ativa — verificar cobrança`,
+            body: `${ESTORNO_LABEL[p.status] ?? 'Pagamento estornado no Asaas'} (${brl(valorEfetivo)}), mas a tarefa de cobrança está CANCELADA. O dinheiro voltou a estar em risco — verificar manualmente no Asaas.`,
+          },
+        })
+        continue
+      }
     } catch (err) {
       result.erros.push(`fatura ${p.id}: ${err instanceof Error ? err.message : 'erro desconhecido'}`)
     }
