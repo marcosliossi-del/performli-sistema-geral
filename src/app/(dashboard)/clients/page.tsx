@@ -3,14 +3,14 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { formatCurrency } from '@/lib/utils'
 import { ClientesTable } from '@/components/clientes/ClientesTable'
+import { normalizeRole, scopeClients } from '@/lib/rbac'
 
 export const dynamic = 'force-dynamic'
 
 async function getClientesData(userId: string, role: string) {
-  // Posse (CLAUDE.md #2): ADMIN/CS veem toda a carteira; MANAGER/ANALYST só
-  // veem clientes atribuídos.
-  const canViewAll = ['ADMIN', 'CS'].includes(role)
-  const where = canViewAll ? {} : { assignments: { some: { userId } } }
+  // Posse (CLAUDE.md #2): staff amplo vê toda a carteira; só GESTOR_TRAFEGO fica
+  // restrito aos clientes atribuídos (scopeClients).
+  const where = scopeClients(normalizeRole(role), userId)
 
   const now        = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)

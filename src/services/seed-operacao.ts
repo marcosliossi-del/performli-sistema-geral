@@ -29,11 +29,11 @@ type SeedUser = {
 
 const TEAM: SeedUser[] = [
   { slug: 'marcos-liossi',  name: 'Marcos Liossi',  email: 'marcosliossi@arkza.com.br', externalId: '152690431', operationalRole: 'HEAD',           role: 'ADMIN'   },
-  { slug: 'leandro-strazzi', name: 'Leandro Strazzi', email: null,                       externalId: '81516815',  operationalRole: 'SUPERVISOR',     role: 'MANAGER' },
-  { slug: 'pablo-junior',   name: 'Pablo Júnior',   email: 'jjuniorpablo1@gmail.com',   externalId: '254576012', operationalRole: 'GESTOR',         role: 'MANAGER' },
-  { slug: 'kyn-leonardo',   name: 'Kyn Leonardo',   email: null,                        externalId: '81525390',  operationalRole: 'CRM',            role: 'MANAGER' },
+  { slug: 'leandro-strazzi', name: 'Leandro Strazzi', email: null,                       externalId: '81516815',  operationalRole: 'SUPERVISOR',     role: 'SUPERVISOR_TRAFEGO' },
+  { slug: 'pablo-junior',   name: 'Pablo Júnior',   email: 'jjuniorpablo1@gmail.com',   externalId: '254576012', operationalRole: 'GESTOR',         role: 'GESTOR_TRAFEGO' },
+  { slug: 'kyn-leonardo',   name: 'Kyn Leonardo',   email: null,                        externalId: '81525390',  operationalRole: 'CRM',            role: 'GESTOR_TRAFEGO' },
   { slug: 'leticia-perez',  name: 'Leticia Perez',  email: 'leticiaperez1812@gmail.com', externalId: '87373550', operationalRole: 'CS',             role: 'CS'      },
-  { slug: 'red',            name: 'Red',            email: null,                        externalId: null,        operationalRole: 'ACOMPANHAMENTO', role: 'ANALYST' },
+  { slug: 'red',            name: 'Red',            email: null,                        externalId: null,        operationalRole: 'ACOMPANHAMENTO', role: 'ANALISTA_TRAFEGO' },
 ]
 
 // ── 15 templates recorrentes (seção 8) ────────────────────────────────────────

@@ -6,12 +6,16 @@ import { MetasDashboard } from '@/components/agency/MetasDashboard'
 import { fetchMonthProgress } from '@/app/actions/progress'
 import { MetasPageTabs } from '@/components/agency/MetasPageTabs'
 import { SyncWeeklyGoalsButton } from '@/components/agency/SyncWeeklyGoalsButton'
+import { normalizeRole, can, stripSensitive } from '@/lib/rbac'
 
 export const dynamic = 'force-dynamic'
 
 export default async function MetasPage() {
   const session = await requireSession()
-  if (session.role !== 'ADMIN') redirect('/dashboard')
+  const role = normalizeRole(session.role)
+  // RBAC v2: metas — GESTOR não vê (matriz gestaoEquipeMetas: NONE → redirect);
+  // ADMIN vê tudo; SUPERVISOR/ANALISTA/CS leem SEM metas de receita (strip).
+  if (!can(role, 'view', 'gestaoEquipeMetas')) redirect('/dashboard')
 
   const now = new Date()
   const year  = now.getFullYear()
@@ -70,6 +74,11 @@ export default async function MetasPage() {
     const leads = c.goals.find((g) => g.metric === 'LEADS')
     const cpl   = c.goals.find((g) => g.metric === 'CPL')
     const tm    = prevTicket.get(c.id) ?? null
+    // Meta de FATURAMENTO é RECEITA (REVENUE_METRICS): oculta para não-ADMIN via
+    // stripSensitive('Goal'). Metas operacionais (ROAS/SPEND/LEADS/CPL) ficam.
+    const fatStripped = fat
+      ? stripSensitive(role, 'Goal', { metric: 'FATURAMENTO', targetValue: Number(fat.targetValue) })
+      : null
     return {
       id: c.id,
       name: c.name,
@@ -77,7 +86,7 @@ export default async function MetasPage() {
       businessType: c.businessType,
       managerName: c.assignments[0]?.user?.name ?? '—',
       goals: {
-        FATURAMENTO: fat   ? Number(fat.targetValue)   : null,
+        FATURAMENTO: fatStripped && 'targetValue' in fatStripped ? (fatStripped.targetValue as number) : null,
         ROAS:        roas  ? Number(roas.targetValue)  : null,
         SPEND:       spend ? Number(spend.targetValue) : null,
         LEADS:       leads ? Number(leads.targetValue) : null,

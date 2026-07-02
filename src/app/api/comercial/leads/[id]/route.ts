@@ -23,8 +23,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession()
-  // ANALYST é read-only: não pode mutar o pipeline comercial.
-  if (!session || !['ADMIN', 'CS', 'MANAGER'].includes(session.role)) {
+  // RBAC v2: pipeline comercial é SÓ ADMIN (matriz comercial).
+  if (!session || session.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -81,7 +81,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession()
-  if (!session || !['ADMIN', 'CS'].includes(session.role)) {
+  // RBAC v2: excluir lead do pipeline comercial é SÓ ADMIN.
+  if (!session || session.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

@@ -7,6 +7,7 @@ import { markAlertRead, markAllAlertsRead } from '@/app/actions/alerts'
 import { timeAgo } from '@/lib/utils'
 import { AlertTriangle, AlertCircle, CheckCircle2, TrendingDown, Bell, BellOff, ArrowDownRight, ArrowUpRight, ShieldAlert, Scale } from 'lucide-react'
 import { AlertType } from '@prisma/client'
+import { normalizeRole } from '@/lib/rbac'
 
 const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string; label: string }> = {
   STATUS_DROPPED_TO_RUIM:         { icon: AlertTriangle,  color: 'text-[#EF4444]', label: 'Performance Ruim' },
@@ -62,7 +63,7 @@ export default async function AlertsPage({
     ? (filtroRaw as FiltroKey)
     : 'todos'
 
-  const isViewAll = session.role === 'ADMIN' || session.role === 'CS'
+  const isViewAll = normalizeRole(session.role) !== 'GESTOR_TRAFEGO'
   const where =
     isViewAll
       ? {}

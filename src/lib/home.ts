@@ -32,8 +32,12 @@ export function homeForUser(
       return '/cockpit'
     case 'CS':
       return '/suporte'
+    case 'SUPERVISOR_TRAFEGO':
+      return '/cockpit'
     case 'MANAGER':
     case 'ANALYST':
+    case 'GESTOR_TRAFEGO':
+    case 'ANALISTA_TRAFEGO':
       return '/meu-dia'
     default:
       return '/meu-dia'

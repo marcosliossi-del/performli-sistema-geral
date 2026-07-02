@@ -3,6 +3,7 @@
 import { requireSession } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
+import { normalizeRole } from '@/lib/rbac'
 
 export type SearchResult = {
   tasks: { id: string; title: string; clientSlug: string | null; status: string }[]
@@ -10,8 +11,10 @@ export type SearchResult = {
   pops: { id: string; code: string; name: string }[]
 }
 
+// Staff amplo (ADMIN/CS/SUPERVISOR/ANALISTA) busca em tudo; só GESTOR fica
+// restrito à carteira (delegado ao engine — scopeClients equivalente).
 function canViewAll(role: string): boolean {
-  return role === 'ADMIN' || role === 'CS'
+  return normalizeRole(role) !== 'GESTOR_TRAFEGO'
 }
 
 /**

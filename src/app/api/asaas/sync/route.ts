@@ -8,7 +8,8 @@ import { syncAsaasData } from '@/services/asaas/sync'
  */
 export async function POST(request: NextRequest) {
   const session = await getSession()
-  if (!session || !['ADMIN', 'MANAGER'].includes(session.role)) {
+  // Asaas = dados financeiros/receita da agência: SÓ ADMIN (matriz financeiro).
+  if (!session || session.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

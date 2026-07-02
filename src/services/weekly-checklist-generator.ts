@@ -140,7 +140,7 @@ export async function generateAllWeeklyChecklists(): Promise<{
   const managers = await prisma.user.findMany({
     where: {
       active: true,
-      role: { in: ['MANAGER', 'ADMIN'] },
+      role: { in: ['GESTOR_TRAFEGO', 'MANAGER', 'ADMIN'] },
     },
     select: { id: true },
   })

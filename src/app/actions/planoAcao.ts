@@ -46,7 +46,7 @@ export async function generatePlanoAcao(clientId: string): Promise<PlanoAcaoResp
 
   let context: string
   try {
-    context = await getClientAIContext(clientId)
+    context = await getClientAIContext(clientId, session.role)
   } catch {
     return { error: 'Não foi possível montar o contexto do cliente. Verifique se GA4/Meta estão sincronizados.' }
   }

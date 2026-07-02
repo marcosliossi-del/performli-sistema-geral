@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { getClientAIContext, getSeasonalityContext } from '@/lib/ai-client-context'
+import { normalizeRole } from '@/lib/rbac'
 import { searchKnowledge, formatKnowledgeContext } from '@/lib/knowledge-search'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -124,8 +125,8 @@ export async function POST(request: NextRequest) {
 
     // Inject client-specific context if requested
     if (clientId) {
-      // Access check: MANAGER/ANALYST can only query their assigned clients
-      if (session.role === 'MANAGER' || session.role === 'ANALYST') {
+      // Escopo (RBAC v2): GESTOR_TRAFEGO só consulta clientes da carteira.
+      if (normalizeRole(session.role) === 'GESTOR_TRAFEGO') {
         const assignment = await prisma.clientAssignment.findFirst({
           where: { clientId, userId: session.userId },
         })
@@ -134,7 +135,8 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const clientContext = await getClientAIContext(clientId)
+      // Contexto injetado no LLM nunca inclui financeiro para não-ADMIN.
+      const clientContext = await getClientAIContext(clientId, session.role)
       if (clientContext) {
         systemPrompt += '\n\n' + clientContext
       }
