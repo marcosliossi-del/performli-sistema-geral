@@ -19,7 +19,7 @@
  *   orderBetween(null,null) = "V"          (meio de [0,1) )
  *   orderBetween("V",null)  = "k"          ("V" < "k")
  *   orderBetween(null,"V")  = "F"          ("F" < "V")
- *   orderBetween("V","k")   = "d"          ("V" < "d" < "k")
+ *   orderBetween("V","k")   = "c"          ("V" < "c" < "k")
  *   orderBetween("a","b")   = "aV"         (adjacentes → estende profundidade)
  *   orderBetween("V","V1")  = "V0V"        (b é extensão de a → desce nível)
  *   orderBetween("0","1")   = "0V"
@@ -97,5 +97,7 @@ export function orderBetween(a: string | null, b: string | null): string {
     }
     length++ // adjacentes nesta resolução: aumenta profundidade e tenta de novo.
   }
-  throw new Error('orderBetween: limites indistinguíveis mesmo na resolução máxima.')
+  // Mensagem operacional: o caller exibe em toast. ~300+ inserções na MESMA
+  // posição esgotam a resolução — arrastar o item para outro ponto resolve.
+  throw new Error('Não foi possível reordenar aqui: posição saturada. Mova o item para outro ponto da lista.')
 }
