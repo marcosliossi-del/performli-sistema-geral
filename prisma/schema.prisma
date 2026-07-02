@@ -535,6 +535,8 @@ enum AlertType {
   // ── OPE-06: check-in semanal ─────────────────────────────────────────────
   CHECKIN_MISSING              // Cliente sem check-in preenchido na semana
   CHECKIN_REJECTED_STALE       // Check-in reprovado sem correção no prazo
+  // ── Fase 5 (A5): motor de automação de tasks (ação `notify`) ─────────────
+  TASK_AUTOMATION              // Alerta disparado por regra de automação de tarefa
 }
 
 model Alert {
@@ -1093,11 +1095,14 @@ model TaskRecurrenceRule {
 model TaskAutomationRule {
   id         String   @id @default(cuid())
   name       String
-  trigger    String
-  condition  String?
-  actionType String
+  trigger    String                // 'task.created' | 'task.status_changed'
+  condition  String?               // legado (string) — mantido; ver conditions
+  actionType String                // 'notify' | 'assign'
   templateId String?
   active     Boolean  @default(true)
+  // ── Fase 5 (A5) — motor v0 (aditivo, converge p/ BLOCO 3.1 conditions/actions)
+  conditions   Json?               // { listId?, clientId?, status? }
+  actionConfig Json?               // { assignTo?, alertTitle?, alertBody? }
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
