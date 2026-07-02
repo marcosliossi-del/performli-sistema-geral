@@ -32,6 +32,35 @@ function canViewAll(role: string): boolean {
 
 const STATUS_RANK: Record<HealthStatus, number> = { RUIM: 0, REGULAR: 1, OTIMO: 2 }
 
+/**
+ * Retorna o conjunto de clientId que possuem PELO MENOS UMA meta (Goal) vigente
+ * — MONTHLY do mês corrente ou WEEKLY da semana corrente. Serve para distinguir
+ * "cliente sem meta configurada" de "cliente com meta, mas ainda sem HealthScore
+ * (aguardando dados/sync)". Um único groupBy para todo o conjunto — evita N+1.
+ *
+ * IMPORTANTE: ter Goal ≠ ter HealthScore. O HealthScore só nasce quando há meta
+ * E snapshot com valor. Não confunda ausência de score com ausência de meta.
+ */
+async function getClientsWithActiveGoal(
+  clientIds: string[],
+  monthStart: Date,
+  weekStart: Date,
+): Promise<Set<string>> {
+  if (clientIds.length === 0) return new Set()
+  const grouped = await prisma.goal.groupBy({
+    by: ['clientId'],
+    where: {
+      clientId: { in: clientIds },
+      startDate: { lte: new Date() },
+      OR: [
+        { period: 'WEEKLY', endDate: { gte: weekStart } },
+        { period: 'MONTHLY', endDate: { gte: monthStart } },
+      ],
+    },
+  })
+  return new Set(grouped.map((g) => g.clientId))
+}
+
 /** Compara status atual vs anterior e retorna 'up', 'down' ou null (sem mudança / sem histórico) */
 function deriveStatusTrend(
   current: HealthStatus | null,
@@ -53,6 +82,9 @@ export type ClientHealthSummary = {
   logoUrl: string | null
   primaryManager: string | null
   overallStatus: HealthStatus | null
+  // true = cliente TEM meta vigente (Goal). Distingue "sem meta" (false) de
+  // "com meta, aguardando dados/sync" (true + overallStatus null).
+  hasActiveGoal: boolean
   achievementPct: number
   trend: 'up' | 'down' | 'stable'
   metrics: { name: string; status: HealthStatus; pct: number }[]
@@ -117,6 +149,12 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
     }),
   ])
 
+  const goalClientIds = await getClientsWithActiveGoal(
+    clients.map((c) => c.id),
+    monthStart,
+    weekStart,
+  )
+
   const summaries: ClientHealthSummary[] = clients.map((client) => {
     const allScores = client.healthScores
 
@@ -162,6 +200,7 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
       logoUrl: client.logoUrl,
       primaryManager: client.assignments[0]?.user.name ?? null,
       overallStatus,
+      hasActiveGoal: goalClientIds.has(client.id),
       achievementPct: Math.round(avgPct),
       trend,
       metrics: scores.slice(0, 4).map((s) => ({
@@ -207,6 +246,9 @@ export type ClientOperationalRow = {
   taxaConversao: number | null  // conversion rate %
   // health
   overallStatus: HealthStatus | null
+  // true = tem meta (Goal) vigente. overallStatus null + hasActiveGoal true =
+  // "aguardando dados/sync"; overallStatus null + false = "sem meta configurada".
+  hasActiveGoal: boolean
   statusTrend: 'up' | 'down' | null
   // budget
   budgetConsumed: number | null  // actual spend this month
@@ -220,6 +262,7 @@ export const getClientsOperationalTable = cache(async (
 ): Promise<ClientOperationalRow[]> => {
   const today = new Date()
   const { start: monthStart } = getMonthRange(today)
+  const { start: weekStart } = getWeekRange()
 
   const where: Prisma.ClientWhereInput =
     canViewAll(role)
@@ -263,6 +306,12 @@ export const getClientsOperationalTable = cache(async (
     },
     orderBy: { name: 'asc' },
   })
+
+  const goalClientIds = await getClientsWithActiveGoal(
+    clients.map((c) => c.id),
+    monthStart,
+    weekStart,
+  )
 
   return clients.map((c): ClientOperationalRow => {
     const snaps = c.metricSnapshots
@@ -309,6 +358,7 @@ export const getClientsOperationalTable = cache(async (
       cps,
       taxaConversao,
       overallStatus,
+      hasActiveGoal: goalClientIds.has(c.id),
       statusTrend: deriveStatusTrend(
         c.statusStreak?.status ?? null,
         c.statusStreak?.prevStatus ?? null,
@@ -1730,6 +1780,9 @@ export type ManagerClientRow = {
   name: string
   slug: string
   overallStatus: HealthStatus | null
+  // true = tem meta (Goal) vigente. overallStatus null + hasActiveGoal true =
+  // "aguardando dados/sync"; overallStatus null + false = "sem meta".
+  hasActiveGoal: boolean
   achievementPct: number | null
   platforms: string[]
   goalsTotal: number
@@ -1818,6 +1871,7 @@ export const getManagersOverview = cache(async (): Promise<ManagerWithStats[]> =
         name: c.name,
         slug: c.slug,
         overallStatus,
+        hasActiveGoal: c.goals.length > 0,
         achievementPct: avgPct,
         platforms: [...new Set(c.platformAccounts.map((p) => p.platform))],
         goalsTotal: c.goals.length,
@@ -2013,6 +2067,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
 
   // Also get previous week snapshots — GA4 only for revenue comparison
   const clientIds = clients.map((c) => c.id)
+  const goalClientIds = await getClientsWithActiveGoal(clientIds, monthStart, weekStart)
   const prevSnapshots = clientIds.length > 0
     ? await prisma.metricSnapshot.findMany({
         where: {
@@ -2149,7 +2204,8 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
         ? Math.round(healthScores.reduce((s, h) => s + Number(h.achievementPct ?? 0), 0) / healthScores.length)
         : null
       return {
-        id, name, slug, overallStatus, achievementPct: avgPct,
+        id, name, slug, overallStatus, hasActiveGoal: goalClientIds.has(id),
+        achievementPct: avgPct,
         platforms: [], goalsTotal: healthScores.length,
         goalsHit: healthScores.filter((s) => s.status === 'OTIMO').length,
         streakDays, streakStatus, statusTrend,
@@ -2608,7 +2664,10 @@ export type AgencyOverview = {
   weightedRoas: number | null
   totalPurchases: number
   activeClients: number
-  health: { otimo: number; regular: number; ruim: number; unknown: number }
+  // semMeta = cliente SEM nenhuma meta (Goal) vigente → "sem meta configurada".
+  // aguardandoDados = TEM meta, mas ainda sem HealthScore no período (sync/health
+  // ainda não rodou) → NÃO é alarme, é neutro. Nunca contar como "sem meta".
+  health: { otimo: number; regular: number; ruim: number; semMeta: number; aguardandoDados: number }
   byManager: AgencyManagerRow[]
   topClients: AgencyClientRow[]
   atRiskClients: AgencyClientRow[]
@@ -2655,6 +2714,8 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
   })
 
   const clientIds = clients.map((c) => c.id)
+  const { start: weekStart } = getWeekRange()
+  const goalClientIds = await getClientsWithActiveGoal(clientIds, monthStart, weekStart)
 
   // All MTD snapshots in one query
   const snaps = await prisma.metricSnapshot.findMany({
@@ -2685,7 +2746,7 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
   let totalRevenue = 0
   let totalSpend = 0
   let totalPurchases = 0
-  const health = { otimo: 0, regular: 0, ruim: 0, unknown: 0 }
+  const health = { otimo: 0, regular: 0, ruim: 0, semMeta: 0, aguardandoDados: 0 }
   const managerMap = new Map<string, AgencyManagerRow>()
   const clientRows: AgencyClientRow[] = []
 
@@ -2704,7 +2765,9 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
     if (status === 'OTIMO') health.otimo++
     else if (status === 'REGULAR') health.regular++
     else if (status === 'RUIM') health.ruim++
-    else health.unknown++
+    // Sem HealthScore: distingue "tem meta, aguardando dados" de "sem meta".
+    else if (goalClientIds.has(c.id)) health.aguardandoDados++
+    else health.semMeta++
 
     const manager = c.assignments[0]?.user ?? null
     const roas = k.spend > 0 && k.revenue > 0 ? Math.round((k.revenue / k.spend) * 100) / 100 : null

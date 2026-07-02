@@ -14,6 +14,7 @@ interface ClientHealth {
   logoUrl?: string | null
   primaryManager?: string | null
   overallStatus: HealthStatus | null
+  hasActiveGoal?: boolean
   achievementPct: number
   metrics: {
     name: string
@@ -115,8 +116,20 @@ function ClientCard({ client }: { client: ClientHealth }) {
                     {healthLabels[client.overallStatus]}
                   </Badge>
                 </div>
+              ) : client.hasActiveGoal ? (
+                <span
+                  className="text-[10px] text-[#95BBE2] px-2 py-0.5 rounded-full bg-[#95BBE2]/10"
+                  title="Meta cadastrada — a saúde aparece assim que o próximo sync trouxer os dados"
+                >
+                  Aguardando dados
+                </span>
               ) : (
-                <span className="text-[10px] text-[#87919E] px-2 py-0.5 rounded-full bg-[#38435C]/50">Sem metas</span>
+                <span
+                  className="text-[10px] text-[#87919E] px-2 py-0.5 rounded-full bg-[#38435C]/50"
+                  title="Cliente sem meta configurada — cadastre a meta para acompanhar a saúde"
+                >
+                  Sem meta
+                </span>
               )}
             </div>
             {client.streakDays != null && client.streakDays >= 3 && client.streakStatus && (

@@ -292,6 +292,9 @@ export default async function ClientDetailPage({
               contractStart: client.contractStart ?? null,
               source: client.source ?? null,
               businessType: client.businessType,
+              investimentoMeta: client.investimentoMeta != null ? Number(client.investimentoMeta) : null,
+              investimentoGoogle: client.investimentoGoogle != null ? Number(client.investimentoGoogle) : null,
+              investimentoTiktok: client.investimentoTiktok != null ? Number(client.investimentoTiktok) : null,
             }}
           />
           <SyncButton clientId={client.id} />

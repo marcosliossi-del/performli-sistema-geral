@@ -23,6 +23,7 @@ import { checkCheckins } from '@/services/checkin-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/services/weekly-goals-sync'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
 import { renewExpiredContracts } from '@/services/contract-renewal'
+import { projetarMetasDoMes } from '@/services/meta-projection'
 import { isCronAuthorized } from '@/lib/cron-auth'
 
 /**
@@ -39,13 +40,15 @@ function isAuthorized(request: NextRequest): boolean {
 }
 
 async function runDailySync() {
-  const day      = new Date().getDay()
-  const isSunday = day === 0
-  const isMonday = day === 1
+  const day           = new Date().getDay()
+  const isSunday       = day === 0
+  const isMonday       = day === 1
+  const isFirstOfMonth = new Date().getDate() === 1
 
   const summary: Record<string, unknown> = {
     synced: { meta: { ok: false }, ga4: { ok: false }, googleAds: { ok: false }, nuvemshop: { ok: false } },
     weeklyGoalsSync: isMonday ? { ok: false } : { ok: true, skipped: true },
+    metaProjection: isFirstOfMonth ? { ok: false } : { ok: true, skipped: true },
     asaas: { ok: false },
     asaasReconcile: { ok: false },
     healthScores: { ok: false },
@@ -119,6 +122,21 @@ async function runDailySync() {
       }
     } catch (err) {
       summary.weeklyGoalsSync = {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+  }
+
+  // ── Step 2e: Dia 1 do mês — projeção automática das metas do mês ─────────
+  // Projeta a métrica-resultado de cada cliente (crescimento por tipo de
+  // negócio), carrega as taxas do mês anterior e abre alerta de revisão.
+  if (isFirstOfMonth) {
+    try {
+      const projResult = await projetarMetasDoMes()
+      summary.metaProjection = { ok: true, ...projResult }
+    } catch (err) {
+      summary.metaProjection = {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
       }
