@@ -9,6 +9,7 @@ import { ChurnRiskChart } from '@/components/anti-churn/ChurnRiskChart'
 import { ProtocolCard } from '@/components/anti-churn/ProtocolCard'
 import { WarRoomPlanPanel } from '@/components/anti-churn/WarRoomPlanPanel'
 import { AntiChurnQueue } from '@/components/anti-churn/AntiChurnQueue'
+import { normalizeRole, can } from '@/lib/rbac'
 
 export default async function AntiChurnPage() {
   const session = await requireSession()
@@ -33,7 +34,7 @@ export default async function AntiChurnPage() {
   const medio = clients.filter((c) => c.riskLevel === 'MÉDIO').length
 
   // ── Protocolos ativos ──────────────────────────────────────────────────────
-  const isViewAll = role === 'ADMIN' || role === 'CS'
+  const isViewAll = normalizeRole(role) !== 'GESTOR_TRAFEGO'
   const protocolWhere = isViewAll
     ? {}
     : { client: { assignments: { some: { userId } } } }
@@ -90,7 +91,10 @@ export default async function AntiChurnPage() {
 
   // WAR-14: plano da War Room (critério de saída, responsável, prazo)
   const responsibleOptions = await getWarRoomResponsibleOptions()
-  const canEditWarRoom = role === 'ADMIN' || role === 'CS' || role === 'MANAGER'
+  // War Room: staff amplo edita tudo; GESTOR edita a carteira (posse validada
+  // nas actions). can(update, warRoom) inclui GESTOR na matriz — o recorte de
+  // linha é o protocolWhere acima.
+  const canEditWarRoom = can(normalizeRole(role), 'update', 'warRoom')
 
   // CSX-13: fila de ação anti-churn proativo
   const antiChurnQueue = await getAntiChurnQueue(userId, role)

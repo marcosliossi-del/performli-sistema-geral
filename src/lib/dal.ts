@@ -6,6 +6,7 @@ import { getSession } from './session'
 import { redirect } from 'next/navigation'
 import { HealthStatus, Prisma } from '@prisma/client'
 import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
+import { normalizeRole, scopeClients, stripSensitive } from './rbac'
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 
@@ -16,12 +17,15 @@ export const requireSession = cache(async () => {
 })
 
 /**
- * Returns true for roles that can see ALL clients (not just assigned ones).
- * ADMIN  → full access + mutations
- * CS     → full read access (Customer Success), no mutations
+ * Retorna true para papéis com LEITURA AMPLA operacional (todos os clientes,
+ * não só a carteira). Delega ao policy engine (src/lib/rbac): staff amplo
+ * (ADMIN, CS, SUPERVISOR_TRAFEGO, ANALISTA_TRAFEGO) enxerga tudo; apenas
+ * GESTOR_TRAFEGO (ex-MANAGER) fica restrito à carteira via ClientAssignment.
+ *
+ * Equivale a `Object.keys(scopeClients(role, _)).length === 0`.
  */
 function canViewAll(role: string): boolean {
-  return role === 'ADMIN' || role === 'CS'
+  return normalizeRole(role) !== 'GESTOR_TRAFEGO'
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -470,6 +474,12 @@ export const getClientDetail = cache(async (
       statusStreak: { select: { status: true, prevStatus: true, days: true } },
     },
   })
+
+  // Recorte de campos sensíveis (fee/valor de contrato/dia de cobrança da
+  // AGÊNCIA) — só ADMIN. Budget de mídia/performance permanece visível.
+  if (client && normalizeRole(viewer.role) !== 'ADMIN') {
+    return stripSensitive(normalizeRole(viewer.role), 'Client', client) as typeof client
+  }
 
   return client
 })
@@ -1306,11 +1316,14 @@ export const getTeamMembers = cache(async () => {
 
 export type WarRoomResponsibleOption = { id: string; name: string; role: string }
 
-/** Usuários ativos que podem ser responsáveis por uma War Room (ADMIN, CS, MANAGER). */
+/** Usuários ativos que podem ser responsáveis por uma War Room (staff: ADMIN, CS, tráfego). */
 export const getWarRoomResponsibleOptions = cache(
   async (): Promise<WarRoomResponsibleOption[]> => {
     return prisma.user.findMany({
-      where: { active: true, role: { in: ['ADMIN', 'CS', 'MANAGER'] } },
+      where: {
+        active: true,
+        role: { in: ['ADMIN', 'CS', 'GESTOR_TRAFEGO', 'SUPERVISOR_TRAFEGO', 'ANALISTA_TRAFEGO', 'MANAGER', 'ANALYST'] },
+      },
       orderBy: [{ role: 'asc' }, { name: 'asc' }],
       select: { id: true, name: true, role: true },
     })
@@ -1328,7 +1341,7 @@ export type CockpitData = {
   demandasAtrasadas: number
   contratosVencendo30d: number
   alertasNaoLidos: number
-  // Financeiro — apenas ADMIN/CS (null para os demais papéis)
+  // Financeiro — apenas ADMIN (null para os demais papéis)
   faturasVencidas: { count: number; total: number } | null
   ultimaAtualizacao: Date | null
 }
@@ -1385,7 +1398,9 @@ export const getCockpitData = cache(
         where: { status: 'VIGENTE', endDate: { gte: now, lte: in30d }, client: clientScope },
       }),
       prisma.alert.count({ where: { read: false, client: clientScope } }),
-      viewAll
+      // Financeiro (faturas vencidas Asaas) é dado de RECEITA da agência: SÓ
+      // ADMIN. viewAll não basta — SUPERVISOR/ANALISTA/CS não veem financeiro.
+      normalizeRole(role) === 'ADMIN'
         ? prisma.asaasPayment.aggregate({
             where: { status: 'OVERDUE' },
             _count: true,
@@ -1735,7 +1750,7 @@ export const getManagersOverview = cache(async (): Promise<ManagerWithStats[]> =
   const users = await prisma.user.findMany({
     where: {
       active: true,
-      role: 'MANAGER',
+      role: { in: ['GESTOR_TRAFEGO', 'MANAGER'] },
       managedClients: { some: { client: { status: 'ACTIVE' } } },
     },
     select: {
@@ -2173,7 +2188,7 @@ export const getManagersMRR = cache(async (): Promise<ManagerMRR[]> => {
   const managers = await prisma.user.findMany({
     where: {
       active: true,
-      role: 'MANAGER',
+      role: { in: ['GESTOR_TRAFEGO', 'MANAGER'] },
       managedClients: { some: { client: { status: 'ACTIVE' } } },
     },
     select: {
@@ -2890,7 +2905,8 @@ export const getAssignmentsData = cache(async () => {
       orderBy: { name: 'asc' },
     }),
     prisma.user.findMany({
-      where: { active: true, role: { in: ['ADMIN', 'MANAGER'] } },
+      // Gestores atribuíveis a clientes (carteira): GESTOR_TRAFEGO + ADMIN.
+      where: { active: true, role: { in: ['ADMIN', 'GESTOR_TRAFEGO', 'MANAGER'] } },
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     }),
@@ -3225,7 +3241,10 @@ export const getGestoresCarga = cache(async (role: string): Promise<GestorCarga[
   const atrasoLimite = startOfTodaySaoPaulo(now)
 
   const users = await prisma.user.findMany({
-    where: { active: true, role: { in: ['ADMIN', 'CS', 'MANAGER'] } },
+    where: {
+      active: true,
+      role: { in: ['ADMIN', 'CS', 'GESTOR_TRAFEGO', 'SUPERVISOR_TRAFEGO', 'ANALISTA_TRAFEGO', 'MANAGER', 'ANALYST'] },
+    },
     orderBy: [{ role: 'asc' }, { name: 'asc' }],
     select: { id: true, name: true, role: true },
   })

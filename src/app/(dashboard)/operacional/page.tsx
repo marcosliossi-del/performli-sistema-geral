@@ -1,5 +1,6 @@
 import { requireSession, getOperacionalBoard, getNovaTarefaContext } from '@/lib/dal'
 import { OperacionalBoard } from '@/components/operacional/OperacionalBoard'
+import { normalizeRole, can } from '@/lib/rbac'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,8 @@ export default async function OperacionalPage({
     getOperacionalBoard(userId, role),
     getNovaTarefaContext(userId, role),
   ])
-  const canEdit = role !== 'ANALYST'
+  // GESTOR só move de coluna (status); staff amplo cria/edita/deleta.
+  const canEdit = can(normalizeRole(role), 'update', 'tarefas')
   const k = board.kpis
 
   return (

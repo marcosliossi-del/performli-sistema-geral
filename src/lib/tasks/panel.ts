@@ -2,6 +2,7 @@ import 'server-only'
 
 import { prisma } from '@/lib/prisma'
 import { parseRecurrenceRule, type RecurrenceRule } from '@/lib/tasks/recurrence'
+import { normalizeRole, can } from '@/lib/rbac'
 import type {
   TaskStatus,
   TaskPriority,
@@ -92,6 +93,8 @@ export type TaskPanelResult = {
   currentUser: PanelUser
   /** UX: esconde ações que o papel não executa (backend ainda valida). */
   canEdit: boolean
+  /** GESTOR_TRAFEGO só muda status (mover de coluna); demais staff editam tudo. */
+  canEditStatusOnly: boolean
 }
 
 type Session = { userId: string; role: string }
@@ -161,7 +164,10 @@ export async function loadTaskPanel(
   if (!task) return null
 
   // ── Escopo por papel (leitura) ──────────────────────────────────────────────
-  const isViewAll = session.role === 'ADMIN' || session.role === 'CS'
+  // Staff amplo (ADMIN/CS/SUPERVISOR/ANALISTA) vê tudo; só GESTOR_TRAFEGO fica
+  // restrito à carteira / tarefas internas próprias (espelha scopeTasks).
+  const role = normalizeRole(session.role)
+  const isViewAll = role !== 'GESTOR_TRAFEGO'
   if (!isViewAll) {
     if (task.clientId) {
       const assigned = await prisma.clientAssignment.findUnique({
@@ -273,6 +279,9 @@ export async function loadTaskPanel(
     users,
     candidates,
     currentUser,
-    canEdit: session.role !== 'ANALYST',
+    // GESTOR não cria/edita campos/deleta — só move de coluna (status).
+    canEdit: can(role, 'update', 'tarefas'),
+    canEditStatusOnly:
+      !can(role, 'update', 'tarefas') && can(role, 'update_status_only', 'tarefas'),
   }
 }

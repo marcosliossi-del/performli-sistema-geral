@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
-import { writeAuditLog } from '@/lib/audit'
+import { writeAuditLog, assertClientMutationAccess } from '@/lib/audit'
 import type { ClientNps, ClientRelacionamento, ClientCurva } from '@prisma/client'
 
 type ActionResult = { ok: true } | { error: string }
@@ -22,14 +22,12 @@ export type FichaCsInput = {
 export async function updateFichaCs(clientId: string, input: FichaCsInput): Promise<ActionResult> {
   const session = await requireSession()
 
-  const canAll = session.role === 'ADMIN' || session.role === 'CS'
-  if (!canAll) {
-    if (session.role !== 'MANAGER') return { error: 'Seu papel não permite editar a ficha de CS.' }
-    const owns = await prisma.clientAssignment.findFirst({
-      where: { clientId, userId: session.userId },
-      select: { id: true },
-    })
-    if (!owns) return { error: 'Você não tem acesso a este cliente.' }
+  // Papel + posse via engine: ADMIN/CS/SUPERVISOR/ANALISTA (staff amplo) editam
+  // qualquer cliente; GESTOR_TRAFEGO só a carteira. allowCS mantém a CS habilitada.
+  try {
+    await assertClientMutationAccess(session, clientId, { allowCS: true })
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Seu papel não permite editar a ficha de CS.' }
   }
 
   const fb = Number.isFinite(input.feedbackNegativo) ? Math.max(0, Math.min(99, Math.trunc(input.feedbackNegativo))) : 0
