@@ -87,7 +87,7 @@ export function ConvertToClientModal({ lead, onClose, onConverted }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label="Converter em cliente"
-        className="relative w-full max-w-lg bg-[#0D2137] border border-[#38435C] rounded-2xl shadow-2xl overflow-hidden"
+        className="lg-glass-strong relative w-full max-w-lg bg-[#0D2137] border border-[#38435C] rounded-2xl shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

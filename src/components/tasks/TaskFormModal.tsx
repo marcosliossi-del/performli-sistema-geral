@@ -57,7 +57,7 @@ function TaskFormDialog({ clients, onClose }: { clients: Props['clients']; onClo
         role="dialog"
         aria-modal="true"
         aria-label="Nova Tarefa"
-        className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl"
+        className="lg-glass-strong bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl"
       >
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#38435C]">
               <h2 className="text-sm font-semibold text-[#EBEBEB]">Nova Tarefa</h2>

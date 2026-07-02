@@ -103,13 +103,13 @@ export function TaskDrawer({
 
   return (
     <>
-      <div className="ak-scrim fixed inset-0 bg-black/55 z-40" onClick={onClose} />
+      <div className="ak-scrim lg-overlay fixed inset-0 bg-black/55 z-40" onClick={onClose} />
       <aside
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={`Tarefa: ${task.title}`}
-        className="ak-drawer ak-glass-strong fixed right-0 top-0 h-screen w-full max-w-[580px] border-l border-[#38435C] z-50 flex flex-col shadow-[-20px_0_60px_rgba(0,0,0,0.4)]"
+        className="ak-drawer lg-glass-strong fixed right-0 top-0 h-screen w-full max-w-[580px] border-l border-[#38435C] z-50 flex flex-col shadow-[-20px_0_60px_rgba(0,0,0,0.4)]"
       >
         {/* ── Topo: breadcrumb + título + controles ── */}
         <div className="px-5 py-4 border-b border-[#38435C]">
@@ -303,7 +303,7 @@ export function TaskDrawer({
         </div>
 
         {/* ── Rodapé: avisos + ações ── */}
-        <div className="px-5 py-3.5 border-t border-[#38435C] flex items-center gap-2.5 ak-glass-strong">
+        <div className="px-5 py-3.5 border-t border-[#38435C] flex items-center gap-2.5 lg-glass-strong">
           {requiredOpen > 0 && (
             <span className="text-[11px] text-[#EF4444] mr-auto">⚠ {requiredOpen} {requiredOpen === 1 ? 'campo obrigatório pendente' : 'campos obrigatórios pendentes'}</span>
           )}

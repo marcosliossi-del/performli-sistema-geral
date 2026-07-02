@@ -82,7 +82,7 @@ function LinkGA4Dialog({ clientId, onClose }: { clientId: string; onClose: () =>
             role="dialog"
             aria-modal="true"
             aria-label="Vincular propriedade GA4"
-            className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl"
+            className="lg-glass-strong bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl"
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#38435C]">
               <div>

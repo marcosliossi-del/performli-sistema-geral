@@ -79,7 +79,7 @@ export function ContractFormModal({ clients, users, contract, defaultClientId, o
         role="dialog"
         aria-modal="true"
         aria-label={isEdit ? 'Editar Contrato' : 'Novo Contrato'}
-        className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        className="lg-glass-strong bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#38435C]">

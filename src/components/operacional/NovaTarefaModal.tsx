@@ -59,13 +59,13 @@ export function NovaTarefaModal({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="lg-overlay fixed inset-0 bg-black/50 z-40" onClick={onClose} />
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Nova tarefa"
-        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[#05141C] border border-[#38435C] rounded-xl z-50"
+        className="lg-glass-strong fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[#05141C] border border-[#38435C] rounded-xl z-50"
       >
         <div className="sticky top-0 bg-[#05141C] border-b border-[#38435C] px-5 py-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-[#EBEBEB]">Nova tarefa</h2>

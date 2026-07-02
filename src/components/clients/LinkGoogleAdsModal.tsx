@@ -79,7 +79,7 @@ function LinkGoogleAdsDialog({ clientId, onClose }: { clientId: string; onClose:
             role="dialog"
             aria-modal="true"
             aria-label="Vincular Google Ads"
-            className="bg-[#0A1E2C] border border-[#38435C] rounded-xl w-full max-w-sm shadow-2xl"
+            className="lg-glass-strong bg-[#0A1E2C] border border-[#38435C] rounded-xl w-full max-w-sm shadow-2xl"
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#38435C]">
               <div className="flex items-center gap-2">

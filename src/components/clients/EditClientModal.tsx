@@ -105,7 +105,7 @@ export function EditClientModal({ client, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label="Editar Cliente"
-        className="bg-[#0A1E2C] border border-[#38435C] rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col"
+        className="lg-glass-strong bg-[#0A1E2C] border border-[#38435C] rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#38435C] flex-shrink-0">

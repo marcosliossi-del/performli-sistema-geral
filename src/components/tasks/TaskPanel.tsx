@@ -98,13 +98,13 @@ function SlideOver({ onClose, children }: { onClose: () => void; children: React
   const ref = useModalA11y<HTMLElement>(onClose)
   return (
     <>
-      <div className="ak-scrim fixed inset-0 z-40 bg-black/55" onClick={onClose} aria-hidden />
+      <div className="ak-scrim lg-overlay fixed inset-0 z-40 bg-black/55" onClick={onClose} aria-hidden />
       <aside
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-label="Painel da tarefa"
-        className="ak-drawer ak-glass-strong fixed right-0 top-0 z-50 flex h-screen w-full max-w-[640px] flex-col border-l border-[var(--ak-hair)] shadow-[-20px_0_60px_rgba(0,0,0,0.4)]"
+        className="ak-drawer lg-glass-strong fixed right-0 top-0 z-50 flex h-screen w-full max-w-[640px] flex-col border-l border-[var(--ak-hair)] shadow-[-20px_0_60px_rgba(0,0,0,0.4)]"
       >
         {children}
       </aside>

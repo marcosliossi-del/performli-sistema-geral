@@ -52,13 +52,13 @@ export function ConfirmDialog({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="ak-scrim absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
+      <div className="ak-scrim lg-overlay absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
-        className="card ak-glass-strong relative w-full max-w-sm p-5"
+        className="card lg-glass-strong relative w-full max-w-sm p-5"
       >
         <h2 id="confirm-title" className="text-base font-semibold text-text-hi">
           {title}

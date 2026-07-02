@@ -170,7 +170,7 @@ export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
   const pathname = usePathname()
 
   return (
-    <aside className="ak-sidebar w-60 flex-shrink-0 h-screen sticky top-0 bg-[#0A1E2C] border-r border-[#38435C] flex flex-col">
+    <aside className="lg-sidebar w-60 flex-shrink-0 h-screen sticky top-0 bg-[#0A1E2C] border-r border-[#38435C] flex flex-col">
       {/* Logo */}
       <div className="h-16 flex items-center px-5 border-b border-[#38435C]">
         <Link href={homeHref} className="flex items-center gap-2.5">
