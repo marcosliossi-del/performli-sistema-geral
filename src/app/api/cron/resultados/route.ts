@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runResultadoUpdate } from '@/services/resultado-engine'
 import { isCronAuthorized } from '@/lib/cron-auth'
+import { recordCronHeartbeat } from '@/lib/cron-heartbeat'
 
 /**
  * /api/cron/resultados — atualiza o Resultado semanal (ROAS/GA4) dos clientes
@@ -20,6 +21,7 @@ async function handle(request: NextRequest) {
   const force = new URL(request.url).searchParams.get('force') === '1'
   try {
     const result = await runResultadoUpdate({ force })
+    await recordCronHeartbeat('RESULTADOS') // watchdog S1-007 — nunca lança
     return NextResponse.json({ ok: true, force, ...result })
   } catch (err) {
     return NextResponse.json(

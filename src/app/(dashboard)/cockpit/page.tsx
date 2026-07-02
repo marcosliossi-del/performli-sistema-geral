@@ -1,5 +1,6 @@
-import { requireSession, getCockpitData, getCheckinStats } from '@/lib/dal'
+import { requireSession, getCockpitData, getCheckinStats, getCronHealth } from '@/lib/dal'
 import { LastUpdatedBadge } from '@/components/cockpit/LastUpdatedBadge'
+import { CronHealthBanner } from '@/components/cockpit/CronHealthBanner'
 import { OperationalCard } from '@/components/cockpit/OperationalCard'
 import {
   ShieldAlert, Target, ListTodo, FileWarning, Bell, Banknote,
@@ -20,13 +21,17 @@ const PENDENTES: { titulo: string; pop: string }[] = [
 
 export default async function CockpitPage() {
   const { userId, role } = await requireSession()
-  const [data, checkins] = await Promise.all([
+  const [data, checkins, cronHealth] = await Promise.all([
     getCockpitData(userId, role),
     getCheckinStats(userId, role),
+    getCronHealth(role),
   ])
 
   return (
     <div className="space-y-6">
+      {/* Watchdog do cron (S1-007): avisa se a atualização automática parou. */}
+      <CronHealthBanner health={cronHealth} />
+
       {/* Cabeçalho */}
       <div className="flex items-start justify-between gap-4">
         <div>

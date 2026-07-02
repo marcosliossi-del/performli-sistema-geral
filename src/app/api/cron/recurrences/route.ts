@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { runTaskRecurrences } from '@/services/recurrence-engine'
 import { runScheduledTaskRecurrences } from '@/services/task-schedule-recurrence'
 import { isCronAuthorized } from '@/lib/cron-auth'
+import { recordCronHeartbeat } from '@/lib/cron-heartbeat'
 
 /**
  * /api/cron/recurrences — cron DEDICADO de recorrências (audit §3). Cobre DOIS
@@ -35,6 +36,7 @@ async function handle(request: NextRequest) {
       scheduled = { error: err instanceof Error ? err.message : String(err) }
     }
 
+    await recordCronHeartbeat('RECURRENCES') // watchdog S1-007 — nunca lança
     return NextResponse.json({ ok: true, force, ...result, scheduled })
   } catch (err) {
     console.error('[cron/recurrences]', err)
