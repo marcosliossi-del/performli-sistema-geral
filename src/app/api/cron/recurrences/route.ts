@@ -37,8 +37,9 @@ async function handle(request: NextRequest) {
 
     return NextResponse.json({ ok: true, force, ...result, scheduled })
   } catch (err) {
+    console.error('[cron/recurrences]', err)
     return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      { ok: false, error: 'Falha ao processar as recorrências de tarefas.' },
       { status: 500 },
     )
   }

@@ -56,8 +56,8 @@ export async function POST(req: NextRequest) {
     const balance = await client.getBalance()
     return NextResponse.json({ ok: true, balance: balance.balance })
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ ok: false, error: detail }, { status: 422 })
+    console.error('[settings/asaas] falha ao testar chave', err)
+    return NextResponse.json({ ok: false, error: 'A chave foi salva, mas a conexão de teste com o Asaas falhou. Verifique se a chave está correta.' }, { status: 422 })
   }
 }
 

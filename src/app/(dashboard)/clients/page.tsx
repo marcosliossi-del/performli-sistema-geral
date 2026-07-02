@@ -7,7 +7,9 @@ import { ClientesTable } from '@/components/clientes/ClientesTable'
 export const dynamic = 'force-dynamic'
 
 async function getClientesData(userId: string, role: string) {
-  const canViewAll = ['ADMIN', 'CS', 'MANAGER'].includes(role)
+  // Posse (CLAUDE.md #2): ADMIN/CS veem toda a carteira; MANAGER/ANALYST só
+  // veem clientes atribuídos.
+  const canViewAll = ['ADMIN', 'CS'].includes(role)
   const where = canViewAll ? {} : { assignments: { some: { userId } } }
 
   const now        = new Date()
@@ -30,7 +32,16 @@ async function getClientesData(userId: string, role: string) {
     prisma.client.count({
       where: { ...where, createdAt: { gte: prevStart, lte: prevEnd } },
     }),
-    prisma.asaasPayment.count({ where: { status: 'OVERDUE' } }),
+    prisma.asaasPayment.count({
+      where: {
+        status: 'OVERDUE',
+        // Escopo de posse: ADMIN/CS contam a inadimplência global; MANAGER/ANALYST
+        // só contam faturas dos clientes que enxergam.
+        ...(canViewAll
+          ? {}
+          : { customer: { client: { assignments: { some: { userId } } } } }),
+      },
+    }),
   ])
 
   const active   = clients.filter(c => c.status === 'ACTIVE')
@@ -75,42 +86,42 @@ export default async function ClientsPage() {
       value: String(kpis.recorrentes),
       icon:  Users,
       color: '#22C55E',
-      sub:   '0% vs. último período',
+      sub:   'Ativos na carteira hoje',
     },
     {
       label: 'Clientes inadimplentes',
       value: String(kpis.inadimplentes),
       icon:  AlertTriangle,
       color: '#EF4444',
-      sub:   '0% vs. último período',
+      sub:   'Com fatura vencida no Asaas',
     },
     {
       label: 'Clientes cancelados',
       value: String(kpis.cancelados),
       icon:  UserMinus,
       color: '#EF4444',
-      sub:   '0% vs. último período',
+      sub:   'Já saíram da carteira',
     },
     {
       label: 'Novos clientes',
       value: String(kpis.novos),
       icon:  UserPlus,
       color: '#22C55E',
-      sub:   `${kpis.deltaNew >= 0 ? '+' : ''}${kpis.deltaNew}% vs. último período`,
+      sub:   `Este mês · ${kpis.deltaNew >= 0 ? '+' : ''}${kpis.deltaNew}% vs. mês anterior`,
     },
     {
       label: 'Receita média por cliente',
       value: formatCurrency(kpis.receitaMedia),
       icon:  DollarSign,
       color: '#22C55E',
-      sub:   '0% vs. último período',
+      sub:   'Média dos contratos ativos',
     },
     {
       label: 'Receita recorrente',
       value: formatCurrency(kpis.receitaRecorrente),
       icon:  TrendingUp,
       color: '#22C55E',
-      sub:   '0% vs. último período',
+      sub:   'Soma dos contratos ativos',
     },
   ]
 

@@ -1,5 +1,7 @@
 import { Suspense } from 'react'
+import { redirect } from 'next/navigation'
 import { Target, TrendingUp, Flame, DollarSign } from 'lucide-react'
+import { requireSession } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { formatCurrency } from '@/lib/utils'
 import { LeadKanban } from '@/components/comercial/LeadKanban'
@@ -40,6 +42,9 @@ async function getLeads() {
 }
 
 export default async function ComercialPage() {
+  const session = await requireSession()
+  // CRM comercial: ADMIN/CS/MANAGER podem ver; ANALYST não tem acesso.
+  if (session.role === 'ANALYST') redirect('/')
   const leads = await getLeads()
 
   const activeLeads = leads.filter(l => KANBAN_STAGES.includes(l.status as any))

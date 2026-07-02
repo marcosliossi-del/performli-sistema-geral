@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { syncMetaAccount, syncAllMetaAccounts } from '@/services/meta-ads/sync'
 import { getSession } from '@/lib/session'
+import { isCronAuthorized } from '@/lib/cron-auth'
 
 /**
  * POST /api/sync/meta
@@ -27,7 +28,8 @@ export async function POST(request: NextRequest) {
   let sessionUserId: string | null = null
 
   if (cronSecret) {
-    if (cronSecret !== process.env.CRON_SECRET) {
+    // Comparação TIMING-SAFE via isCronAuthorized (=== vaza tempo de comparação).
+    if (!isCronAuthorized(request)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     isCron = true

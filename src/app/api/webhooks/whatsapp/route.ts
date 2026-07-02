@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { phoneMatchVariants } from '@/lib/phone'
+import { writeAuditLog } from '@/lib/audit'
 
 // Z-API webhook payload for received messages
 interface ZApiPayload {
@@ -14,6 +15,11 @@ interface ZApiPayload {
 }
 
 export async function POST(req: NextRequest) {
+  // Resumo NÃO sensível do payload para auditoria em caso de falha (sem telefone,
+  // sem nome, sem conteúdo da mensagem).
+  const summary: { type: string | null; isGroup: boolean; fromMe: boolean; hasText: boolean } = {
+    type: null, isGroup: false, fromMe: false, hasText: false,
+  }
   try {
     // Fail-closed: exige o token do Z-API configurado e conferido a cada requisição.
     const row = await prisma.integrationSetting.findUnique({ where: { key: 'ZAPI_CLIENT_TOKEN' } })
@@ -27,6 +33,10 @@ export async function POST(req: NextRequest) {
     }
 
     const payload: ZApiPayload = await req.json()
+    summary.type    = payload.type ?? null
+    summary.isGroup = !!payload.isGroup
+    summary.fromMe  = !!payload.fromMe
+    summary.hasText = !!payload.text?.message
 
     // Ignore messages sent by us or group messages
     if (payload.fromMe || payload.isGroup) return NextResponse.json({ ok: true })
@@ -78,7 +88,15 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     console.error('[whatsapp webhook]', err)
+    // Registra a falha na trilha de auditoria (sem dados sensíveis do payload).
+    await writeAuditLog({
+      action: 'webhook.whatsappFalhou',
+      entityType: 'AgencyLead',
+      entityId: 'whatsapp-webhook',
+      metadata: { ...summary, erro: err instanceof Error ? err.message : 'erro desconhecido' },
+    })
   }
 
+  // Sempre 200 para o Z-API não reenfileirar indefinidamente.
   return NextResponse.json({ ok: true })
 }

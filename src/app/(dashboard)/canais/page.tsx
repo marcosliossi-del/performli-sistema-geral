@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { MessagesSquare, MessageCircle, Users, ArrowRight } from 'lucide-react'
 import { requireSession, getClientChannels } from '@/lib/dal'
 import type { ClientChannelSummary } from '@/lib/dal'
+import { ClientIdentity } from '@/components/clients/ClientIdentity'
 import { timeAgo } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -70,8 +71,8 @@ function ChannelCard({ ch }: { ch: ClientChannelSummary }) {
           {initials}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-[#EBEBEB] truncate">{ch.clientName}</p>
-          <p className="text-[11px] text-[#87919E] truncate flex items-center gap-1">
+          <ClientIdentity name={ch.clientName} razaoSocial={ch.clientRazaoSocial} size="md" />
+          <p className="text-[11px] text-[#87919E] truncate flex items-center gap-1 mt-0.5">
             <Users size={10} />
             {ch.primaryManager ?? 'Sem gestor principal'}
             {ch.participants.length > 1 && <span className="text-[#576070]">· +{ch.participants.length - 1}</span>}

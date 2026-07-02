@@ -72,6 +72,16 @@ export default function NewClientPage() {
             <Input name="name" placeholder="Ex: Loja Alpha" required />
           </div>
 
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">
+              Razão social (como está no Asaas)
+            </label>
+            <Input name="razaoSocial" placeholder="Ex: Loja Alpha Comércio de Roupas LTDA" />
+            <p className="text-[10px] text-[#647488]">
+              Opcional. Use a razão social exata do Asaas — é a chave que concilia as cobranças ao cliente.
+            </p>
+          </div>
+
           {/* Tipo de negócio */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-[#95BBE2] uppercase tracking-wider">

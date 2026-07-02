@@ -5,7 +5,7 @@ import { prisma } from './prisma'
 import { getSession } from './session'
 import { redirect } from 'next/navigation'
 import { HealthStatus, Prisma } from '@prisma/client'
-import { getWeekRange, getMonthRange } from './utils'
+import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 
@@ -416,12 +416,21 @@ export const getClientsList = unstable_cache(_fetchClientsList, ['getClientsList
 
 // ─── Client detail ────────────────────────────────────────────────────────────
 
-export const getClientDetail = cache(async (slug: string) => {
+export const getClientDetail = cache(async (
+  slug: string,
+  viewer: { userId: string; role: string },
+) => {
   const { start: weekStart, end: weekEnd } = getWeekRange()
   const { start: monthStart, end: monthEnd } = getMonthRange()
 
-  const client = await prisma.client.findUnique({
-    where: { slug },
+  // Posse (CLAUDE.md #1/#2): ADMIN/CS veem qualquer cliente; MANAGER/ANALYST
+  // só veem clientes atribuídos. Sem atribuição, o cliente é invisível (null).
+  const ownershipWhere: Prisma.ClientWhereInput = canViewAll(viewer.role)
+    ? {}
+    : { assignments: { some: { userId: viewer.userId } } }
+
+  const client = await prisma.client.findFirst({
+    where: { slug, ...ownershipWhere },
     include: {
       assignments: {
         include: { user: { select: { id: true, name: true, email: true, role: true } } },
@@ -1161,7 +1170,10 @@ export const getOperacionalBoard = cache(
       : []
     const auxNameMap = new Map(auxUsers.map((u) => [u.id, u.name]))
 
-    const now = Date.now()
+    // Atraso: só conta como atrasada se o prazo caiu ANTES do início de hoje em
+    // SP (dueDate é meio-dia UTC; comparar com Date.now() marcava atraso às 09h
+    // do próprio dia do prazo).
+    const atrasoLimite = startOfTodaySaoPaulo().getTime()
     const tasks: OperacionalTask[] = rows.map((t) => {
       const primaryName = t.user?.name ?? '—'
       const assignees = [
@@ -1201,7 +1213,7 @@ export const getOperacionalBoard = cache(
 
     const abertasList = tasks.filter((t) => t.status !== 'CONCLUIDO' && t.status !== 'CANCELADO')
     const abertas = abertasList.length
-    const atrasadas = abertasList.filter((t) => t.dueDate != null && new Date(t.dueDate).getTime() < now).length
+    const atrasadas = abertasList.filter((t) => t.dueDate != null && new Date(t.dueDate).getTime() < atrasoLimite).length
     const aguardando = abertasList.filter((t) => AGUARDANDO_STATUS.has(t.status)).length
     const warRoom = tasks.filter((t) => t.type === 'WAR_ROOM' && t.status !== 'CONCLUIDO' && t.status !== 'CANCELADO').length
     const noPrazoPct = abertas > 0 ? Math.round(((abertas - atrasadas) / abertas) * 100) : 100
@@ -1230,7 +1242,8 @@ export const getNovaTarefaContext = cache(
     const clientWhere: Prisma.ClientWhereInput = canViewAll(role)
       ? { status: 'ACTIVE' }
       : { status: 'ACTIVE', assignments: { some: { userId } } }
-    const now = new Date()
+    // Atrasada = prazo anterior ao início de HOJE em SP (ver util).
+    const atrasoLimite = startOfTodaySaoPaulo().getTime()
 
     const [clients, areas, pops, usuarios] = await Promise.all([
       prisma.client.findMany({
@@ -1264,7 +1277,7 @@ export const getNovaTarefaContext = cache(
       name: c.name,
       managerName: c.assignments[0]?.user?.name ?? null,
       openTasks: c.tasks.length,
-      overdueTasks: c.tasks.filter((t) => t.dueDate != null && new Date(t.dueDate).getTime() < now.getTime()).length,
+      overdueTasks: c.tasks.filter((t) => t.dueDate != null && new Date(t.dueDate).getTime() < atrasoLimite).length,
     }))
 
     return { clientes, areas, pops: pops.map((p) => ({ ...p })), usuarios }
@@ -1333,6 +1346,8 @@ export const getCockpitData = cache(
 
     const now = new Date()
     const in30d = new Date(now.getTime() + 30 * 86_400_000)
+    // Atrasada = prazo anterior ao início de HOJE em SP (ver util).
+    const atrasoLimite = startOfTodaySaoPaulo(now)
 
     const taskScope: Prisma.TaskWhereInput = viewAll
       ? {}
@@ -1362,7 +1377,7 @@ export const getCockpitData = cache(
       prisma.task.count({
         where: {
           status: { notIn: ['CONCLUIDO', 'CANCELADO'] },
-          dueDate: { lt: now },
+          dueDate: { lt: atrasoLimite },
           ...taskScope,
         },
       }),
@@ -2309,6 +2324,7 @@ export const getClientChat = cache(async (clientId: string) => {
 export type ClientChannelSummary = {
   clientId: string
   clientName: string
+  clientRazaoSocial: string | null   // razão social (como no Asaas) p/ identidade completa
   clientSlug: string
   status: string
   primaryManager: string | null
@@ -2335,7 +2351,7 @@ export const getClientChannels = cache(async (userId: string, role: string): Pro
   const clients = await prisma.client.findMany({
     where,
     select: {
-      id: true, name: true, slug: true, status: true,
+      id: true, name: true, razaoSocial: true, slug: true, status: true,
       assignments: {
         select: { isPrimary: true, user: { select: { name: true } } },
       },
@@ -2359,6 +2375,7 @@ export const getClientChannels = cache(async (userId: string, role: string): Pro
     return {
       clientId: c.id,
       clientName: c.name,
+      clientRazaoSocial: c.razaoSocial ?? null,
       clientSlug: c.slug,
       status: c.status,
       primaryManager: primary,
@@ -3124,7 +3141,8 @@ export type MinhaSemana = {
 export const getMinhaSemana = cache(async (userId: string): Promise<MinhaSemana> => {
   const rows = await prisma.task.findMany({
     where: { assignedTo: userId, status: { notIn: ['CONCLUIDO', 'CANCELADO'] } },
-    orderBy: [{ dueDate: 'asc' }, { priority: 'desc' }, { createdAt: 'desc' }],
+    orderBy: [{ dueDate: 'asc' }, { priority: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
+    take: 200,
     select: {
       id: true, title: true, status: true, priority: true, type: true, dueDate: true,
       client: { select: { name: true, slug: true } },
@@ -3203,44 +3221,61 @@ export const getGestoresCarga = cache(async (role: string): Promise<GestorCarga[
 
   const now = new Date()
   const sete = new Date(now.getTime() - 7 * 86_400_000)
+  // Atrasada = prazo anterior ao início de HOJE em SP (ver util).
+  const atrasoLimite = startOfTodaySaoPaulo(now)
 
   const users = await prisma.user.findMany({
     where: { active: true, role: { in: ['ADMIN', 'CS', 'MANAGER'] } },
     orderBy: [{ role: 'asc' }, { name: 'asc' }],
-    select: {
-      id: true,
-      name: true,
-      role: true,
-      tasks: {
-        select: { status: true, dueDate: true, completedAt: true },
-      },
-    },
+    select: { id: true, name: true, role: true },
   })
 
+  const userIds = users.map((u) => u.id)
+  const openStatus: Prisma.TaskWhereInput['status'] = { notIn: ['CONCLUIDO', 'CANCELADO'] }
+
+  // Agregação no banco: não carregamos as tarefas inteiras de cada gestor —
+  // contamos por assignedTo (relação User.tasks) direto no PostgreSQL.
+  const [abertasGrp, atrasadasGrp, semPrazoGrp, concluidasGrp] = await Promise.all([
+    prisma.task.groupBy({
+      by: ['assignedTo'],
+      where: { assignedTo: { in: userIds }, status: openStatus },
+      _count: { _all: true },
+    }),
+    prisma.task.groupBy({
+      by: ['assignedTo'],
+      where: { assignedTo: { in: userIds }, status: openStatus, dueDate: { lt: atrasoLimite } },
+      _count: { _all: true },
+    }),
+    prisma.task.groupBy({
+      by: ['assignedTo'],
+      where: { assignedTo: { in: userIds }, status: openStatus, dueDate: null },
+      _count: { _all: true },
+    }),
+    prisma.task.groupBy({
+      by: ['assignedTo'],
+      where: { assignedTo: { in: userIds }, status: 'CONCLUIDO', completedAt: { gte: sete } },
+      _count: { _all: true },
+    }),
+  ])
+
+  const toMap = (grp: { assignedTo: string; _count: { _all: number } }[]) =>
+    new Map(grp.map((g) => [g.assignedTo, g._count._all]))
+  const abertasMap = toMap(abertasGrp)
+  const atrasadasMap = toMap(atrasadasGrp)
+  const semPrazoMap = toMap(semPrazoGrp)
+  const concluidasMap = toMap(concluidasGrp)
+
   const rows: GestorCarga[] = users.map((u) => {
-    let abertas = 0
-    let atrasadas = 0
-    let concluidas7d = 0
-    let semPrazo = 0
-    for (const t of u.tasks) {
-      const aberta = t.status !== 'CONCLUIDO' && t.status !== 'CANCELADO'
-      if (aberta) {
-        abertas++
-        if (t.dueDate == null) semPrazo++
-        else if (new Date(t.dueDate).getTime() < now.getTime()) atrasadas++
-      }
-      if (t.status === 'CONCLUIDO' && t.completedAt != null && new Date(t.completedAt).getTime() >= sete.getTime()) {
-        concluidas7d++
-      }
-    }
+    const abertas = abertasMap.get(u.id) ?? 0
+    const atrasadas = atrasadasMap.get(u.id) ?? 0
     return {
       id: u.id,
       name: u.name,
       role: u.role,
       abertas,
       atrasadas,
-      concluidas7d,
-      semPrazo,
+      concluidas7d: concluidasMap.get(u.id) ?? 0,
+      semPrazo: semPrazoMap.get(u.id) ?? 0,
       gargalo: atrasadas >= 3 || abertas >= 15,
     }
   })
@@ -3479,11 +3514,13 @@ export const getAceiteOperacional = cache(
     const d8 = new Date(now.getTime() - 8 * 86_400_000)
     const d1 = new Date(now.getTime() - 86_400_000)
     const d3 = new Date(now.getTime() - 3 * 86_400_000)
+    // Atrasada = prazo anterior ao início de HOJE em SP (ver util).
+    const atrasoLimite = startOfTodaySaoPaulo(now)
 
     const [
       atrasadas, semGestor, semEvidencia, warRoomSemCriterio, rotinasParadas, automacaoFalhas, leadsParados,
     ] = await Promise.all([
-      prisma.task.count({ where: { ...taskScope, status: openStatus, dueDate: { lt: now } } }),
+      prisma.task.count({ where: { ...taskScope, status: openStatus, dueDate: { lt: atrasoLimite } } }),
       viewAll
         ? prisma.client.count({ where: { status: 'ACTIVE', assignments: { none: {} } } })
         : Promise.resolve(0),

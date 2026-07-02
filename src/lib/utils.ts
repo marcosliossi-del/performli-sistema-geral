@@ -52,6 +52,50 @@ export function getMonthRange(date: Date = new Date()): { start: Date; end: Date
   return { start, end }
 }
 
+/**
+ * Fuso da operação (Arkza é Brasil; SP não tem horário de verão desde 2019,
+ * então o offset fixo -03:00 é correto e estável).
+ */
+export const SAO_PAULO_TZ = 'America/Sao_Paulo'
+const SAO_PAULO_OFFSET = '-03:00'
+
+/** 'YYYY-MM-DD' do dia-parede atual em America/Sao_Paulo. */
+export function saoPauloDateString(now: Date = new Date()): string {
+  // en-CA => formato YYYY-MM-DD
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: SAO_PAULO_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now)
+}
+
+/** Converte 'YYYY-MM-DD' (dia-parede SP) para o instante UTC do início desse dia. */
+export function saoPauloDayStart(dateStr: string): Date {
+  return new Date(`${dateStr}T00:00:00${SAO_PAULO_OFFSET}`)
+}
+
+/**
+ * Início do dia de HOJE (00:00) no fuso America/Sao_Paulo, como instante UTC.
+ * Use para comparar `dueDate` (meio-dia UTC) sem marcar atraso às 09h do dia do
+ * prazo: uma tarefa só está atrasada se dueDate < início de HOJE em SP.
+ */
+export function startOfTodaySaoPaulo(now: Date = new Date()): Date {
+  return saoPauloDayStart(saoPauloDateString(now))
+}
+
+/** Formata um instante como data/hora legível no fuso America/Sao_Paulo. */
+export function formatSaoPauloDateTime(date: Date): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: SAO_PAULO_TZ,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 export function timeAgo(date: Date): string {
   const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000)
   if (seconds < 60) return 'agora'

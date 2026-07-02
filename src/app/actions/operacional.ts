@@ -7,6 +7,7 @@ import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { assertCan } from '@/lib/permissions'
 import { checkTaskCompletion } from '@/services/task-completion-guard'
 import { statusIdFor } from '@/lib/tasks/statusMap'
+import { parseDateInput } from '@/lib/tasks/dateInput'
 import { TaskType, TaskPriority } from '@prisma/client'
 
 type ActionResult = { ok: true; id?: string } | { error: string }
@@ -84,7 +85,7 @@ export async function createOperacionalTask(input: CreateOperacionalTaskInput): 
       status: 'A_FAZER',
       statusId: statusIdFor('A_FAZER'),
       origin: 'MANUAL',
-      dueDate: input.dueDate ? new Date(input.dueDate) : null,
+      dueDate: input.dueDate ? parseDateInput(input.dueDate) : null,
       clientId: input.clientId || null,
       areaId: input.areaId || null,
       popId: input.popId || null,
@@ -142,15 +143,21 @@ export async function addTaskComment(taskId: string, body: string): Promise<AddT
   const task = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true, clientId: true, assignedTo: true } })
   if (!task) return { error: 'Tarefa não encontrada.' }
 
-  await assertTaskWrite(session, task)
+  try {
+    await assertTaskWrite(session, task)
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Sem permissão para esta ação.' }
+  }
 
-  const created = await prisma.taskComment.create({
-    data: { taskId, authorId: session.userId, body: trimmed },
-    select: { id: true, body: true, authorId: true, createdAt: true },
-  })
-  await prisma.taskActivity.create({
-    data: { taskId, actorId: session.userId, action: 'commented' },
-  })
+  const [created] = await prisma.$transaction([
+    prisma.taskComment.create({
+      data: { taskId, authorId: session.userId, body: trimmed },
+      select: { id: true, body: true, authorId: true, createdAt: true },
+    }),
+    prisma.taskActivity.create({
+      data: { taskId, actorId: session.userId, action: 'commented' },
+    }),
+  ])
 
   revalidatePath('/operacional')
   return {
@@ -170,14 +177,31 @@ export async function toggleChecklistItem(itemId: string, done: boolean): Promis
   const session = await requireSession()
   const item = await prisma.taskChecklistItem.findUnique({
     where: { id: itemId },
-    select: { id: true, task: { select: { id: true, clientId: true, assignedTo: true } } },
+    select: { id: true, label: true, task: { select: { id: true, clientId: true, assignedTo: true } } },
   })
   if (!item || !item.task) return { error: 'Item não encontrado.' }
 
-  await assertTaskWrite(session, item.task)
+  try {
+    await assertTaskWrite(session, item.task)
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Sem permissão para esta ação.' }
+  }
 
-  await prisma.taskChecklistItem.update({ where: { id: itemId }, data: { done } })
+  await prisma.$transaction([
+    prisma.taskChecklistItem.update({ where: { id: itemId }, data: { done } }),
+    prisma.taskActivity.create({
+      data: {
+        taskId: item.task.id,
+        actorId: session.userId,
+        action: 'checklist_toggled',
+        toValue: `${done ? 'concluído' : 'reaberto'}: ${item.label}`,
+      },
+    }),
+  ])
+
   revalidatePath('/operacional')
+  revalidatePath('/suporte')
+  revalidatePath('/meu-dia')
   return { ok: true }
 }
 
@@ -195,7 +219,11 @@ export async function addChecklistItem(taskId: string, label: string): Promise<A
   const task = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true, clientId: true, assignedTo: true } })
   if (!task) return { error: 'Tarefa não encontrada.' }
 
-  await assertTaskWrite(session, task)
+  try {
+    await assertTaskWrite(session, task)
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Sem permissão para esta ação.' }
+  }
 
   const last = await prisma.taskChecklistItem.aggregate({
     where: { taskId },
@@ -228,7 +256,11 @@ export async function removeChecklistItem(itemId: string): Promise<ActionResult>
   })
   if (!item || !item.task) return { error: 'Item não encontrado.' }
 
-  await assertTaskWrite(session, item.task)
+  try {
+    await assertTaskWrite(session, item.task)
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Sem permissão para esta ação.' }
+  }
 
   if (item.required) {
     return { error: 'Este item é obrigatório e não pode ser removido. Desmarque a obrigatoriedade antes.' }

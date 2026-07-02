@@ -40,19 +40,23 @@ export class AsaasClient {
   }
 
   private async fetchAll<T>(path: string, extra: Record<string, string> = {}): Promise<T[]> {
+    const MAX_PAGES = 100 // teto de segurança: 100 * 100 = 10.000 itens
     const items: T[] = []
     let offset = 0
-    while (true) {
-      const page = await this.get<AsaasListResponse<T>>(path, {
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const resp = await this.get<AsaasListResponse<T>>(path, {
         ...extra,
         limit:  String(PAGE_SIZE),
         offset: String(offset),
       })
-      items.push(...page.data)
-      if (!page.hasMore) break
+      items.push(...resp.data)
+      if (!resp.hasMore) return items
       offset += PAGE_SIZE
     }
-    return items
+    throw new Error(
+      `Asaas fetchAll em ${path} excedeu o teto de ${MAX_PAGES} páginas ` +
+      `(${MAX_PAGES * PAGE_SIZE} itens) — abortando para não loopar indefinidamente.`,
+    )
   }
 
   async getBalance(): Promise<AsaasBalanceDTO> {

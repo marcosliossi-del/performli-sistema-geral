@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ShieldAlert, CheckCircle, TrendingDown } from 'lucide-react'
 import Link from 'next/link'
+import { ClientIdentity } from '@/components/clients/ClientIdentity'
 import { ChurnRiskChart } from '@/components/anti-churn/ChurnRiskChart'
 import { ProtocolCard } from '@/components/anti-churn/ProtocolCard'
 import { WarRoomPlanPanel } from '@/components/anti-churn/WarRoomPlanPanel'
@@ -19,6 +20,14 @@ export default async function AntiChurnPage() {
     clients.map((c) => getClientChurnHistory(c.id, 10).then((h) => ({ clientId: c.id, history: h })))
   )
   const historyMap = new Map(churnHistories.map(({ clientId, history }) => [clientId, history]))
+
+  // Razão social (como está no Asaas) para exibir a identidade completa do
+  // cliente no card — sem alterar a DAL de clientes em risco.
+  const razaoRows = await prisma.client.findMany({
+    where: { id: { in: clients.map((c) => c.id) } },
+    select: { id: true, razaoSocial: true },
+  })
+  const razaoMap = new Map(razaoRows.map((r) => [r.id, r.razaoSocial]))
 
   const alto  = clients.filter((c) => c.riskLevel === 'ALTO').length
   const medio = clients.filter((c) => c.riskLevel === 'MÉDIO').length
@@ -223,7 +232,11 @@ export default async function AntiChurnPage() {
                           </div>
                           <div>
                             <div className="flex items-center gap-2 mb-1">
-                              <h3 className="text-sm font-semibold text-[#EBEBEB]">{client.name}</h3>
+                              <ClientIdentity
+                                name={client.name}
+                                razaoSocial={razaoMap.get(client.id) ?? null}
+                                size="md"
+                              />
                               <Badge variant={variant as 'otimo' | 'regular' | 'ruim'}>
                                 Risco {client.riskLevel}
                               </Badge>

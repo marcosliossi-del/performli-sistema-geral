@@ -20,6 +20,7 @@ export async function createClient(
   if (session.role !== 'ADMIN') return { error: 'Sem permissão para criar clientes.' }
 
   const name = (formData.get('name') as string)?.trim()
+  const razaoSocial = (formData.get('razaoSocial') as string)?.trim()
   const industry = (formData.get('industry') as string)?.trim()
   const website = (formData.get('website') as string)?.trim()
   const notes = (formData.get('notes') as string)?.trim()
@@ -50,6 +51,7 @@ export async function createClient(
   const client = await prisma.client.create({
     data: {
       name,
+      razaoSocial: razaoSocial || null,
       slug,
       businessType,
       industry: industry || null,

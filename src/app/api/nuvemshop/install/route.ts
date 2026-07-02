@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { exchangeCodeForToken, NuvemshopClient } from '@/services/nuvemshop/client'
+import { getSession } from '@/lib/session'
+import { verifySignedState } from '@/lib/nuvemshop-state'
 
 /**
  * GET /api/nuvemshop/install?code=xxx
@@ -32,6 +34,20 @@ export async function GET(request: NextRequest) {
     const authUrl = `https://www.nuvemshop.com.br/apps/${appId}/authorize?response_type=code&client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}`
 
     return NextResponse.redirect(authUrl)
+  }
+
+  // Autorização OBRIGATÓRIA antes de qualquer efeito colateral (cria Client!):
+  // ou state assinado válido (fluxo iniciado pelo painel) ou sessão ADMIN.
+  // Sem uma das duas → 403 sem side-effects.
+  const stateParam = request.nextUrl.searchParams.get('state')
+  const verified = verifySignedState(stateParam)
+  const session = await getSession()
+  const isAdmin = session?.role === 'ADMIN'
+  if (!verified && !isAdmin) {
+    return NextResponse.json(
+      { error: 'Instalação não autorizada: inicie a conexão pelo painel do Performli.' },
+      { status: 403 }
+    )
   }
 
   // Tem code — troca pelo token

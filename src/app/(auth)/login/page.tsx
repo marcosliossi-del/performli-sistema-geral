@@ -1,6 +1,7 @@
 'use client'
 
-import { useActionState, useState } from 'react'
+import { Suspense, useActionState, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { login, type LoginState } from '@/app/actions/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,8 +10,18 @@ import { Eye, EyeOff } from 'lucide-react'
 const initialState: LoginState = {}
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
   const [state, formAction, pending] = useActionState(login, initialState)
   const [showPassword, setShowPassword] = useState(false)
+  // callbackUrl que o middleware preservou (a tela pretendida antes do login).
+  const callbackUrl = useSearchParams().get('callbackUrl') ?? ''
 
   return (
     <div className="min-h-screen bg-[#05141C] flex items-center justify-center p-4">
@@ -51,6 +62,7 @@ export default function LoginPage() {
 
         {/* Form */}
         <form action={formAction} className="space-y-4">
+          {callbackUrl && <input type="hidden" name="callbackUrl" value={callbackUrl} />}
           <div className="space-y-1.5">
             <label
               htmlFor="email"
@@ -88,6 +100,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-[#87919E] hover:text-[#EBEBEB] transition-colors"
               >
                 {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}

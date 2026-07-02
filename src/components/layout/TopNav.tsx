@@ -1,6 +1,6 @@
 'use client'
 
-import { Bell, Search, LogOut, ChevronDown, Settings } from 'lucide-react'
+import { Bell, Search, LogOut, ChevronDown, Settings, Menu } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { logout } from '@/app/actions/auth'
@@ -13,6 +13,8 @@ interface TopNavProps {
   onViewModeChange?: (mode: 'ADMIN' | 'GESTOR') => void
   unreadAlerts?: number
   onOpenSearch?: () => void
+  /** Abre o drawer da sidebar no mobile (abaixo de lg). */
+  onOpenMobileNav?: () => void
 }
 
 const roleLabels: Record<SessionPayload['role'], string> = {
@@ -22,7 +24,7 @@ const roleLabels: Record<SessionPayload['role'], string> = {
   CS:      'Succ. Clientes',
 }
 
-export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAlerts = 0, onOpenSearch }: TopNavProps) {
+export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAlerts = 0, onOpenSearch, onOpenMobileNav }: TopNavProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
 
   const initials = session.name
@@ -33,7 +35,19 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
     .toUpperCase()
 
   return (
-    <header className="lg-topbar h-16 flex items-center justify-between px-6 bg-[#05141C] border-b border-[#38435C] sticky top-0 z-40">
+    <header className="lg-topbar h-16 flex items-center justify-between gap-3 px-4 sm:px-6 bg-[#05141C] border-b border-[#38435C] sticky top-0 z-40">
+      {/* Hamburger — só no mobile (abre a sidebar como drawer). */}
+      {onOpenMobileNav && (
+        <button
+          type="button"
+          onClick={onOpenMobileNav}
+          aria-label="Abrir menu de navegação"
+          className="lg:hidden w-9 h-9 flex items-center justify-center rounded-lg text-[#87919E] hover:bg-[#38435C] transition-colors flex-shrink-0"
+        >
+          <Menu size={18} />
+        </button>
+      )}
+
       {/* Search — abre o command palette (⌘K) */}
       <div className="flex-1 max-w-[440px]">
         <button
@@ -51,9 +65,13 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
       <div className="flex items-center gap-3">
         {/* View Mode Toggle — only for ADMIN */}
         {onViewModeChange && (
-          <div className="flex items-center bg-[#0A1E2C] border border-[#38435C] rounded-lg p-1">
+          <div
+            className="hidden sm:flex items-center bg-[#0A1E2C] border border-[#38435C] rounded-lg p-1"
+            title="Prévia de navegação: alterna o menu entre a visão Admin e a visão Gestor. Não muda suas permissões nem o conteúdo das telas."
+          >
             <button
               onClick={() => onViewModeChange('ADMIN')}
+              aria-label="Prévia de navegação como Admin"
               className={cn(
                 'px-3 py-1 rounded-md text-xs font-semibold transition-all',
                 viewMode === 'ADMIN'
@@ -65,6 +83,7 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
             </button>
             <button
               onClick={() => onViewModeChange('GESTOR')}
+              aria-label="Prévia de navegação como Gestor"
               className={cn(
                 'px-3 py-1 rounded-md text-xs font-semibold transition-all',
                 viewMode === 'GESTOR'
@@ -80,6 +99,7 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
         {/* Alerts */}
         <Link
           href="/alerts"
+          aria-label={unreadAlerts > 0 ? `Alertas (${unreadAlerts} não lidos)` : 'Alertas'}
           className="relative w-9 h-9 flex items-center justify-center rounded-lg text-[#87919E] hover:bg-[#38435C] transition-colors"
         >
           <Bell size={16} />
@@ -117,14 +137,16 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
                   <p className="text-sm font-medium text-[#EBEBEB] truncate">{session.name}</p>
                   <p className="text-xs text-[#87919E] truncate mt-0.5">{session.email}</p>
                 </div>
-                <Link
-                  href="/settings"
-                  onClick={() => setUserMenuOpen(false)}
-                  className="flex items-center gap-2 px-4 py-2.5 text-sm text-[#EBEBEB] hover:bg-[#38435C]/50 transition-colors"
-                >
-                  <Settings size={14} className="text-[#87919E]" />
-                  Configurações
-                </Link>
+                {session.role === 'ADMIN' && (
+                  <Link
+                    href="/settings"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-2 px-4 py-2.5 text-sm text-[#EBEBEB] hover:bg-[#38435C]/50 transition-colors"
+                  >
+                    <Settings size={14} className="text-[#87919E]" />
+                    Configurações
+                  </Link>
+                )}
                 <div className="border-t border-[#38435C] mt-1 pt-1">
                   <form action={logout}>
                     <button

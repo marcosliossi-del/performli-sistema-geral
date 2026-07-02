@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
 import { getNuvemshopAuthUrl } from '@/services/nuvemshop/client'
+import { createSignedState } from '@/lib/nuvemshop-state'
 
 /**
  * GET /api/nuvemshop/auth?clientId=xxx
@@ -25,10 +26,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Encode state com clientId e userId para usar no callback
-    const state = Buffer.from(
-      JSON.stringify({ clientId, userId: session.userId })
-    ).toString('base64url')
+    // State assinado (HMAC-SHA256) com clientId e userId — validado no callback.
+    const state = createSignedState({ clientId, userId: session.userId })
 
     const authUrl = getNuvemshopAuthUrl(state)
     return NextResponse.redirect(authUrl)

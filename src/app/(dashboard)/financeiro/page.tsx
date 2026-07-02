@@ -12,6 +12,7 @@ import { PeriodSelector } from '@/components/financeiro/PeriodSelector'
 import { SyncAsaasButton } from '@/components/financeiro/SyncAsaasButton'
 import { ExpenseLaunchButton } from '@/components/financeiro/ExpenseLaunchButton'
 import { categoryColor, categoryLabel } from '@/components/financeiro/ExpenseModal'
+import { saoPauloDateString, saoPauloDayStart, formatSaoPauloDateTime } from '@/lib/utils'
 import {
   TrendingUp, TrendingDown, DollarSign, Users, AlertCircle,
   Clock, Calendar, BarChart3, Percent,
@@ -23,11 +24,13 @@ interface PageProps {
   searchParams: Promise<{ from?: string; to?: string }>
 }
 
+// `to` é o limite superior EXCLUSIVO (início do dia seguinte ao fim do período,
+// no fuso SP). Toda comparação usa `lt: to` / `lt: prevTo`.
 async function getFinanceiroData(from: Date, to: Date) {
   const today    = new Date()
   const duration = to.getTime() - from.getTime()
   const prevFrom = new Date(from.getTime() - duration)
-  const prevTo   = new Date(from.getTime() - 1)
+  const prevTo   = from // período anterior termina onde o atual começa (exclusivo)
 
   const [
     payments, prevPayments,
@@ -39,31 +42,35 @@ async function getFinanceiroData(from: Date, to: Date) {
     topEntradas, topTransfers,
   ] = await Promise.all([
     prisma.asaasPayment.findMany({
-      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lte: to } },
-      include: { customer: { select: { name: true } } },
+      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lt: to } },
+      include: {
+        customer: {
+          select: { name: true, client: { select: { name: true, razaoSocial: true } } },
+        },
+      },
       orderBy: { value: 'desc' },
     }),
     prisma.asaasPayment.aggregate({
-      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: prevFrom, lte: prevTo } },
+      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: prevFrom, lt: prevTo } },
       _sum: { value: true },
     }),
     // Saídas automáticas via sync Asaas (transferências PIX/TED já pagas)
     prisma.asaasTransfer.findMany({
-      where: { status: 'DONE', transferDate: { gte: from, lte: to } },
+      where: { status: 'DONE', transferDate: { gte: from, lt: to } },
       include: { category: { select: { name: true, color: true } } },
       orderBy: { value: 'desc' },
     }),
     prisma.asaasTransfer.aggregate({
-      where: { status: 'DONE', transferDate: { gte: prevFrom, lte: prevTo } },
+      where: { status: 'DONE', transferDate: { gte: prevFrom, lt: prevTo } },
       _sum: { value: true },
     }),
     // Saídas manuais lançadas pelo usuário (salários, impostos, etc.)
     prisma.expense.findMany({
-      where: { date: { gte: from, lte: to } },
+      where: { date: { gte: from, lt: to } },
       orderBy: { value: 'desc' },
     }),
     prisma.expense.aggregate({
-      where: { date: { gte: prevFrom, lte: prevTo } },
+      where: { date: { gte: prevFrom, lt: prevTo } },
       _sum: { value: true },
     }),
     prisma.asaasSubscription.findMany({ where: { status: 'ACTIVE' } }),
@@ -86,7 +93,7 @@ async function getFinanceiroData(from: Date, to: Date) {
       _sum: { value: true },
     }),
     prisma.asaasPayment.findMany({
-      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lte: to } },
+      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lt: to } },
       include: {
         customer: {
           select: { name: true, client: { select: { name: true, razaoSocial: true } } },
@@ -96,14 +103,16 @@ async function getFinanceiroData(from: Date, to: Date) {
       take: 10,
     }),
     prisma.asaasTransfer.findMany({
-      where: { status: 'DONE', transferDate: { gte: from, lte: to } },
+      where: { status: 'DONE', transferDate: { gte: from, lt: to } },
       include: { category: { select: { name: true, color: true } } },
       orderBy: { value: 'desc' },
       take: 10,
     }),
   ])
 
-  const entradas       = payments.reduce((s, p) => s + Number(p.value), 0)
+  // DRE usa valor líquido (netValue) — igual à conciliação —, caindo no bruto
+  // quando o Asaas ainda não informou a taxa. Mantém Lucro/Margem consistentes.
+  const entradas       = payments.reduce((s, p) => s + Number(p.netValue ?? p.value), 0)
   const prevEntradas   = Number(prevPayments._sum.value ?? 0)
   const saidasAsaas    = transfers.reduce((s, t) => s + Number(t.value), 0)
   const saidasManuais  = manualExpenses.reduce((s, e) => s + Number(e.value), 0)
@@ -136,11 +145,16 @@ async function getFinanceiroData(from: Date, to: Date) {
   const pct = (curr: number, prev: number) =>
     prev === 0 ? (curr > 0 ? 100 : 0) : Math.round(((curr - prev) / prev) * 10000) / 100
 
-  // Distribuição entradas por cliente
+  // Distribuição entradas por cliente. Preferimos a identidade do cliente
+  // vinculado (fantasia; razão como complemento); sem vínculo, nome cru do Asaas
+  // com indicação "(sem vínculo)" — mesmo padrão da MovimentacoesTable.
   const entradaMap = new Map<string, number>()
   for (const p of payments) {
-    const k = p.customer?.name ?? 'Sem cliente'
-    entradaMap.set(k, (entradaMap.get(k) ?? 0) + Number(p.value))
+    const linked = p.customer?.client
+    const k = linked
+      ? (linked.razaoSocial ? `${linked.name} — ${linked.razaoSocial}` : linked.name)
+      : `${p.customer?.name ?? 'Sem cliente'} (sem vínculo)`
+    entradaMap.set(k, (entradaMap.get(k) ?? 0) + Number(p.netValue ?? p.value))
   }
   const distribuicaoEntradas = Array.from(entradaMap.entries())
     .sort((a, b) => b[1] - a[1]).slice(0, 6)
@@ -215,36 +229,48 @@ async function getCashflowData() {
   const months = 6
   const ptMonths = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
-  const cashflow = []
-  const receitaMedia = []
-  const activeCount = await prisma.client.count({ where: { status: 'ACTIVE' } })
-
-  for (let i = months - 1; i >= 0; i--) {
+  // Janelas dos últimos `months` meses (mais antigo → atual).
+  const ranges = Array.from({ length: months }, (_, idx) => {
+    const i = months - 1 - idx
     const d     = new Date(today.getFullYear(), today.getMonth() - i, 1)
     const start = new Date(d.getFullYear(), d.getMonth(), 1)
     const end   = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
+    return { monthIndex: d.getMonth(), start, end }
+  })
 
-    const [entradasAgg, transfersAgg, expensesAgg] = await Promise.all([
-      prisma.asaasPayment.aggregate({
-        where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: start, lte: end } },
-        _sum: { value: true },
+  // Uma rodada de queries em paralelo (antes eram ~18 sequenciais).
+  const [activeCount, perMonth] = await Promise.all([
+    prisma.client.count({ where: { status: 'ACTIVE' } }),
+    Promise.all(
+      ranges.map(async ({ monthIndex, start, end }) => {
+        const [entradasAgg, transfersAgg, expensesAgg] = await Promise.all([
+          prisma.asaasPayment.aggregate({
+            where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: start, lte: end } },
+            _sum: { value: true },
+          }),
+          prisma.asaasTransfer.aggregate({
+            where: { status: 'DONE', transferDate: { gte: start, lte: end } },
+            _sum: { value: true },
+          }),
+          prisma.expense.aggregate({
+            where: { date: { gte: start, lte: end } },
+            _sum: { value: true },
+          }),
+        ])
+        return {
+          monthIndex,
+          entradas: Number(entradasAgg._sum.value ?? 0),
+          saidas: Number(transfersAgg._sum.value ?? 0) + Number(expensesAgg._sum.value ?? 0),
+        }
       }),
-      prisma.asaasTransfer.aggregate({
-        where: { status: 'DONE', transferDate: { gte: start, lte: end } },
-        _sum: { value: true },
-      }),
-      prisma.expense.aggregate({
-        where: { date: { gte: start, lte: end } },
-        _sum: { value: true },
-      }),
-    ])
+    ),
+  ])
 
-    const e = Number(entradasAgg._sum.value ?? 0)
-    const s = Number(transfersAgg._sum.value ?? 0) + Number(expensesAgg._sum.value ?? 0)
-
-    cashflow.push({ month: ptMonths[d.getMonth()], entradas: e, saidas: s })
-    receitaMedia.push({ month: ptMonths[d.getMonth()], value: activeCount > 0 ? e / activeCount : 0 })
-  }
+  const cashflow = perMonth.map((m) => ({ month: ptMonths[m.monthIndex], entradas: m.entradas, saidas: m.saidas }))
+  const receitaMedia = perMonth.map((m) => ({
+    month: ptMonths[m.monthIndex],
+    value: activeCount > 0 ? m.entradas / activeCount : 0,
+  }))
 
   return { cashflow, receitaMedia }
 }
@@ -254,16 +280,29 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
   if (session.role !== 'ADMIN') redirect('/dashboard')
 
   const params = await searchParams
-  const today  = new Date()
-  const from   = params.from ? new Date(params.from) : new Date(today.getFullYear(), today.getMonth(), 1)
-  const to     = params.to   ? new Date(params.to)   : new Date(today.getFullYear(), today.getMonth() + 1, 0)
 
-  const [data, { cashflow, receitaMedia }, overdueInvoices, clientsWithoutBilling] = await Promise.all([
+  // Range normalizado no fuso America/Sao_Paulo: ambos os limites saem de
+  // ano/mês/dia-parede SP (evita defaults em fuso local e searchParams caindo em
+  // UTC). `to` é EXCLUSIVO — início do dia SEGUINTE ao fim do período.
+  const todayStr = saoPauloDateString()             // 'YYYY-MM-DD' em SP
+  const [y, m]   = todayStr.split('-').map(Number)
+  const nextY    = m === 12 ? y + 1 : y
+  const nextM    = m === 12 ? 1 : m + 1
+
+  const from = saoPauloDayStart(params.from ?? `${todayStr.slice(0, 7)}-01`)
+  const to   = params.to
+    ? new Date(saoPauloDayStart(params.to).getTime() + 86_400_000) // dia seguinte ao fim selecionado
+    : saoPauloDayStart(`${nextY}-${String(nextM).padStart(2, '0')}-01`)
+
+  const [data, { cashflow, receitaMedia }, overdueInvoices, clientsWithoutBilling, lastSyncAgg] = await Promise.all([
     getFinanceiroData(from, to),
     getCashflowData(),
     getOverdueInvoices(session.role),
     getClientsWithoutBilling(session.role),
+    prisma.asaasPayment.aggregate({ _max: { syncedAt: true } }),
   ])
+
+  const lastAsaasSync = lastSyncAgg._max.syncedAt
 
   return (
     <div className="space-y-5 pb-8">
@@ -272,6 +311,12 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
         <div>
           <h1 className="text-xl font-bold text-[#EBEBEB]">DRE — Financeiro</h1>
           <p className="text-sm text-[#87919E] mt-0.5">Demonstrativo de resultado da agência</p>
+          <p className={`text-xs mt-1 flex items-center gap-1.5 ${lastAsaasSync ? 'text-[#87919E]' : 'text-[#EF4444]'}`}>
+            <Clock size={11} />
+            {lastAsaasSync
+              ? `Sincronizado com o Asaas em ${formatSaoPauloDateTime(new Date(lastAsaasSync))}`
+              : 'Asaas nunca sincronizado'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <ExpenseLaunchButton />

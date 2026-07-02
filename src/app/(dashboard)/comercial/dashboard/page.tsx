@@ -1,5 +1,7 @@
 import { ArrowLeft, Target, Flame, DollarSign, TrendingUp, Clock, BarChart2, Users, CheckCircle, XCircle } from 'lucide-react'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { requireSession } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { formatCurrency } from '@/lib/utils'
 import { KANBAN_STAGES, STAGE_CONFIG, HOT_STATUSES } from '@/components/comercial/types'
@@ -34,6 +36,9 @@ async function getCrmData() {
 }
 
 export default async function ComercialDashboardPage() {
+  const session = await requireSession()
+  // Dashboard comercial: ADMIN/CS/MANAGER podem ver; ANALYST não tem acesso.
+  if (session.role === 'ANALYST') redirect('/')
   const leads = await getCrmData()
 
   // Funnel counts

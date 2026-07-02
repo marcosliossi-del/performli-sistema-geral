@@ -156,43 +156,65 @@ export class GoogleAdsClient {
       LIMIT 10000
     `
 
-    const res = await fetch(`${ADS_BASE}/customers/${clean}/googleAds:search`, {
-      method:  'POST',
-      headers: this.headers(token),
-      body:    JSON.stringify({ query }),
-      signal:  AbortSignal.timeout(30_000),
-    })
+    // Paginação: a API do Google Ads devolve `nextPageToken` quando há mais
+    // resultados que o LIMIT por página. Consumimos página a página até esgotar,
+    // com teto de segurança de 50 páginas para nunca loopar indefinidamente.
+    const MAX_PAGES = 50
+    const rows: GoogleAdsRow[] = []
+    let pageToken: string | undefined = undefined
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(
-        `Google Ads API error ${res.status}: ${(err as { error?: { message?: string } })?.error?.message ?? res.statusText}`
-      )
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const body: { query: string; pageToken?: string } = { query }
+      if (pageToken) body.pageToken = pageToken
+
+      const res = await fetch(`${ADS_BASE}/customers/${clean}/googleAds:search`, {
+        method:  'POST',
+        headers: this.headers(token),
+        body:    JSON.stringify(body),
+        signal:  AbortSignal.timeout(30_000),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(
+          `Google Ads API error ${res.status}: ${(err as { error?: { message?: string } })?.error?.message ?? res.statusText}`
+        )
+      }
+
+      const json = await res.json() as {
+        nextPageToken?: string
+        results?: Array<{
+          segments:  { date: string }
+          campaign:  { id: string; name: string }
+          metrics:   {
+            impressions:      string
+            clicks:           string
+            costMicros:       string
+            conversions:      string
+            conversionsValue: string
+          }
+        }>
+      }
+
+      for (const r of json.results ?? []) {
+        rows.push({
+          date:            r.segments.date,
+          campaignId:      r.campaign.id,
+          campaignName:    r.campaign.name,
+          impressions:     Number(r.metrics.impressions    ?? 0),
+          clicks:          Number(r.metrics.clicks         ?? 0),
+          costMicros:      Number(r.metrics.costMicros     ?? 0),
+          conversions:     Number(r.metrics.conversions    ?? 0),
+          conversionValue: Number(r.metrics.conversionsValue ?? 0),
+        })
+      }
+
+      pageToken = json.nextPageToken
+      if (!pageToken) return rows
     }
 
-    const json = await res.json() as {
-      results?: Array<{
-        segments:  { date: string }
-        campaign:  { id: string; name: string }
-        metrics:   {
-          impressions:      string
-          clicks:           string
-          costMicros:       string
-          conversions:      string
-          conversionsValue: string
-        }
-      }>
-    }
-
-    return (json.results ?? []).map((r) => ({
-      date:            r.segments.date,
-      campaignId:      r.campaign.id,
-      campaignName:    r.campaign.name,
-      impressions:     Number(r.metrics.impressions    ?? 0),
-      clicks:          Number(r.metrics.clicks         ?? 0),
-      costMicros:      Number(r.metrics.costMicros     ?? 0),
-      conversions:     Number(r.metrics.conversions    ?? 0),
-      conversionValue: Number(r.metrics.conversionsValue ?? 0),
-    }))
+    throw new Error(
+      `Google Ads: relatório excedeu o teto de ${MAX_PAGES} páginas para o cliente ${clean} — intervalo ${since}..${until} grande demais.`,
+    )
   }
 }

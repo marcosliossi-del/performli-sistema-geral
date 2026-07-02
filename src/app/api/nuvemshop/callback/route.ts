@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { exchangeCodeForToken, NuvemshopClient } from '@/services/nuvemshop/client'
+import { verifySignedState } from '@/lib/nuvemshop-state'
 
 /**
  * GET /api/nuvemshop/callback?code=xxx&state=xxx
@@ -20,12 +21,16 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  let state: { clientId: string; userId: string }
-  try {
-    state = JSON.parse(Buffer.from(stateParam, 'base64url').toString())
-  } catch {
-    return NextResponse.json({ error: 'State inválido' }, { status: 400 })
+  // Valida a assinatura HMAC do state antes de qualquer efeito colateral.
+  // State forjado/expirado/sem clientId → 403, sem criar nada.
+  const verified = verifySignedState(stateParam)
+  if (!verified || !verified.clientId) {
+    return NextResponse.json(
+      { error: 'Conexão não autorizada: link de autorização inválido ou expirado. Refaça a conexão pelo painel.' },
+      { status: 403 }
+    )
   }
+  const state = { clientId: verified.clientId, userId: verified.userId }
 
   try {
     // 1. Troca código por token

@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireSession } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { Badge } from '@/components/ui/badge'
@@ -30,8 +31,36 @@ const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string
   TASK_AUTOMATION:                { icon: Bell,           color: 'text-[#95BBE2]', label: 'Automação de tarefa' },
 }
 
-export default async function AlertsPage() {
+// Grupos operacionais para os filtros da barra superior.
+const FILTROS = [
+  { key: 'todos',      label: 'Todos'      },
+  { key: 'nao-lidos',  label: 'Não lidos'  },
+  { key: 'performance', label: 'Performance' },
+  { key: 'melhoras',   label: 'Melhoras'   },
+] as const
+
+type FiltroKey = (typeof FILTROS)[number]['key']
+
+// Alertas de piora/risco (o que pode quebrar) vs. melhoras (o que evoluiu bem).
+const PERFORMANCE_TYPES: AlertType[] = [
+  'STATUS_DROPPED_TO_RUIM', 'STATUS_DROPPED_TO_REGULAR', 'KPI_DROP_24H',
+  'ROAS_BELOW_TARGET_2W', 'FATURAMENTO_BELOW_70PCT_WEEK2', 'WARROOM_REGRESSION',
+  'BUDGET_EXHAUSTED', 'BUDGET_WARNING',
+]
+const MELHORA_TYPES: AlertType[] = [
+  'STATUS_IMPROVED_TO_OTIMO', 'KPI_SPIKE_24H', 'WARROOM_EXIT_CRITERIA_MET',
+]
+
+export default async function AlertsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ filtro?: string }>
+}) {
   const session = await requireSession()
+  const { filtro: filtroRaw } = await searchParams
+  const filtro: FiltroKey = FILTROS.some((f) => f.key === filtroRaw)
+    ? (filtroRaw as FiltroKey)
+    : 'todos'
 
   const isViewAll = session.role === 'ADMIN' || session.role === 'CS'
   const where =
@@ -39,14 +68,21 @@ export default async function AlertsPage() {
       ? {}
       : { client: { assignments: { some: { userId: session.userId } } } }
 
-  const alerts = await prisma.alert.findMany({
+  const allAlerts = await prisma.alert.findMany({
     where,
     include: { client: { select: { name: true, slug: true } } },
     orderBy: { createdAt: 'desc' },
     take: 100,
   })
 
-  const unread = alerts.filter((a) => !a.read).length
+  const unread = allAlerts.filter((a) => !a.read).length
+
+  const alerts = allAlerts.filter((a) => {
+    if (filtro === 'nao-lidos') return !a.read
+    if (filtro === 'performance') return PERFORMANCE_TYPES.includes(a.type)
+    if (filtro === 'melhoras') return MELHORA_TYPES.includes(a.type)
+    return true
+  })
 
   return (
     <div className="space-y-6">
@@ -73,14 +109,22 @@ export default async function AlertsPage() {
 
       {/* Filters */}
       <div className="flex gap-2">
-        {(['Todos', 'Não lidos', 'Performance', 'Melhoras'] as const).map((f) => (
-          <span
-            key={f}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium border border-[#38435C] text-[#87919E] cursor-pointer hover:bg-[#38435C]/40 transition-colors"
-          >
-            {f}
-          </span>
-        ))}
+        {FILTROS.map((f) => {
+          const active = filtro === f.key
+          return (
+            <Link
+              key={f.key}
+              href={f.key === 'todos' ? '/alerts' : `/alerts?filtro=${f.key}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                active
+                  ? 'border-[#95BBE2] bg-[#95BBE2]/10 text-[#95BBE2]'
+                  : 'border-[#38435C] text-[#87919E] hover:bg-[#38435C]/40'
+              }`}
+            >
+              {f.label}
+            </Link>
+          )
+        })}
       </div>
 
       {/* Alerts list */}
@@ -89,9 +133,13 @@ export default async function AlertsPage() {
           <div className="w-16 h-16 rounded-2xl bg-[#38435C]/50 flex items-center justify-center mb-4">
             <Bell size={28} className="text-[#87919E]" />
           </div>
-          <p className="text-[#EBEBEB] font-medium">Nenhum alerta</p>
+          <p className="text-[#EBEBEB] font-medium">
+            {filtro === 'todos' ? 'Nenhum alerta' : 'Nenhum alerta neste filtro'}
+          </p>
           <p className="text-[#87919E] text-sm mt-1">
-            Os alertas aparecem aqui quando a saúde de um cliente muda.
+            {filtro === 'todos'
+              ? 'Os alertas aparecem aqui quando a saúde de um cliente muda.'
+              : 'Troque o filtro acima para ver os demais alertas.'}
           </p>
         </div>
       ) : (

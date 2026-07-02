@@ -33,7 +33,8 @@ import {
   Headset,
   Settings,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useNav } from './nav-context'
 
 type Role = 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS'
 
@@ -168,6 +169,16 @@ interface SidebarProps {
 
 export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
   const pathname = usePathname()
+  const { viewMode, setMobileOpen } = useNav()
+
+  // Fecha o drawer mobile ao navegar (a rota muda).
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [pathname, setMobileOpen])
+
+  // Prévia "GESTOR": um ADMIN pode pré-visualizar a navegação sem os itens
+  // exclusivos de ADMIN. Só afeta a UI da sidebar — o RBAC real é do backend.
+  const effectiveRole: Role = role === 'ADMIN' && viewMode === 'GESTOR' ? 'MANAGER' : role
 
   return (
     <aside className="lg-sidebar w-60 flex-shrink-0 h-screen sticky top-0 bg-[#0A1E2C] border-r border-[#38435C] flex flex-col">
@@ -188,9 +199,9 @@ export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3 px-2.5 space-y-1">
         {navigation
-          .filter((section) => canSee(section.roles, role))
+          .filter((section) => canSee(section.roles, effectiveRole))
           .map((section, idx) => {
-            const visibleItems = section.items.filter((item) => canSee(item.roles, role))
+            const visibleItems = section.items.filter((item) => canSee(item.roles, effectiveRole))
             if (visibleItems.length === 0) return null
 
             return (
@@ -202,8 +213,8 @@ export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
                 )}
                 <div className="space-y-0.5">
                   {visibleItems.map((item) =>
-                    item.children && item.children.some((c) => canSee(c.roles, role)) ? (
-                      <NavGroup key={item.name} item={item} role={role} pathname={pathname} counts={counts} />
+                    item.children && item.children.some((c) => canSee(c.roles, effectiveRole)) ? (
+                      <NavGroup key={item.name} item={item} role={effectiveRole} pathname={pathname} counts={counts} />
                     ) : (
                       <NavLeaf key={item.href} item={item} pathname={pathname} counts={counts} />
                     ),
@@ -216,7 +227,7 @@ export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
 
       {/* Bottom */}
       <div className="p-3 border-t border-[#38435C]">
-        {role === 'ADMIN' && (
+        {effectiveRole === 'ADMIN' && (
           <Link
             href="/settings"
             prefetch

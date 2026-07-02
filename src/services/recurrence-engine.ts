@@ -247,43 +247,54 @@ export async function runTaskRecurrences(opts: { force?: boolean } = {}): Promis
   let fallbacks: RoleFallbacks | null = null
 
   for (const rule of rules) {
-    const tpl = rule.template
-    if (!tpl || !tpl.active) continue
-    if (
-      !opts.force &&
-      !shouldRunToday(rule.frequency, rule.dayOfWeek, rule.dayOfMonth, rule.anchorDate ?? null, now)
-    ) {
+    // try/catch por regra (CLAUDE.md #7): uma regra problemática NÃO pode
+    // derrubar o processamento das demais recorrências.
+    try {
+      const tpl = rule.template
+      if (!tpl || !tpl.active) continue
+      if (
+        !opts.force &&
+        !shouldRunToday(rule.frequency, rule.dayOfWeek, rule.dayOfMonth, rule.anchorDate ?? null, now)
+      ) {
+        continue
+      }
+
+      const role = tpl.defaultAssigneeRole
+      // Fan-out por cliente ativo para QUALQUER papel suportado.
+      if (role && CLIENT_FANOUT_ROLES.has(role)) {
+        if (!fallbacks) fallbacks = await loadRoleFallbacks()
+
+        const clients = await prisma.client.findMany({
+          where: { status: 'ACTIVE' },
+          select: {
+            id: true,
+            name: true,
+            gestorId: true,
+            csId: true,
+            supervisorId: true,
+            headId: true,
+            crmId: true,
+            assignments: { where: { isPrimary: true }, select: { userId: true }, take: 1 },
+          },
+        })
+
+        for (const c of clients) {
+          const outcome = await createTaskForClientRule(rule, tpl, c, fallbacks, now)
+          if (outcome === 'created') created++
+          else if (outcome === 'skipped') skipped++
+          else failed++
+        }
+      }
+
+      await prisma.taskRecurrenceRule.update({ where: { id: rule.id }, data: { lastRunAt: now } })
+    } catch (err) {
+      failed++
+      console.error(
+        `[recurrence-engine] regra ${rule.id} falhou — pulando para a próxima:`,
+        err instanceof Error ? err.message : err,
+      )
       continue
     }
-
-    const role = tpl.defaultAssigneeRole
-    // Fan-out por cliente ativo para QUALQUER papel suportado.
-    if (role && CLIENT_FANOUT_ROLES.has(role)) {
-      if (!fallbacks) fallbacks = await loadRoleFallbacks()
-
-      const clients = await prisma.client.findMany({
-        where: { status: 'ACTIVE' },
-        select: {
-          id: true,
-          name: true,
-          gestorId: true,
-          csId: true,
-          supervisorId: true,
-          headId: true,
-          crmId: true,
-          assignments: { where: { isPrimary: true }, select: { userId: true }, take: 1 },
-        },
-      })
-
-      for (const c of clients) {
-        const outcome = await createTaskForClientRule(rule, tpl, c, fallbacks, now)
-        if (outcome === 'created') created++
-        else if (outcome === 'skipped') skipped++
-        else failed++
-      }
-    }
-
-    await prisma.taskRecurrenceRule.update({ where: { id: rule.id }, data: { lastRunAt: now } })
   }
 
   return { rulesProcessed: rules.length, created, skipped, failed }

@@ -30,9 +30,8 @@ export async function GET(request: NextRequest) {
     console.log(`[cron/digest] Digest sent to ${result.sent} recipient(s)`)
     return NextResponse.json({ ok: true, sent: result.sent })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[cron/digest] Failed to send digest:', message)
-    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+    console.error('[cron/digest] Failed to send digest:', err)
+    return NextResponse.json({ ok: false, error: 'Falha ao enviar o resumo diário.' }, { status: 500 })
   }
 }
 
@@ -49,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ ok: true, sent: result.sent })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ ok: false, error: message }, { status: 500 })
+    console.error('[cron/digest] Failed to send digest (POST):', err)
+    return NextResponse.json({ ok: false, error: 'Falha ao enviar o resumo diário.' }, { status: 500 })
   }
 }
