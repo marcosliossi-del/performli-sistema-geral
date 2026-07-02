@@ -244,7 +244,14 @@ export default async function ClientDetailPage({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-[#EBEBEB]">{client.name}</h1>
+                <div>
+                  <h1 className="text-xl font-bold text-[#EBEBEB] leading-tight">{client.name}</h1>
+                  {client.razaoSocial && (
+                    <p className="text-[11px] text-[#647488] leading-tight" title={client.razaoSocial}>
+                      {client.razaoSocial}
+                    </p>
+                  )}
+                </div>
                 {overallStatus && (
                   <div className="flex items-center gap-0.5">
                     {headerStatusTrend === 'up' && (

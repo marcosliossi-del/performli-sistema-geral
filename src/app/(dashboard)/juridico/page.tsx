@@ -19,7 +19,7 @@ async function getData() {
     }),
     prisma.client.findMany({
       where:   { status: 'ACTIVE' },
-      select:  { id: true, name: true },
+      select:  { id: true, name: true, razaoSocial: true },
       orderBy: { name: 'asc' },
     }),
     prisma.user.findMany({

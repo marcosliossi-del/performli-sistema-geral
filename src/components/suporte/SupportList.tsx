@@ -17,6 +17,7 @@ export type SupportRow = {
   priority: TaskPriority
   category: SupportCategory | null
   clientName: string | null
+  clientRazaoSocial: string | null
   clientSlug: string | null
   assigneeName: string | null
   requestedAt: string | null // ISO — data do pedido
@@ -241,11 +242,12 @@ function SupportListRow({
             <Link
               href={`/clients/${row.clientSlug}`}
               className="text-xs text-[#95BBE2] hover:underline"
+              title={row.clientRazaoSocial ?? undefined}
             >
               {row.clientName}
             </Link>
           ) : (
-            <span className="text-xs text-[#87919E]">{row.clientName}</span>
+            <span className="text-xs text-[#87919E]" title={row.clientRazaoSocial ?? undefined}>{row.clientName}</span>
           )
         ) : (
           <span className="text-xs text-[#87919E]/60">—</span>

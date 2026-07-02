@@ -378,7 +378,11 @@ function PanelSections({
               </button>
             )}
             {data.client ? (
-              <Link href={`/clients/${data.client.slug}`} className="truncate text-info hover:underline">
+              <Link
+                href={`/clients/${data.client.slug}`}
+                className="truncate text-info hover:underline"
+                title={data.client.razaoSocial ?? undefined}
+              >
                 {data.client.name}
               </Link>
             ) : (

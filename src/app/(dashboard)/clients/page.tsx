@@ -19,7 +19,7 @@ async function getClientesData(userId: string, role: string) {
     prisma.client.findMany({
       where,
       select: {
-        id: true, name: true, slug: true, source: true, phone: true,
+        id: true, name: true, razaoSocial: true, slug: true, source: true, phone: true,
         email: true, status: true, contractValue: true, createdAt: true,
         businessType: true,
         resultado: true, etapa: true, resultadoRoas: true, resultadoUpdatedAt: true,

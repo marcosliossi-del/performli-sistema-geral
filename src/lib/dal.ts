@@ -943,7 +943,7 @@ export const getClientsForSelect = cache(async (userId: string, role: string) =>
 
   return prisma.client.findMany({
     where,
-    select: { id: true, name: true, slug: true },
+    select: { id: true, name: true, razaoSocial: true, slug: true },
     orderBy: { name: 'asc' },
   })
 })

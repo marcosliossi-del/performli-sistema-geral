@@ -87,7 +87,11 @@ async function getFinanceiroData(from: Date, to: Date) {
     }),
     prisma.asaasPayment.findMany({
       where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lte: to } },
-      include: { customer: { select: { name: true } } },
+      include: {
+        customer: {
+          select: { name: true, client: { select: { name: true, razaoSocial: true } } },
+        },
+      },
       orderBy: { value: 'desc' },
       take: 10,
     }),
@@ -190,11 +194,18 @@ async function getFinanceiroData(from: Date, to: Date) {
     saidasPrevistas:   Number(saidasPrevAgg._sum.value ?? 0),
     distribuicaoEntradas,
     distribuicaoSaidas,
-    topEntradas: topEntradas.map(p => ({
-      name: p.customer?.name ?? 'Sem cliente',
-      description: p.description ?? undefined,
-      value: Number(p.value),
-    })),
+    topEntradas: topEntradas.map(p => {
+      const linked = p.customer?.client
+      return {
+        // Preferimos a identidade do cliente vinculado (fantasia + razão).
+        // Sem vínculo, mantemos o nome cru do Asaas e sinalizamos discretamente.
+        name: linked?.name ?? p.customer?.name ?? 'Sem cliente',
+        razaoSocial: linked?.razaoSocial ?? null,
+        unlinked: !linked,
+        description: p.description ?? undefined,
+        value: Number(p.value),
+      }
+    }),
     topSaidas: allSaidas,
   }
 }

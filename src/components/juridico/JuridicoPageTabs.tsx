@@ -7,7 +7,7 @@ import { ContractsTable } from './ContractsTable'
 import { ContractFeesBulkTable } from './ContractFeesBulkTable'
 import type { ContractRow } from '@/app/actions/contracts'
 
-type Client = { id: string; name: string }
+type Client = { id: string; name: string; razaoSocial?: string | null }
 type User   = { id: string; name: string }
 type FeeRow = { contractId: string; clientName: string; status: string; startDate: string; endDate: string; feeValue: number }
 

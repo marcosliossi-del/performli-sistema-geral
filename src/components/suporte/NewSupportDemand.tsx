@@ -8,7 +8,7 @@ import { createSupportDemand } from '@/app/actions/suporte'
 import { toast } from '@/lib/toast'
 import { useModalA11y } from '@/lib/useModalA11y'
 
-type ClientOption = { id: string; name: string }
+type ClientOption = { id: string; name: string; razaoSocial?: string | null }
 type UserOption = { id: string; name: string }
 
 type Category = 'TRAFEGO' | 'DEMANDA_DA_AGENCIA' | 'SUCESSO_DO_CLIENTE'
@@ -131,7 +131,9 @@ function NewSupportDemandModal({
             <select value={clientId} onChange={(e) => setClientId(e.target.value)} className={inputCls}>
               <option value="">— selecione o cliente —</option>
               {clients.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>
+                  {c.razaoSocial ? `${c.name} — ${c.razaoSocial}` : c.name}
+                </option>
               ))}
             </select>
           </Field>

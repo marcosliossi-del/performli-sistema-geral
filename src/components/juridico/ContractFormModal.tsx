@@ -6,7 +6,7 @@ import { createContract, updateContract, ContractRow } from '@/app/actions/contr
 import { ContractStatus, ContractType } from '@prisma/client'
 import { useModalA11y } from '@/lib/useModalA11y'
 
-type Client = { id: string; name: string }
+type Client = { id: string; name: string; razaoSocial?: string | null }
 type User   = { id: string; name: string }
 
 type Props = {
@@ -118,7 +118,9 @@ export function ContractFormModal({ clients, users, contract, defaultClientId, o
                 >
                   <option value="">Selecione...</option>
                   {clients.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id}>
+                      {c.razaoSocial ? `${c.name} — ${c.razaoSocial}` : c.name}
+                    </option>
                   ))}
                 </select>
               )}
