@@ -223,14 +223,15 @@ function SupportListRow({
         overdue ? 'border-l-2 border-l-[#EF4444]' : 'border-l-2 border-l-transparent'
       }`}
     >
-      {/* Nome */}
+      {/* Nome — abre o painel completo da tarefa (/t/[id]) */}
       <td className="px-3 py-2.5 max-w-[280px]">
-        <span
-          className="text-sm text-[#EBEBEB] line-clamp-1"
+        <Link
+          href={`/t/${row.id}`}
+          className="block text-sm text-[#EBEBEB] line-clamp-1 hover:text-[#95BBE2] hover:underline"
           title={row.description ?? undefined}
         >
           {row.title}
-        </span>
+        </Link>
       </td>
 
       {/* Cliente */}
