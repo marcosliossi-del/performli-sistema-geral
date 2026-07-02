@@ -1,6 +1,7 @@
 import 'server-only'
 import { prisma } from '@/lib/prisma'
-import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
+import { writeAuditLog } from '@/lib/audit'
+import { assertCan } from '@/lib/permissions'
 import { statusIdFor } from './statusMap'
 import type { Prisma, TaskStatus } from '@prisma/client'
 
@@ -23,7 +24,8 @@ export type MutateResult = { ok: true } | { error: string }
 /**
  * Helper transacional ÚNICO de mutação de Task (contrato 3.3):
  *  1. carrega a task (com clientId + status);
- *  2. valida papel + posse via assertClientMutationAccess(allowCS:true) quando há clientId;
+ *  2. valida papel + posse via assertCan('task.write') — com clientId delega a
+ *     assertClientMutationAccess(allowCS:true); sem clientId barra ANALYST;
  *  3. update + TaskActivity(s) na MESMA prisma.$transaction;
  *  4. escreve o espelho `statusId` (statusMap) sempre que `patch.status` estiver presente (D-004);
  *  5. grava AuditLog (best-effort, fora da transação — nunca derruba a mutação).
@@ -39,13 +41,18 @@ export async function mutateTask(
 ): Promise<MutateResult> {
   const current = await prisma.task.findUnique({
     where: { id: taskId },
-    select: { id: true, clientId: true, status: true },
+    select: { id: true, clientId: true, status: true, assignedTo: true },
   })
   if (!current) return { error: 'Tarefa não encontrada.' }
 
-  if (current.clientId) {
+  // Papel + posse SEMPRE (CLAUDE.md #2): com clientId delega a
+  // assertClientMutationAccess; sem clientId (task interna/de lead) o
+  // assertCan barra papéis sem permissão de escrita (ex.: ANALYST). Exceção:
+  // task interna atribuída ao próprio usuário (executar o próprio trabalho).
+  const ownClientlessTask = !current.clientId && current.assignedTo === session.userId
+  if (!ownClientlessTask) {
     try {
-      await assertClientMutationAccess(session, current.clientId, { allowCS: true })
+      await assertCan(session, 'task.write', { clientId: current.clientId ?? undefined })
     } catch (err) {
       return { error: err instanceof Error ? err.message : 'Sem permissão para esta tarefa.' }
     }

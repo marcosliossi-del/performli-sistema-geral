@@ -104,9 +104,16 @@ enum↔FK — crítico para o kanban do A4 que posiciona cards por `statusId`:
 - **Autowatch (criador/comentarista viram watcher)** e menções→notificação: A2
   entrega `extractMentions` puro; a criação de `Notification`/watcher a partir de
   menção fica com quem tocar comentários (fora do meu escopo de arquivos).
-- **`assertCan` nas actions antigas**: usei nas NOVAS; as antigas seguem com
-  `assertClientMutationAccess` (instrução explícita de não refatorá-las além do
-  listado). `assertCan` delega ao mesmo assert, então o comportamento é coerente.
+- **`assertCan` nas actions NOVAS** (corrigido pós-guardião): ligado de fato em
+  `mutateTask` (updateTaskFields/setTaskRecurrence/reorderTask), no
+  `ownershipGuard` (assign/unassign/toggleWatcher) e nos DOIS lados de
+  `addTaskDependency`. Regra: com clientId delega a
+  `assertClientMutationAccess(allowCS)`; sem clientId barra ANALYST, com
+  exceção de task interna atribuída ao próprio usuário (executa o próprio
+  trabalho). `assertCan` também auto-enrola no workspace `ws_arkza` usuários
+  criados após o backfill da Fase 1 (upsert MEMBER/ADMIN). As actions ANTIGAS
+  seguem com `assertClientMutationAccess` (instrução de não refatorar além do
+  listado).
 - **Deprecação do enum `TaskStatus`**: 2ª etapa D-004, fora do MVP.
 
 ## 4. COMO VALIDAR

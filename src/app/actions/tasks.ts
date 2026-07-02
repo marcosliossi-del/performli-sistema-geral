@@ -6,6 +6,7 @@ import { Prisma, TaskPriority, TaskStatus, SupportCategory } from '@prisma/clien
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
+import { assertCan } from '@/lib/permissions'
 import { checkTaskCompletion } from '@/services/task-completion-guard'
 import { statusIdFor } from '@/lib/tasks/statusMap'
 import { mutateTask, type TaskFieldPatch, type ActivityEntry } from '@/lib/tasks/mutate'
@@ -91,6 +92,8 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
       status: true, popId: true, type: true, clientId: true, assignedTo: true,
       dueDate: true, priority: true, tags: true, title: true, description: true,
       areaId: true, isSupport: true, supportDirection: true, supportCategory: true,
+      requiresEvidence: true, requiresReview: true, reviewerId: true,
+      riskScore: true, sourcePopCode: true,
       recurrenceRule: true,
       client: { select: { name: true } },
       checklist: { select: { label: true, required: true, order: true } },
@@ -152,7 +155,10 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
     const rule = parseRecurrenceRule(current.recurrenceRule)
     if (rule && rule.mode === 'onComplete') {
       try {
-        const base = current.dueDate ?? new Date()
+        // Base = agora (data da conclusão), padrão ClickUp "recur on complete":
+        // concluir uma task atrasada gera a próxima ocorrência no FUTURO, nunca
+        // um clone já vencido.
+        const base = new Date()
         const nextDue = computeNextOccurrence(rule, base)
         const occ = nextDue.toLocaleDateString('en-CA', { timeZone: DEFAULT_TZ }) // yyyy-mm-dd
         const idempotencyKey = `recur:${taskId}:${occ}`
@@ -175,6 +181,13 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
               isSupport: current.isSupport,
               supportDirection: current.supportDirection,
               supportCategory: current.supportCategory,
+              // Flags do TaskCompletionGuard acompanham a recorrência: task
+              // crítica regenerada continua exigindo evidência/validação.
+              requiresEvidence: current.requiresEvidence,
+              requiresReview: current.requiresReview,
+              reviewerId: current.reviewerId,
+              riskScore: current.riskScore,
+              sourcePopCode: current.sourcePopCode,
               tags: current.tags,
               dueDate: nextDue,
               requesterId: userId,
@@ -419,9 +432,13 @@ type OwnershipErr = { error: string }
 async function ownershipGuard(taskId: string, session: { userId: string; role: string }): Promise<OwnershipOk | OwnershipErr> {
   const task = await prisma.task.findUnique({ where: { id: taskId }, select: { clientId: true, assignedTo: true } })
   if (!task) return { error: 'Tarefa não encontrada.' }
-  if (task.clientId) {
+  // Papel + posse SEMPRE (CLAUDE.md #2). Task interna (sem cliente) atribuída
+  // ao próprio usuário é permitida (executar o próprio trabalho); nas demais,
+  // assertCan barra papéis sem escrita (ex.: ANALYST em task alheia).
+  const ownClientlessTask = !task.clientId && task.assignedTo === session.userId
+  if (!ownClientlessTask) {
     try {
-      await assertClientMutationAccess(session, task.clientId, { allowCS: true })
+      await assertCan(session, 'task.write', { clientId: task.clientId ?? undefined })
     } catch (err) {
       return { error: err instanceof Error ? err.message : 'Sem permissão.' }
     }
@@ -513,6 +530,9 @@ export async function toggleWatcher(taskId: string, userId: string): Promise<Act
   const guard = await ownershipGuard(taskId, session)
   if ('error' in guard) return guard
 
+  const watcherUser = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } })
+  if (!watcherUser) return { error: 'Usuário informado não existe.' }
+
   const existing = await prisma.taskWatcher.findUnique({ where: { taskId_userId: { taskId, userId } }, select: { id: true } })
 
   try {
@@ -531,6 +551,11 @@ export async function toggleWatcher(taskId: string, userId: string): Promise<Act
     return { error: err instanceof Error ? err.message : 'Falha ao atualizar seguidores.' }
   }
 
+  await writeAuditLog({
+    actorId: session.userId, actorRole: session.role,
+    action: existing ? 'watcher_removed' : 'watcher_added',
+    entityType: 'Task', entityId: taskId, clientId: guard.task.clientId, metadata: { userId },
+  })
   revalidatePath('/operacional')
   return { ok: true }
 }
@@ -550,13 +575,13 @@ export async function addTaskDependency(blockingId: string, waitingId: string): 
   ])
   if (!blocking || !waiting) return { error: 'Tarefa de dependência não encontrada.' }
 
-  // Posse: precisa poder mutar a tarefa que passará a esperar.
-  if (waiting.clientId) {
-    try {
-      await assertClientMutationAccess(session, waiting.clientId, { allowCS: true })
-    } catch (err) {
-      return { error: err instanceof Error ? err.message : 'Sem permissão.' }
-    }
+  // Posse dos DOIS lados: muta a tarefa que espera E referencia a bloqueadora
+  // (evita vazar título/vínculo de cliente que o ator não possui).
+  try {
+    await assertCan(session, 'task.write', { clientId: waiting.clientId ?? undefined })
+    await assertCan(session, 'task.write', { clientId: blocking.clientId ?? undefined })
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Sem permissão.' }
   }
 
   const existing = await prisma.taskDependency.findUnique({
@@ -571,6 +596,7 @@ export async function addTaskDependency(blockingId: string, waitingId: string): 
   // depende (TaskDependency.blockingId onde dependentId = nó).
   const visited = new Set<string>()
   const stack: string[] = [blockingId]
+  const MAX_GRAPH_NODES = 500 // trava de segurança contra grafos patológicos
   while (stack.length > 0) {
     const node = stack.pop() as string
     if (node === waitingId) {
@@ -578,6 +604,9 @@ export async function addTaskDependency(blockingId: string, waitingId: string): 
     }
     if (visited.has(node)) continue
     visited.add(node)
+    if (visited.size > MAX_GRAPH_NODES) {
+      return { error: 'Cadeia de dependências grande demais para validar. Simplifique as dependências.' }
+    }
     const deps = await prisma.taskDependency.findMany({ where: { dependentId: node }, select: { blockingId: true } })
     for (const d of deps) stack.push(d.blockingId)
   }

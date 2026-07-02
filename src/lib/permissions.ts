@@ -26,12 +26,26 @@ export async function assertCan(
   action: PermissionAction,
   resource?: { clientId?: string },
 ): Promise<void> {
-  const membership = await prisma.workspaceMember.findFirst({
+  let membership = await prisma.workspaceMember.findFirst({
     where: { workspaceId: ARKZA_WORKSPACE_ID, userId: session.userId },
     select: { role: true },
   })
   if (!membership) {
-    throw new Error('Sem acesso: você não é membro do workspace.')
+    // Auto-enrolamento: o backfill da Fase 1 cobriu os usuários existentes;
+    // usuários criados DEPOIS entram aqui na primeira escrita. Workspace único
+    // (Arkza) — sem risco de vazar tenancy; evita trancar gente nova pra fora.
+    const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { role: true } })
+    if (!user) throw new Error('Sem acesso: usuário não encontrado.')
+    membership = await prisma.workspaceMember.upsert({
+      where: { workspaceId_userId: { workspaceId: ARKZA_WORKSPACE_ID, userId: session.userId } },
+      create: {
+        workspaceId: ARKZA_WORKSPACE_ID,
+        userId: session.userId,
+        role: user.role === 'ADMIN' ? 'ADMIN' : 'MEMBER',
+      },
+      update: {},
+      select: { role: true },
+    })
   }
 
   if (action === 'workspace.admin') {
