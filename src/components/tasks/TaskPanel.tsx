@@ -332,6 +332,14 @@ function PanelSections({
     try {
       const res = await addTaskComment(data.id, body)
       if ('error' in res) { setComments((prev) => prev.filter((c) => c.id !== temp.id)); throw new Error(res.error) }
+      // Substitui o otimista pelo registro real (id do banco).
+      const real: PanelComment = {
+        id: res.comment.id,
+        author: { id: res.comment.authorId, name: res.comment.authorName },
+        body: res.comment.body,
+        createdAt: res.comment.createdAt,
+      }
+      setComments((prev) => prev.map((c) => (c.id === temp.id ? real : c)))
     } catch (e) {
       setComments((prev) => prev.filter((c) => c.id !== temp.id))
       throw e
