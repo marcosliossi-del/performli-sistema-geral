@@ -27,6 +27,7 @@ const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string
   ANTICHURN_ACTION_NEEDED:        { icon: ShieldAlert,    color: 'text-[#EF4444]', label: 'Cliente em risco sem ação' },
   CHECKIN_MISSING:                { icon: AlertTriangle,  color: 'text-[#EAB308]', label: 'Cliente sem check-in' },
   CHECKIN_REJECTED_STALE:         { icon: AlertCircle,    color: 'text-[#EF4444]', label: 'Check-in reprovado sem correção' },
+  TASK_AUTOMATION:                { icon: Bell,           color: 'text-[#95BBE2]', label: 'Automação de tarefa' },
 }
 
 export default async function AlertsPage() {

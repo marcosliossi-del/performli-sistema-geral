@@ -14,9 +14,10 @@ import { orderBetween } from '@/lib/tasks/fractional'
 import {
   parseRecurrenceRule,
   computeNextOccurrence,
-  DEFAULT_TZ,
   type RecurrenceRule,
 } from '@/lib/tasks/recurrence'
+import { createRecurrenceOccurrence } from '@/lib/tasks/recurClone'
+import { runTaskAutomations } from '@/services/task-automation'
 
 type ActionResult = { ok: true; id?: string } | { error: string }
 
@@ -24,8 +25,8 @@ type ActionResult = { ok: true; id?: string } | { error: string }
 // createTask — mantido (contrato existente, throw). Só agrega statusId espelho.
 // ─────────────────────────────────────────────────────────────────────────────
 const createSchema = z.object({
-  title:       z.string().min(3, 'Título obrigatório'),
-  description: z.string().optional(),
+  title:       z.string().min(3, 'Título obrigatório').max(200, 'Título longo demais (máx. 200)'),
+  description: z.string().max(10_000, 'Descrição longa demais (máx. 10.000)').optional(),
   priority:    z.nativeEnum(TaskPriority).default('MEDIA'),
   dueDate:     z.string().optional(),
   clientId:    z.string().optional(),
@@ -70,6 +71,13 @@ export async function createTask(formData: FormData) {
       activities: { create: { actorId: userId, action: 'created' } },
     },
   })
+
+  // Motor de automação v0 (A5 §2): hook LEVE e best-effort (nunca derruba o create).
+  try {
+    await runTaskAutomations({ type: 'task.created', taskId: task.id })
+  } catch (err) {
+    console.error('[task-automation] hook created falhou:', err)
+  }
 
   revalidatePath('/tasks')
   revalidatePath('/operacional')
@@ -150,7 +158,9 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
   })
 
   // Clone on-complete (D-010): ao concluir com recurrenceRule mode 'onComplete',
-  // regenera a task para a próxima ocorrência. Best-effort: nunca quebra a conclusão.
+  // regenera a task para a próxima ocorrência. Best-effort: nunca quebra a
+  // conclusão. Reutiliza a MESMA montagem do modo schedule (recurClone) — zero
+  // duplicação de lógica (missão A5 §1).
   if (concluindoAgora) {
     const rule = parseRecurrenceRule(current.recurrenceRule)
     if (rule && rule.mode === 'onComplete') {
@@ -158,53 +168,35 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
         // Base = agora (data da conclusão), padrão ClickUp "recur on complete":
         // concluir uma task atrasada gera a próxima ocorrência no FUTURO, nunca
         // um clone já vencido.
-        const base = new Date()
-        const nextDue = computeNextOccurrence(rule, base)
-        const occ = nextDue.toLocaleDateString('en-CA', { timeZone: DEFAULT_TZ }) // yyyy-mm-dd
-        const idempotencyKey = `recur:${taskId}:${occ}`
-
-        const exists = await prisma.task.findUnique({ where: { idempotencyKey }, select: { id: true } })
-        if (!exists) {
-          await prisma.task.create({
-            data: {
-              title: current.title,
-              description: current.description,
-              type: current.type,
-              priority: current.priority,
-              status: 'A_FAZER',
-              statusId: statusIdFor('A_FAZER'),
-              origin: 'RECORRENCIA',
-              clientId: current.clientId,
-              assignedTo: current.assignedTo,
-              areaId: current.areaId,
-              popId: current.popId,
-              isSupport: current.isSupport,
-              supportDirection: current.supportDirection,
-              supportCategory: current.supportCategory,
-              // Flags do TaskCompletionGuard acompanham a recorrência: task
-              // crítica regenerada continua exigindo evidência/validação.
-              requiresEvidence: current.requiresEvidence,
-              requiresReview: current.requiresReview,
-              reviewerId: current.reviewerId,
-              riskScore: current.riskScore,
-              sourcePopCode: current.sourcePopCode,
-              tags: current.tags,
-              dueDate: nextDue,
-              requesterId: userId,
-              requestedAt: new Date(),
-              idempotencyKey,
-              // Reusa a regra parseada (objeto limpo) — evita fricção JsonValue→InputJsonValue.
-              recurrenceRule: rule as unknown as Prisma.InputJsonValue,
-              ...(current.checklist.length
-                ? { checklist: { create: current.checklist.map((c) => ({ label: c.label, required: c.required, order: c.order, done: false })) } }
-                : {}),
-              ...(current.auxAssignees.length
-                ? { auxAssignees: { create: current.auxAssignees.map((a) => ({ userId: a.userId })) } }
-                : {}),
-              activities: { create: { actorId: userId, action: 'recurred', fromValue: taskId } },
-            },
-          })
-        }
+        const nextDue = computeNextOccurrence(rule, new Date())
+        await createRecurrenceOccurrence({
+          source: {
+            id: taskId,
+            title: current.title,
+            description: current.description,
+            type: current.type,
+            priority: current.priority,
+            clientId: current.clientId,
+            assignedTo: current.assignedTo,
+            areaId: current.areaId,
+            popId: current.popId,
+            isSupport: current.isSupport,
+            supportDirection: current.supportDirection,
+            supportCategory: current.supportCategory,
+            requiresEvidence: current.requiresEvidence,
+            requiresReview: current.requiresReview,
+            reviewerId: current.reviewerId,
+            riskScore: current.riskScore,
+            sourcePopCode: current.sourcePopCode,
+            tags: current.tags,
+            checklist: current.checklist,
+            auxAssignees: current.auxAssignees,
+          },
+          rule,
+          dueDate: nextDue,
+          actorId: userId,
+          carryRule: true, // cadeia on-complete: a próxima também recorre ao concluir
+        })
       } catch (err) {
         console.error('[recur:onComplete] falha ao regenerar tarefa recorrente:', err)
       }
@@ -251,6 +243,14 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
     }
   }
 
+  // Motor de automação v0 (A5 §2): hook LEVE e best-effort DEPOIS da transação —
+  // nunca derruba a mudança de status (igual ao clone acima).
+  try {
+    await runTaskAutomations({ type: 'task.status_changed', taskId, from: current.status, to: status })
+  } catch (err) {
+    console.error('[task-automation] hook status_changed falhou:', err)
+  }
+
   revalidatePath('/tasks')
   revalidatePath('/operacional')
   revalidatePath('/suporte')
@@ -263,8 +263,8 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
 // default MEDIA; a UI mostra MEDIA como "Normal"). Não existe "sem prioridade".
 // ─────────────────────────────────────────────────────────────────────────────
 const updateFieldsSchema = z.object({
-  title:           z.string().min(3, 'Título deve ter ao menos 3 caracteres').optional(),
-  description:     z.string().nullable().optional(),
+  title:           z.string().min(3, 'Título deve ter ao menos 3 caracteres').max(200, 'Título longo demais (máx. 200)').optional(),
+  description:     z.string().max(10_000, 'Descrição longa demais (máx. 10.000)').nullable().optional(),
   assignedTo:      z.string().min(1).optional(),
   dueDate:         z.string().nullable().optional(),
   startDate:       z.string().nullable().optional(),
