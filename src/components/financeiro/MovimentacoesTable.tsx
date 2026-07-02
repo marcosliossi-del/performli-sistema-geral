@@ -2,6 +2,8 @@ import { formatCurrency } from '@/lib/utils'
 
 interface Row {
   name: string       // cliente ou categoria
+  razaoSocial?: string | null
+  unlinked?: boolean // entrada do Asaas sem cliente vinculado no Performli
   description?: string
   value: number
   date?: string
@@ -43,8 +45,20 @@ export function MovimentacoesTable({ title, rows, type }: Props) {
           <tbody className="divide-y divide-[#38435C]/30">
             {rows.map((row, i) => (
               <tr key={i} className="hover:bg-[#38435C]/20 transition-colors">
-                <td className="px-4 py-3 text-sm text-[#EBEBEB] font-medium max-w-[160px] truncate">
-                  {row.name}
+                <td className="px-4 py-3 max-w-[180px]">
+                  <span className="block text-sm text-[#EBEBEB] font-medium truncate">
+                    {row.name}
+                    {row.unlinked && (
+                      <span className="ml-1.5 text-[10px] font-normal text-[#F59E0B]" title="Cobrança do Asaas ainda não vinculada a um cliente do Performli">
+                        (sem vínculo)
+                      </span>
+                    )}
+                  </span>
+                  {row.razaoSocial && (
+                    <span className="block text-[10px] text-[#647488] truncate" title={row.razaoSocial}>
+                      {row.razaoSocial}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-sm text-[#87919E] max-w-[200px] truncate">
                   {row.description ?? '—'}

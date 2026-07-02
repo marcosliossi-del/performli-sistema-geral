@@ -27,7 +27,7 @@ export default async function SuportePage() {
   const tasks = await prisma.task.findMany({
     where,
     include: {
-      client: { select: { name: true, slug: true, gestorId: true, csId: true } },
+      client: { select: { name: true, razaoSocial: true, slug: true, gestorId: true, csId: true } },
       user: { select: { name: true } },
     },
     orderBy: { updatedAt: 'desc' },
@@ -52,6 +52,7 @@ export default async function SuportePage() {
     priority: t.priority,
     category: t.supportCategory,
     clientName: t.client?.name ?? null,
+    clientRazaoSocial: t.client?.razaoSocial ?? null,
     clientSlug: t.client?.slug ?? null,
     assigneeName: t.user?.name ?? null,
     requestedAt: t.requestedAt?.toISOString() ?? null,
@@ -60,7 +61,7 @@ export default async function SuportePage() {
   }))
 
   const clients = (await getClientsForSelect(session.userId, session.role)).map(
-    (c) => ({ id: c.id, name: c.name }),
+    (c) => ({ id: c.id, name: c.name, razaoSocial: c.razaoSocial }),
   )
 
   const users = (

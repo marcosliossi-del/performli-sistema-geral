@@ -4,10 +4,12 @@ import { useState, useTransition } from 'react'
 import { Search, Plus, MessageCircle, Pencil, ShoppingCart, MapPin } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { bulkSetBusinessType } from '@/app/actions/updateClient'
+import { ClientIdentity } from '@/components/clients/ClientIdentity'
 
 export interface ClientRow {
   id:            string
   name:          string
+  razaoSocial:   string | null
   slug:          string
   source:        string | null
   phone:         string | null
@@ -252,15 +254,16 @@ export function ClientesTable({ clients }: Props) {
                       />
                     </td>
                     <td className="px-3 py-3">
-                      <a
-                        href={`/clients/${client.slug}`}
-                        className="font-medium text-[#EBEBEB] hover:text-[#95BBE2] transition-colors truncate max-w-[180px] block"
-                      >
-                        {client.name}
-                      </a>
-                      {client.email && (
-                        <p className="text-[11px] text-[#87919E] truncate max-w-[180px]">{client.email}</p>
-                      )}
+                      <div className="max-w-[180px]">
+                        <ClientIdentity
+                          name={client.name}
+                          razaoSocial={client.razaoSocial}
+                          href={`/clients/${client.slug}`}
+                        />
+                        {client.email && (
+                          <p className="text-[11px] text-[#87919E] truncate">{client.email}</p>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-3">
                       <span

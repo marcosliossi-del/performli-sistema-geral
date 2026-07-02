@@ -9,7 +9,7 @@ import { renewContract, cancelContract, ContractRow } from '@/app/actions/contra
 import { formatCurrency } from '@/lib/utils'
 import { ContractStatus } from '@prisma/client'
 
-type Client = { id: string; name: string }
+type Client = { id: string; name: string; razaoSocial?: string | null }
 type User   = { id: string; name: string }
 
 type Props = {
