@@ -9,7 +9,7 @@ export default async function OperacionalPage({
   searchParams: Promise<{ task?: string }>
 }) {
   const { task: initialTaskId } = await searchParams
-  const { userId, role } = await requireSession()
+  const { userId, role, name } = await requireSession()
   const [board, ctx] = await Promise.all([
     getOperacionalBoard(userId, role),
     getNovaTarefaContext(userId, role),
@@ -36,7 +36,7 @@ export default async function OperacionalPage({
         <Kpi label="War Room" value={k.warRoom} tone="crit" />
       </div>
 
-      <OperacionalBoard tasks={board.tasks} ctx={ctx} canEdit={canEdit} initialTaskId={initialTaskId} />
+      <OperacionalBoard tasks={board.tasks} ctx={ctx} canEdit={canEdit} initialTaskId={initialTaskId} currentUser={{ id: userId, name }} />
     </div>
   )
 }

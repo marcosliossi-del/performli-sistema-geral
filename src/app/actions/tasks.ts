@@ -259,6 +259,8 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // updateTaskFields — edição inline de campos (contrato 3.3, {ok}|{error}).
+// `priority: null` é aceito e interpretado como 'MEDIA' (coluna NOT NULL com
+// default MEDIA; a UI mostra MEDIA como "Normal"). Não existe "sem prioridade".
 // ─────────────────────────────────────────────────────────────────────────────
 const updateFieldsSchema = z.object({
   title:           z.string().min(3, 'Título deve ter ao menos 3 caracteres').optional(),
@@ -266,7 +268,10 @@ const updateFieldsSchema = z.object({
   assignedTo:      z.string().min(1).optional(),
   dueDate:         z.string().nullable().optional(),
   startDate:       z.string().nullable().optional(),
-  priority:        z.nativeEnum(TaskPriority).optional(),
+  // A coluna Task.priority é NOT NULL (@default(MEDIA)) — "sem prioridade" não
+  // existe no enum. Aceitamos `null` do cliente e o interpretamos como 'MEDIA'
+  // (a UI exibe MEDIA como "Normal"), preservando o contrato NOT NULL.
+  priority:        z.nativeEnum(TaskPriority).nullable().optional(),
   supportCategory: z.nativeEnum(SupportCategory).nullable().optional(),
   tags:            z.array(z.string()).optional(),
 })
@@ -275,6 +280,16 @@ export type UpdateTaskFieldsInput = z.infer<typeof updateFieldsSchema>
 
 function fmtDate(d: Date | null | undefined): string {
   return d ? d.toISOString().slice(0, 10) : '—'
+}
+
+/**
+ * Converte data de <input type="date"> ('YYYY-MM-DD') para meio-dia UTC:
+ * meia-noite UTC vira 21h do dia ANTERIOR em America/Sao_Paulo (off-by-one);
+ * meio-dia UTC cai no MESMO dia em qualquer fuso ±12. Strings com hora passam
+ * direto.
+ */
+function parseDateInput(s: string): Date {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T12:00:00Z`) : new Date(s)
 }
 
 export async function updateTaskFields(taskId: string, patch: UpdateTaskFieldsInput): Promise<ActionResult> {
@@ -320,22 +335,26 @@ export async function updateTaskFields(taskId: string, patch: UpdateTaskFieldsIn
     activities.push({ action: 'field_changed', fromValue: `responsável: ${oldUser?.name ?? current.assignedTo}`, toValue: `responsável: ${newAssigneeName}` })
   }
   if (input.dueDate !== undefined) {
-    const newDue = input.dueDate ? new Date(input.dueDate) : null
+    const newDue = input.dueDate ? parseDateInput(input.dueDate) : null
     if ((newDue?.getTime() ?? null) !== (current.dueDate?.getTime() ?? null)) {
       data.dueDate = newDue
       activities.push({ action: 'field_changed', fromValue: `prazo: ${fmtDate(current.dueDate)}`, toValue: `prazo: ${fmtDate(newDue)}` })
     }
   }
   if (input.startDate !== undefined) {
-    const newStart = input.startDate ? new Date(input.startDate) : null
+    const newStart = input.startDate ? parseDateInput(input.startDate) : null
     if ((newStart?.getTime() ?? null) !== (current.startDate?.getTime() ?? null)) {
       data.startDate = newStart
       activities.push({ action: 'field_changed', fromValue: `início: ${fmtDate(current.startDate)}`, toValue: `início: ${fmtDate(newStart)}` })
     }
   }
-  if (input.priority !== undefined && input.priority !== current.priority) {
-    data.priority = input.priority
-    activities.push({ action: 'field_changed', fromValue: `prioridade: ${current.priority}`, toValue: `prioridade: ${input.priority}` })
+  if (input.priority !== undefined) {
+    // null = "sem prioridade" na UI → MEDIA (coluna NOT NULL, default MEDIA).
+    const nextPriority: TaskPriority = input.priority ?? 'MEDIA'
+    if (nextPriority !== current.priority) {
+      data.priority = nextPriority
+      activities.push({ action: 'field_changed', fromValue: `prioridade: ${current.priority}`, toValue: `prioridade: ${nextPriority}` })
+    }
   }
   if (input.supportCategory !== undefined && (input.supportCategory ?? null) !== current.supportCategory) {
     data.supportCategory = input.supportCategory ?? null
@@ -622,6 +641,51 @@ export async function addTaskDependency(blockingId: string, waitingId: string): 
 
   await writeAuditLog({
     actorId: session.userId, actorRole: session.role, action: 'dependency_added',
+    entityType: 'Task', entityId: waitingId, clientId: waiting.clientId, metadata: { blockingId },
+  })
+  revalidatePath('/operacional')
+  return { ok: true }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// removeTaskDependency — desfaz a dependência (blockingId BLOQUEIA waitingId).
+// Mesma authz do addTaskDependency: posse dos DOIS lados (assertCan).
+// ─────────────────────────────────────────────────────────────────────────────
+export async function removeTaskDependency(blockingId: string, waitingId: string): Promise<ActionResult> {
+  const session = await requireSession()
+
+  const [blocking, waiting] = await Promise.all([
+    prisma.task.findUnique({ where: { id: blockingId }, select: { id: true, clientId: true, title: true } }),
+    prisma.task.findUnique({ where: { id: waitingId }, select: { id: true, clientId: true, title: true } }),
+  ])
+  if (!blocking || !waiting) return { error: 'Tarefa de dependência não encontrada.' }
+
+  // Posse dos DOIS lados (mesma checagem do addTaskDependency): não expõe/altera
+  // vínculo de cliente que o ator não possui.
+  try {
+    await assertCan(session, 'task.write', { clientId: waiting.clientId ?? undefined })
+    await assertCan(session, 'task.write', { clientId: blocking.clientId ?? undefined })
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Sem permissão.' }
+  }
+
+  const existing = await prisma.taskDependency.findUnique({
+    where: { dependentId_blockingId: { dependentId: waitingId, blockingId } },
+    select: { id: true },
+  })
+  if (!existing) return { error: 'Essa dependência não existe.' }
+
+  try {
+    await prisma.$transaction([
+      prisma.taskDependency.delete({ where: { id: existing.id } }),
+      prisma.taskActivity.create({ data: { taskId: waitingId, actorId: session.userId, action: 'dependency_removed', fromValue: blocking.title } }),
+    ])
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Falha ao remover dependência.' }
+  }
+
+  await writeAuditLog({
+    actorId: session.userId, actorRole: session.role, action: 'dependency_removed',
     entityType: 'Task', entityId: waitingId, clientId: waiting.clientId, metadata: { blockingId },
   })
   revalidatePath('/operacional')

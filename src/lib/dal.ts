@@ -1087,14 +1087,27 @@ export type OperacionalTask = {
   dueDate: Date | null
   requestedAt: Date | null
   createdAt: Date
+  completedAt: Date | null
+  clientId: string | null
   clientName: string | null
   clientSlug: string | null
   clientHealth: 'OTIMO' | 'REGULAR' | 'RUIM' | null
+  /** Responsável principal (espelho `assignedTo`, D-005). */
+  assigneeId: string
   assigneeName: string
+  /** Lista completa de responsáveis (principal + auxiliares, M:N — D-005). */
+  assignees: { id: string; name: string }[]
   areaName: string | null
   popCode: string | null
   slaHours: number | null
   slaBreached: boolean
+  // ── Campos p/ as views ClickUp-class (Fase 4b) ─────────────────────────────
+  tags: string[]
+  /** Ordenação manual fractional (D-003). NULL cai p/ dueDate na leitura. */
+  orderIndex: string | null
+  checklistDone: number
+  checklistTotal: number
+  commentCount: number
 }
 
 export type OperacionalBoard = {
@@ -1123,34 +1136,68 @@ export const getOperacionalBoard = cache(
         dueDate: true,
         requestedAt: true,
         createdAt: true,
+        completedAt: true,
+        clientId: true,
+        assignedTo: true,
+        tags: true,
+        orderIndex: true,
         slaHours: true,
         slaBreached: true,
         client: { select: { name: true, slug: true, statusStreak: { select: { status: true } } } },
         user: { select: { name: true } },
         area: { select: { name: true } },
         pop: { select: { code: true } },
+        auxAssignees: { select: { userId: true } },
+        checklist: { select: { done: true } },
+        _count: { select: { comments: true } },
       },
     })
 
+    // Nomes dos responsáveis auxiliares (M:N não tem relação de user direta).
+    // Uma única query em lote resolve todos os ids envolvidos (evita N+1).
+    const auxIds = Array.from(new Set(rows.flatMap((t) => t.auxAssignees.map((a) => a.userId))))
+    const auxUsers = auxIds.length
+      ? await prisma.user.findMany({ where: { id: { in: auxIds } }, select: { id: true, name: true } })
+      : []
+    const auxNameMap = new Map(auxUsers.map((u) => [u.id, u.name]))
+
     const now = Date.now()
-    const tasks: OperacionalTask[] = rows.map((t) => ({
-      id: t.id,
-      title: t.title,
-      status: t.status,
-      priority: t.priority,
-      type: t.type,
-      dueDate: t.dueDate,
-      requestedAt: t.requestedAt,
-      createdAt: t.createdAt,
-      clientName: t.client?.name ?? null,
-      clientSlug: t.client?.slug ?? null,
-      clientHealth: t.client?.statusStreak?.status ?? null,
-      assigneeName: t.user?.name ?? '—',
-      areaName: t.area?.name ?? null,
-      popCode: t.pop?.code ?? null,
-      slaHours: t.slaHours,
-      slaBreached: t.slaBreached,
-    }))
+    const tasks: OperacionalTask[] = rows.map((t) => {
+      const primaryName = t.user?.name ?? '—'
+      const assignees = [
+        { id: t.assignedTo, name: primaryName },
+        ...t.auxAssignees
+          .filter((a) => a.userId !== t.assignedTo)
+          .map((a) => ({ id: a.userId, name: auxNameMap.get(a.userId) ?? 'Responsável' })),
+      ]
+      return {
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        type: t.type,
+        dueDate: t.dueDate,
+        requestedAt: t.requestedAt,
+        createdAt: t.createdAt,
+        completedAt: t.completedAt,
+        clientId: t.clientId,
+        clientName: t.client?.name ?? null,
+        clientSlug: t.client?.slug ?? null,
+        clientHealth: t.client?.statusStreak?.status ?? null,
+        assigneeId: t.assignedTo,
+        assigneeName: primaryName,
+        assignees,
+        areaName: t.area?.name ?? null,
+        popCode: t.pop?.code ?? null,
+        slaHours: t.slaHours,
+        slaBreached: t.slaBreached,
+        tags: t.tags,
+        orderIndex: t.orderIndex,
+        checklistDone: t.checklist.filter((c) => c.done).length,
+        checklistTotal: t.checklist.length,
+        commentCount: t._count.comments,
+      }
+    })
 
     const abertasList = tasks.filter((t) => t.status !== 'CONCLUIDO' && t.status !== 'CANCELADO')
     const abertas = abertasList.length

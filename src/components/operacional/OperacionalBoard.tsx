@@ -1,17 +1,31 @@
 'use client'
 
 import { useMemo, useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react'
+import type { TaskStatus } from '@prisma/client'
 import type { OperacionalTask, NovaTarefaContext } from '@/lib/dal'
+import { toast } from '@/lib/toast'
+import { orderBetween } from '@/lib/tasks/fractional'
+import {
+  updateTaskStatus, updateTaskFields, assignTask, unassignTask, reorderTask,
+} from '@/app/actions/tasks'
+import { createOperacionalTask } from '@/app/actions/operacional'
 import { TaskDrawer } from './TaskDrawer'
 import { NovaTarefaModal } from './NovaTarefaModal'
+import { TaskFiltersBar } from './TaskFiltersBar'
+import { TasksListView } from './TasksListView'
+import { TasksKanbanView } from './TasksKanbanView'
 import {
-  STATUS_LABELS, STATUS_COLORS, PRIORITY_LABELS, KANBAN_ORDER, label,
+  applyFilters, loadView, saveView, loadFilters, saveFilters,
+  EMPTY_FILTERS, isOverdue as isOverdueVM,
+  type BoardView, type TaskFilters, type BoardHandlers,
+} from './taskBoard'
+import {
+  STATUS_LABELS, STATUS_COLORS, PRIORITY_LABELS, label,
 } from './labels'
 
-type View = 'lista' | 'kanban' | 'calendario' | 'cliente' | 'responsavel'
-
-const VIEWS: { key: View; label: string }[] = [
+const VIEWS: { key: BoardView; label: string }[] = [
   { key: 'lista', label: 'Lista' },
   { key: 'kanban', label: 'Kanban' },
   { key: 'calendario', label: 'Calendário' },
@@ -19,7 +33,7 @@ const VIEWS: { key: View; label: string }[] = [
   { key: 'responsavel', label: 'Por Gestor' },
 ]
 
-function Segmented({ view, setView }: { view: View; setView: (v: View) => void }) {
+function Segmented({ view, setView }: { view: BoardView; setView: (v: BoardView) => void }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const [thumb, setThumb] = useState<{ left: number; width: number } | null>(null)
 
@@ -54,14 +68,11 @@ function Segmented({ view, setView }: { view: View; setView: (v: View) => void }
 
 const CRITICAL_STATUS = new Set(['BLOQUEADO', 'ATRASADO'])
 
-function isOverdue(t: OperacionalTask): boolean {
-  return t.status !== 'CONCLUIDO' && t.status !== 'CANCELADO' && t.dueDate != null && new Date(t.dueDate).getTime() < Date.now()
-}
 function isCritical(t: OperacionalTask): boolean {
   return t.type === 'WAR_ROOM' || t.priority === 'CRITICA' || CRITICAL_STATUS.has(t.status)
 }
 
-// ── helpers de apresentação ────────────────────────────────────────────────────
+// ── helpers de apresentação (views legadas: Calendário / Por Cliente / Por Gestor) ──
 const AV_COLORS = ['#4d96ff', '#a98cff', '#34c97a', '#f0922b', '#22c2d6', '#ff5e6a', '#e3ad45']
 function avatarColor(name: string): string {
   let h = 0
@@ -127,9 +138,9 @@ function PriorityFlag({ p }: { p: string }) {
   )
 }
 
-// ── Linha da tabela (view lista/gestor/cliente) ────────────────────────────────
+// ── Linha da tabela (views legadas Por Cliente / Por Gestor) ────────────────────
 function TaskTableRow({ t, onClick }: { t: OperacionalTask; onClick: () => void }) {
-  const overdue = isOverdue(t)
+  const overdue = isOverdueVM(t)
   const sla = slaInfo(t)
   return (
     <tr onClick={onClick} className={`cursor-pointer transition-colors hover:bg-white/[0.035] ${isCritical(t) ? 'shadow-[inset_3px_0_0_#ff3b4e]' : ''}`}>
@@ -177,23 +188,6 @@ function TaskTable({ items, onSelect }: { items: OperacionalTask[]; onSelect: (t
   )
 }
 
-// ── Card do kanban ─────────────────────────────────────────────────────────────
-function KanbanCard({ t, onClick }: { t: OperacionalTask; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className={`ak-lift w-full text-left bg-[#161d26] border rounded-xl p-3 ${isCritical(t) ? 'border-[#ff3b4e]/35' : 'border-white/[0.08]'}`}>
-      <StatusBadge s={t.status} />
-      <p className="text-[12.5px] font-medium text-[#EBEBEB] leading-snug mt-2 mb-2.5">{t.title}</p>
-      <div className="flex items-center gap-2 text-[11px] text-[#647488]">
-        {t.clientName && <span className="inline-flex items-center gap-1.5"><HealthDot h={t.clientHealth} />{t.clientName}</span>}
-      </div>
-      <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-white/[0.05]">
-        <span className="text-[11px]"><PriorityFlag p={t.priority} /></span>
-        <Avatar name={t.assigneeName} />
-      </div>
-    </button>
-  )
-}
-
 // ── Calendário (grade do mês, tarefas por dia de vencimento) ───────────────────
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 function CalendarView({ tasks, onSelect }: { tasks: OperacionalTask[]; onSelect: (t: OperacionalTask) => void }) {
@@ -238,7 +232,7 @@ function CalendarView({ tasks, onSelect }: { tasks: OperacionalTask[]; onSelect:
                 <div className="space-y-0.5">
                   {(byDay.get(day) ?? []).slice(0, 3).map((t) => (
                     <button key={t.id} onClick={() => onSelect(t)} title={t.title}
-                      className={`block w-full text-left text-[9.5px] truncate px-1 py-0.5 rounded ${isCritical(t) ? 'bg-[#ff3b4e]/15 text-[#ff7a8a]' : isOverdue(t) ? 'bg-[#ff5e6a]/15 text-[#ff8aa1]' : 'bg-white/[0.06] text-[#a3b2c2]'}`}>
+                      className={`block w-full text-left text-[9.5px] truncate px-1 py-0.5 rounded ${isCritical(t) ? 'bg-[#ff3b4e]/15 text-[#ff7a8a]' : isOverdueVM(t) ? 'bg-[#ff5e6a]/15 text-[#ff8aa1]' : 'bg-white/[0.06] text-[#a3b2c2]'}`}>
                       {t.title}
                     </button>
                   ))}
@@ -256,82 +250,192 @@ function CalendarView({ tasks, onSelect }: { tasks: OperacionalTask[]; onSelect:
 }
 
 export function OperacionalBoard({
-  tasks, ctx, canEdit, initialTaskId,
+  tasks: initialTasks, ctx, canEdit, initialTaskId, currentUser,
 }: {
   tasks: OperacionalTask[]
   ctx: NovaTarefaContext
   canEdit: boolean
   initialTaskId?: string
+  currentUser: { id: string; name: string }
 }) {
-  const [view, setView] = useState<View>('lista')
-  const [statusF, setStatusF] = useState('')
-  const [priorityF, setPriorityF] = useState('')
-  const [overdueOnly, setOverdueOnly] = useState(false)
-  const [search, setSearch] = useState('')
+  const router = useRouter()
+  // Estado otimista local (D-001): as mutações refletem na hora e reconciliam via
+  // revalidatePath das actions. Semeado das props (sem re-seed no meio da sessão).
+  const [tasks, setTasks] = useState<OperacionalTask[]>(initialTasks)
+
+  const [view, setView] = useState<BoardView>('lista')
+  const [filters, setFilters] = useState<TaskFilters>(EMPTY_FILTERS)
+  const [hydrated, setHydrated] = useState(false)
+
   const [selected, setSelected] = useState<OperacionalTask | null>(null)
   const [novaOpen, setNovaOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
-  // Deep-link: abre o drawer da tarefa indicada por ?task=<id> ao montar.
+  // Preferências persistidas (localStorage) — carregadas só no cliente p/ evitar
+  // divergência de hidratação (TaskSavedView sem action de escrita — ver handoff).
+  useEffect(() => {
+    setView(loadView())
+    setFilters(loadFilters())
+    setHydrated(true)
+  }, [])
+  useEffect(() => { if (hydrated) saveView(view) }, [view, hydrated])
+  useEffect(() => { if (hydrated) saveFilters(filters) }, [filters, hydrated])
+
+  // Deep-link: ?task=<id> abre o TaskDrawer atual (preservado — não remover).
   useEffect(() => {
     if (!initialTaskId) return
-    const t = tasks.find((x) => x.id === initialTaskId)
+    const t = initialTasks.find((x) => x.id === initialTaskId)
     if (t) setSelected(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTaskId])
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return tasks.filter((t) => {
-      if (statusF && t.status !== statusF) return false
-      if (priorityF && t.priority !== priorityF) return false
-      if (overdueOnly && !isOverdue(t)) return false
-      if (q && !(t.title.toLowerCase().includes(q) || (t.clientName ?? '').toLowerCase().includes(q))) return false
-      return true
-    })
-  }, [tasks, statusF, priorityF, overdueOnly, search])
+  const filtered = useMemo(() => applyFilters(tasks, filters), [tasks, filters])
 
-  const groups = useMemo(() => {
-    if (view === 'responsavel' || view === 'cliente') {
-      const keyFn = view === 'responsavel' ? (t: OperacionalTask) => t.assigneeName : (t: OperacionalTask) => t.clientName ?? 'Interno'
-      const map = new Map<string, OperacionalTask[]>()
-      for (const t of filtered) {
-        const k = keyFn(t)
-        if (!map.has(k)) map.set(k, [])
-        map.get(k)!.push(t)
+  // ── Mutação otimista local ────────────────────────────────────────────────
+  function patchTask(id: string, patch: Partial<OperacionalTask>) {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)))
+  }
+
+  const usersOpts = useMemo(() => ctx.usuarios.map((u) => ({ id: u.id, name: u.name })), [ctx.usuarios])
+  const clientesOpts = useMemo(() => ctx.clientes.map((c) => ({ id: c.id, name: c.name })), [ctx.clientes])
+  const userNameById = useMemo(() => new Map(usersOpts.map((u) => [u.id, u.name])), [usersOpts])
+
+  // Handlers rethrow no erro (rollback já aplicado); os átomos da Fase 3 e o
+  // onDragEnd do Kanban exibem o toast.
+  const handlers: BoardHandlers = {
+    canEdit,
+    users: usersOpts,
+    onOpen: (id) => router.push(`/t/${id}`),
+
+    onChangeStatus: async (task, next) => {
+      const prevStatus = task.status
+      const prevCompleted = task.completedAt
+      patchTask(task.id, { status: next, completedAt: next === 'CONCLUIDO' ? new Date() : null })
+      try {
+        await updateTaskStatus(task.id, next as TaskStatus) // lança no guard
+      } catch (e) {
+        patchTask(task.id, { status: prevStatus, completedAt: prevCompleted })
+        throw e
       }
-      return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([key, items]) => ({ key, label: key, items }))
-    }
-    // lista: agrupado por status, na ordem do kanban
-    return KANBAN_ORDER
-      .map((s) => ({ key: s, label: label(STATUS_LABELS, s), items: filtered.filter((t) => t.status === s) }))
-      .filter((g) => g.items.length > 0)
-  }, [filtered, view])
+    },
 
-  const kanbanCols = useMemo(() =>
-    KANBAN_ORDER
-      .map((s) => ({ key: s, label: label(STATUS_LABELS, s), items: filtered.filter((t) => t.status === s) }))
-      .filter((g) => g.items.length > 0),
-  [filtered])
+    onChangePriority: async (task, next) => {
+      const prev = task.priority
+      patchTask(task.id, { priority: next })
+      const res = await updateTaskFields(task.id, { priority: next })
+      if ('error' in res) { patchTask(task.id, { priority: prev }); throw new Error(res.error) }
+    },
+
+    onChangeDueDate: async (task, iso) => {
+      const prev = task.dueDate
+      // Meio-dia UTC = mesmo dia em America/Sao_Paulo (espelha parseDateInput
+      // do servidor; meia-noite UTC mostraria o dia anterior no chip).
+      patchTask(task.id, { dueDate: iso ? new Date(`${iso}T12:00:00Z`) : null })
+      const res = await updateTaskFields(task.id, { dueDate: iso })
+      if ('error' in res) { patchTask(task.id, { dueDate: prev }); throw new Error(res.error) }
+    },
+
+    onToggleAssignee: async (task, userId, willAssign) => {
+      const prev = task.assignees
+      if (!willAssign && prev.length <= 1) {
+        throw new Error('Não é possível remover o único responsável da tarefa.')
+      }
+      const next = willAssign
+        ? [...prev, { id: userId, name: userNameById.get(userId) ?? 'Responsável' }]
+        : prev.filter((a) => a.id !== userId)
+      patchTask(task.id, { assignees: next })
+      const res = willAssign ? await assignTask(task.id, userId) : await unassignTask(task.id, userId)
+      if ('error' in res) { patchTask(task.id, { assignees: prev }); throw new Error(res.error) }
+    },
+
+    onReorder: async (taskId, before, after) => {
+      const task = tasks.find((t) => t.id === taskId)
+      if (!task) return
+      const prev = task.orderIndex
+      let newIndex: string
+      try {
+        newIndex = orderBetween(before, after)
+      } catch (e) {
+        throw e instanceof Error ? e : new Error('Não foi possível reordenar aqui.')
+      }
+      patchTask(taskId, { orderIndex: newIndex })
+      const res = await reorderTask(taskId, before, after)
+      if ('error' in res) { patchTask(taskId, { orderIndex: prev }); throw new Error(res.error) }
+    },
+
+    onReorderSeed: async (orderedIds) => {
+      // Semeia a coluna inteira na ordem visual: chaves sequenciais determinís-
+      // ticas (orderBetween é puro — o servidor, recebendo os mesmos vizinhos,
+      // chega às MESMAS chaves). Optimistic em bloco + rollback total no erro.
+      const prevById = new Map<string, string | null>()
+      for (const id of orderedIds) {
+        const t = tasks.find((x) => x.id === id)
+        prevById.set(id, t?.orderIndex ?? null)
+      }
+      const keys: string[] = []
+      let prevKey: string | null = null
+      for (let i = 0; i < orderedIds.length; i++) {
+        const k: string = orderBetween(prevKey, null)
+        keys.push(k)
+        prevKey = k
+      }
+      orderedIds.forEach((id, i) => patchTask(id, { orderIndex: keys[i] }))
+      try {
+        for (let i = 0; i < orderedIds.length; i++) {
+          const res = await reorderTask(orderedIds[i], i === 0 ? null : keys[i - 1], null)
+          if ('error' in res) throw new Error(res.error)
+        }
+      } catch (e) {
+        orderedIds.forEach((id) => patchTask(id, { orderIndex: prevById.get(id) ?? null }))
+        throw e instanceof Error ? e : new Error('Não foi possível reordenar a coluna.')
+      }
+    },
+
+    onQuickCreate: async (title) => {
+      const tempId = `temp-${Date.now()}`
+      const optimistic: OperacionalTask = {
+        id: tempId, title, status: 'A_FAZER', priority: 'MEDIA', type: 'SIMPLES',
+        dueDate: null, requestedAt: new Date(), createdAt: new Date(), completedAt: null,
+        clientId: null, clientName: null, clientSlug: null, clientHealth: null,
+        assigneeId: currentUser.id, assigneeName: currentUser.name,
+        assignees: [{ id: currentUser.id, name: currentUser.name }],
+        areaName: null, popCode: null, slaHours: null, slaBreached: false,
+        tags: [], orderIndex: null, checklistDone: 0, checklistTotal: 0, commentCount: 0,
+      }
+      setTasks((prev) => [optimistic, ...prev])
+      const res = await createOperacionalTask({ title })
+      if ('error' in res) {
+        setTasks((prev) => prev.filter((t) => t.id !== tempId))
+        toast(res.error, 'err')
+        throw new Error(res.error)
+      }
+      const realId = res.id
+      if (realId) patchTask(tempId, { id: realId })
+    },
+  }
+
+  // Grupos das views legadas Por Cliente / Por Gestor
+  const legacyGroups = useMemo(() => {
+    if (view !== 'responsavel' && view !== 'cliente') return []
+    const keyFn = view === 'responsavel'
+      ? (t: OperacionalTask) => t.assigneeName
+      : (t: OperacionalTask) => t.clientName ?? 'Interno'
+    const map = new Map<string, OperacionalTask[]>()
+    for (const t of filtered) {
+      const k = keyFn(t)
+      if (!map.has(k)) map.set(k, [])
+      map.get(k)!.push(t)
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, items]) => ({ key, label: key, items }))
+  }, [filtered, view])
 
   return (
     <div className="space-y-4">
-      {/* Barra de ações */}
+      {/* Barra de visão + criar */}
       <div className="flex flex-wrap items-center gap-2">
         <Segmented view={view} setView={setView} />
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar…"
-          className="bg-[#0A1E2C] border border-[#38435C] rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/50 focus:outline-none focus:border-[#95BBE2]/50" />
-        <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="bg-[#0A1E2C] border border-[#38435C] rounded-lg px-2 py-1.5 text-xs text-[#EBEBEB]">
-          <option value="">Status: todos</option>
-          {KANBAN_ORDER.map((s) => <option key={s} value={s}>{label(STATUS_LABELS, s)}</option>)}
-        </select>
-        <select value={priorityF} onChange={(e) => setPriorityF(e.target.value)} className="bg-[#0A1E2C] border border-[#38435C] rounded-lg px-2 py-1.5 text-xs text-[#EBEBEB]">
-          <option value="">Prioridade: todas</option>
-          {['BAIXA', 'MEDIA', 'ALTA', 'CRITICA'].map((p) => <option key={p} value={p}>{label(PRIORITY_LABELS, p)}</option>)}
-        </select>
-        <label className="flex items-center gap-1.5 text-xs text-[#87919E] cursor-pointer">
-          <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} /> Só atrasadas
-        </label>
         <div className="flex-1" />
         {canEdit && (
           <button onClick={() => setNovaOpen(true)} className="flex items-center gap-1.5 text-xs bg-[#95BBE2]/10 text-[#95BBE2] border border-[#95BBE2]/20 rounded-lg px-3 py-1.5 hover:bg-[#95BBE2]/20">
@@ -340,31 +444,27 @@ export function OperacionalBoard({
         )}
       </div>
 
-      {/* Conteúdo */}
-      {filtered.length === 0 ? (
+      {/* Barra de filtros única (compartilhada por todas as views) */}
+      <TaskFiltersBar
+        filters={filters}
+        onChange={setFilters}
+        users={usersOpts}
+        clientes={clientesOpts}
+      />
+
+      {/* Conteúdo — Lista/Kanban sempre renderizam (grupos/colunas vazios ainda
+          oferecem a criação rápida); as views legadas mostram o estado vazio. */}
+      {view === 'lista' ? (
+        <TasksListView tasks={filtered} handlers={handlers} />
+      ) : view === 'kanban' ? (
+        <TasksKanbanView tasks={filtered} handlers={handlers} />
+      ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-sm text-[#87919E]">Nenhuma tarefa com esses filtros.</div>
       ) : view === 'calendario' ? (
         <CalendarView tasks={filtered} onSelect={setSelected} />
-      ) : view === 'kanban' ? (
-        <div className="flex gap-3.5 overflow-x-auto pb-2">
-          {kanbanCols.map((g) => {
-            const crit = g.items.some(isCritical) && CRITICAL_STATUS.has(g.key)
-            return (
-              <div key={g.key} className={`min-w-[272px] w-[272px] flex-shrink-0 bg-[#10151c] border rounded-xl flex flex-col ${crit ? 'border-[#ff3b4e]/35' : 'border-white/[0.08]'}`}>
-                <div className={`flex items-center gap-2 px-3.5 py-3 border-b border-white/[0.05] ${crit ? 'bg-[#ff3b4e]/[0.06] rounded-t-xl' : ''}`}>
-                  <StatusBadge s={g.key} />
-                  <span className="ml-auto text-[11px] font-mono text-[#647488] bg-white/[0.05] px-2 py-0.5 rounded-full">{g.items.length}</span>
-                </div>
-                <div className="p-2.5 space-y-2.5">
-                  {g.items.map((t) => <KanbanCard key={t.id} t={t} onClick={() => setSelected(t)} />)}
-                </div>
-              </div>
-            )
-          })}
-        </div>
       ) : (
         <div className="space-y-5">
-          {groups.map((g) => {
+          {legacyGroups.map((g) => {
             const isCol = collapsed[g.key]
             return (
               <div key={g.key}>
