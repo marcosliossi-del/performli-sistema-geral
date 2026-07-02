@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { requireSession } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { getClientAIContext } from '@/lib/ai-client-context'
+import { normalizeRole } from '@/lib/rbac'
 
 const anthropic = new Anthropic()
 
@@ -23,8 +24,9 @@ export type PlanoAcaoResponse = PlanoAcaoResult | { error: string }
  */
 export async function generatePlanoAcao(clientId: string): Promise<PlanoAcaoResponse> {
   const session = await requireSession()
-  if (session.role === 'ANALYST') return { error: 'Seu papel não permite gerar planos de ação.' }
-  if (session.role === 'MANAGER') {
+  // Staff amplo (ADMIN/CS/SUPERVISOR/ANALISTA) gera planos para qualquer
+  // cliente; GESTOR_TRAFEGO apenas para clientes da carteira.
+  if (normalizeRole(session.role) === 'GESTOR_TRAFEGO') {
     const owns = await prisma.clientAssignment.findFirst({ where: { clientId, userId: session.userId }, select: { id: true } })
     if (!owns) return { error: 'Você não tem acesso a este cliente.' }
   }
@@ -44,7 +46,7 @@ export async function generatePlanoAcao(clientId: string): Promise<PlanoAcaoResp
 
   let context: string
   try {
-    context = await getClientAIContext(clientId)
+    context = await getClientAIContext(clientId, session.role)
   } catch {
     return { error: 'Não foi possível montar o contexto do cliente. Verifique se GA4/Meta estão sincronizados.' }
   }

@@ -1,6 +1,7 @@
 import 'server-only'
 import { prisma } from './prisma'
 import { assertClientMutationAccess } from './audit'
+import { normalizeRole, can } from './rbac'
 
 type SessionLike = { userId: string; role: string }
 
@@ -59,10 +60,16 @@ export async function assertCan(
     return
   }
 
-  // task.write: se há cliente, valida papel + posse (CS acompanha).
+  // task.write: se há cliente, valida papel + posse (CS/staff acompanha).
   if (resource?.clientId) {
     await assertClientMutationAccess(session, resource.clientId, { allowCS: true })
-  } else if (session.role === 'ANALYST') {
-    throw new Error('Seu papel não permite esta ação.')
+  } else {
+    // Tarefa interna (sem cliente): GESTOR só pode mexer em status — o campo é
+    // validado por assertTaskPatchAllowed no caminho de tarefas. Aqui só
+    // barramos quem não tem NENHUMA mutação de tarefa na matriz.
+    const role = normalizeRole(session.role)
+    if (!can(role, 'update', 'tarefas') && !can(role, 'update_status_only', 'tarefas')) {
+      throw new Error('Seu papel não permite esta ação.')
+    }
   }
 }

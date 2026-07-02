@@ -1,10 +1,16 @@
 'use client'
 
 import { createContext, useContext } from 'react'
+import type { SessionPayload } from '@/lib/session'
 
 export type ViewMode = 'ADMIN' | 'GESTOR'
 
 type NavContextValue = {
+  /**
+   * Papel bruto da sessão (enum Prisma, pode conter legados). Toda decisão de
+   * UI deve passar por `normalizeRole()` — ver `usePermissions()`.
+   */
+  role: SessionPayload['role']
   /** Prévia de navegação escolhida no TopNav (só afeta a UI, não o RBAC real). */
   viewMode: ViewMode
   /** Drawer da sidebar no mobile (abaixo de lg). */

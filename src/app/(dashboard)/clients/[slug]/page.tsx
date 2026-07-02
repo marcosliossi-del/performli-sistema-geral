@@ -11,6 +11,7 @@ import {
   getClienteTarefas,
 } from '@/lib/dal'
 import type { ClienteTarefas, ClienteTarefaRow } from '@/lib/dal'
+import { normalizeRole } from '@/lib/rbac'
 import {
   STATUS_LABELS, STATUS_COLORS, PRIORITY_LABELS, PRIORITY_COLORS, label as opLabel,
 } from '@/components/operacional/labels'
@@ -175,16 +176,16 @@ export default async function ClientDetailPage({
     }),
   ])
 
-  // Ficha de CS / check-in — editável por ADMIN, CS ou gestor atribuído.
-  const canEditFicha =
-    session.role === 'ADMIN' ||
-    session.role === 'CS' ||
-    (session.role === 'MANAGER' && client.assignments.some((a) => a.user.id === session.userId))
-  const canGerarRelatorio =
-    session.role === 'ADMIN' ||
-    (session.role === 'MANAGER' && client.assignments.some((a) => a.user.id === session.userId))
+  // Ficha de CS / check-in — staff amplo (ADMIN/CS/SUPERVISOR/ANALISTA) edita
+  // qualquer cliente; GESTOR_TRAFEGO só a carteira.
+  const viewerRole = normalizeRole(session.role)
+  const ownsClient = client.assignments.some((a) => a.user.id === session.userId)
+  const canEditFicha = viewerRole !== 'GESTOR_TRAFEGO' || ownsClient
+  const canGerarRelatorio = viewerRole !== 'GESTOR_TRAFEGO' || ownsClient
 
-  const contractData = activeContract ? {
+  // Contrato = jurídico/financeiro da AGÊNCIA (fee/valor): SÓ ADMIN. Para os
+  // demais papéis o cartão de contrato não recebe dados (stripSensitive → null).
+  const contractData = (activeContract && viewerRole === 'ADMIN') ? {
     ...activeContract,
     feeValue:  Number(activeContract.feeValue),
     setupFee:  activeContract.setupFee ? Number(activeContract.setupFee) : null,

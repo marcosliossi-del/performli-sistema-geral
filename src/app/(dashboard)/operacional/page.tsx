@@ -1,5 +1,6 @@
 import { requireSession, getOperacionalBoard, getNovaTarefaContext } from '@/lib/dal'
 import { OperacionalBoard } from '@/components/operacional/OperacionalBoard'
+import { normalizeRole, can } from '@/lib/rbac'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,10 @@ export default async function OperacionalPage({
     getOperacionalBoard(userId, role),
     getNovaTarefaContext(userId, role),
   ])
-  const canEdit = role !== 'ANALYST'
+  // GESTOR só move de coluna (status); staff amplo cria/edita/deleta.
+  const role5 = normalizeRole(role)
+  const canEdit = can(role5, 'update', 'tarefas')
+  const canEditStatusOnly = !canEdit && can(role5, 'update_status_only', 'tarefas')
   const k = board.kpis
 
   return (
@@ -36,7 +40,7 @@ export default async function OperacionalPage({
         <Kpi label="War Room" value={k.warRoom} tone="crit" />
       </div>
 
-      <OperacionalBoard tasks={board.tasks} ctx={ctx} canEdit={canEdit} initialTaskId={initialTaskId} currentUser={{ id: userId, name }} />
+      <OperacionalBoard tasks={board.tasks} ctx={ctx} canEdit={canEdit} canEditStatusOnly={canEditStatusOnly} initialTaskId={initialTaskId} currentUser={{ id: userId, name }} />
     </div>
   )
 }

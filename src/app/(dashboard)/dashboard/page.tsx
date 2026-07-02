@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { requireSession } from '@/lib/dal'
 import { getDashboardData, getClientsOperationalTable, getManagerStats, getWeeklyChecklist } from '@/lib/dal'
+import { normalizeRole } from '@/lib/rbac'
 import { HealthSummaryCards } from '@/components/dashboard/HealthSummaryCards'
 import { ClientHealthGrid } from '@/components/dashboard/ClientHealthGrid'
 import { OperationalTableWithFilter } from '@/components/dashboard/OperationalTableWithFilter'
@@ -58,12 +59,15 @@ const alertIconFallback = { icon: Bell, color: 'text-[#87919E]' }
 
 export default async function DashboardPage() {
   const session = await requireSession()
+  // Staff amplo (ADMIN/CS/SUPERVISOR/ANALISTA) vê visão de agência; GESTOR vê a
+  // própria carteira.
+  const isViewAll = normalizeRole(session.role) !== 'GESTOR_TRAFEGO'
   // Run all data fetches in parallel
   const [{ clients, totals, alerts, oscillationAlerts, lastSyncAt }, operationalRows, managerStats, checklist] =
     await Promise.all([
       getDashboardData(session.userId, session.role),
       getClientsOperationalTable(session.userId, session.role),
-      (session.role === 'ADMIN' || session.role === 'CS') ? getManagerStats() : Promise.resolve([]),
+      isViewAll ? getManagerStats() : Promise.resolve([]),
       getWeeklyChecklist(session.userId),
     ])
 
@@ -74,7 +78,7 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-[#EBEBEB]">Painel Analítico</h1>
           <p className="text-[#87919E] text-sm mt-0.5">
-            {session.role === 'ADMIN' || session.role === 'CS'
+            {isViewAll
               ? 'Visão geral de todos os clientes'
               : `Seus clientes — ${session.name.split(' ')[0]}`}
           </p>
@@ -106,7 +110,7 @@ export default async function DashboardPage() {
         otimo={totals.otimo}
         regular={totals.regular}
         ruim={totals.ruim}
-        viewMode={(session.role === 'ADMIN' || session.role === 'CS') ? 'ADMIN' : 'GESTOR'}
+        viewMode={isViewAll ? 'ADMIN' : 'GESTOR'}
         managerName={session.name}
       />
 

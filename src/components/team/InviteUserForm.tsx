@@ -67,13 +67,14 @@ export function InviteUserForm() {
                 <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">Perfil</label>
                 <select
                   name="role"
-                  defaultValue="MANAGER"
+                  defaultValue="GESTOR_TRAFEGO"
                   className="w-full h-10 px-3 rounded-lg bg-[#05141C] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2] transition-colors"
                 >
                   <option value="ADMIN">Admin</option>
-                  <option value="MANAGER">Gestor</option>
+                  <option value="SUPERVISOR_TRAFEGO">Supervisor</option>
+                  <option value="GESTOR_TRAFEGO">Gestor</option>
+                  <option value="ANALISTA_TRAFEGO">Analista</option>
                   <option value="CS">Sucesso do Cliente</option>
-                  <option value="ANALYST">Analista</option>
                 </select>
               </div>
 

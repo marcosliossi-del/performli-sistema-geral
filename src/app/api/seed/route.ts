@@ -29,19 +29,19 @@ export async function POST(request: NextRequest) {
     const ana = await prisma.user.upsert({
       where: { email: 'ana@performli.com.br' },
       update: {},
-      create: { name: 'Ana Lima', email: 'ana@performli.com.br', passwordHash: managerHash, role: 'MANAGER' },
+      create: { name: 'Ana Lima', email: 'ana@performli.com.br', passwordHash: managerHash, role: 'GESTOR_TRAFEGO' },
     })
 
     const carlos = await prisma.user.upsert({
       where: { email: 'carlos@performli.com.br' },
       update: {},
-      create: { name: 'Carlos Souza', email: 'carlos@performli.com.br', passwordHash: managerHash, role: 'MANAGER' },
+      create: { name: 'Carlos Souza', email: 'carlos@performli.com.br', passwordHash: managerHash, role: 'GESTOR_TRAFEGO' },
     })
 
     const beatriz = await prisma.user.upsert({
       where: { email: 'beatriz@performli.com.br' },
       update: {},
-      create: { name: 'Beatriz Rocha', email: 'beatriz@performli.com.br', passwordHash: analystHash, role: 'ANALYST' },
+      create: { name: 'Beatriz Rocha', email: 'beatriz@performli.com.br', passwordHash: analystHash, role: 'ANALISTA_TRAFEGO' },
     })
 
     const lojaAlpha = await prisma.client.upsert({

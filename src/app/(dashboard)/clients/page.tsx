@@ -3,14 +3,16 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { formatCurrency } from '@/lib/utils'
 import { ClientesTable } from '@/components/clientes/ClientesTable'
+import { normalizeRole, scopeClients } from '@/lib/rbac'
 
 export const dynamic = 'force-dynamic'
 
 async function getClientesData(userId: string, role: string) {
-  // Posse (CLAUDE.md #2): ADMIN/CS veem toda a carteira; MANAGER/ANALYST só
-  // veem clientes atribuídos.
-  const canViewAll = ['ADMIN', 'CS'].includes(role)
-  const where = canViewAll ? {} : { assignments: { some: { userId } } }
+  // Posse (CLAUDE.md #2): staff amplo vê toda a carteira; só GESTOR_TRAFEGO fica
+  // restrito aos clientes atribuídos (scopeClients).
+  const viewerRole = normalizeRole(role)
+  const isAdmin = viewerRole === 'ADMIN'
+  const where = scopeClients(viewerRole, userId)
 
   const now        = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -32,25 +34,21 @@ async function getClientesData(userId: string, role: string) {
     prisma.client.count({
       where: { ...where, createdAt: { gte: prevStart, lte: prevEnd } },
     }),
-    prisma.asaasPayment.count({
-      where: {
-        status: 'OVERDUE',
-        // Escopo de posse: ADMIN/CS contam a inadimplência global; MANAGER/ANALYST
-        // só contam faturas dos clientes que enxergam.
-        ...(canViewAll
-          ? {}
-          : { customer: { client: { assignments: { some: { userId } } } } }),
-      },
-    }),
+    // Inadimplência (Asaas) é dado financeiro/receita da agência: SÓ ADMIN.
+    // Para os demais papéis o contador fica em 0 (não vaza financeiro).
+    isAdmin
+      ? prisma.asaasPayment.count({ where: { status: 'OVERDUE' } })
+      : Promise.resolve(0),
   ])
 
   const active   = clients.filter(c => c.status === 'ACTIVE')
   const churned  = clients.filter(c => c.status === 'CHURNED')
   const newMonth = clients.filter(c => c.createdAt >= monthStart)
 
-  const recorrente  = active.reduce((s, c) => s + Number(c.contractValue ?? 0), 0)
+  // Receita/fee da agência (contractValue) é financeiro: só ADMIN vê valores.
+  const recorrente  = isAdmin ? active.reduce((s, c) => s + Number(c.contractValue ?? 0), 0) : 0
   const comContrato = active.filter(c => c.contractValue).length
-  const mediaReceita = comContrato > 0 ? recorrente / comContrato : 0
+  const mediaReceita = isAdmin && comContrato > 0 ? recorrente / comContrato : 0
 
   const deltaNew = prevNewCount > 0
     ? Math.round(((newMonth.length - prevNewCount) / prevNewCount) * 100)
@@ -59,7 +57,8 @@ async function getClientesData(userId: string, role: string) {
   return {
     clients: clients.map(c => ({
       ...c,
-      contractValue: c.contractValue ? Number(c.contractValue) : null,
+      // Fee do contrato só é exposto para ADMIN (stripSensitive de Client).
+      contractValue: isAdmin && c.contractValue ? Number(c.contractValue) : null,
       createdAt:     c.createdAt.toISOString(),
       resultadoRoas:      c.resultadoRoas != null ? Number(c.resultadoRoas) : null,
       resultadoUpdatedAt: c.resultadoUpdatedAt ? c.resultadoUpdatedAt.toISOString() : null,

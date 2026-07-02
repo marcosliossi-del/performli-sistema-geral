@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { normalizeRole } from '@/lib/rbac'
 
 function statusLabel(status: string | null): string {
   if (status === 'OTIMO')   return 'ÓTIMO ✅'
@@ -94,7 +95,14 @@ export function getSeasonalityContext(now: Date = new Date()): string {
 
 // ── Contexto do cliente ───────────────────────────────────────────────────────
 
-export async function getClientAIContext(clientId: string): Promise<string> {
+/**
+ * Monta o contexto textual do cliente para o LLM. `viewerRole` recorta dados
+ * financeiros/receita da agência: apenas ADMIN vê o valor do contrato (fee).
+ * Sem `viewerRole` (ou papel não-ADMIN) o contexto NUNCA inclui contrato/fee —
+ * deny-by-default de exposição financeira (RBAC v2 / stripSensitive).
+ */
+export async function getClientAIContext(clientId: string, viewerRole?: string): Promise<string> {
+  const isAdmin = viewerRole ? normalizeRole(viewerRole) === 'ADMIN' : false
   const now          = new Date()
   const thirtyAgo    = new Date(now); thirtyAgo.setDate(now.getDate() - 30)
   const eightWeeksAgo = new Date(now); eightWeeksAgo.setDate(now.getDate() - 56)
@@ -163,7 +171,8 @@ export async function getClientAIContext(clientId: string): Promise<string> {
   push('📋 INFORMAÇÕES GERAIS')
   if (client.industry)      push(`- Segmento: ${client.industry}`)
   push(`- Status: ${client.status}`)
-  if (client.contractValue) push(`- Contrato: R$ ${Number(client.contractValue).toLocaleString('pt-BR')}/mês`)
+  // Valor do contrato (fee/receita da agência) SÓ para ADMIN.
+  if (isAdmin && client.contractValue) push(`- Contrato: R$ ${Number(client.contractValue).toLocaleString('pt-BR')}/mês`)
   if (client.tags?.length)  push(`- Tags: ${client.tags.join(', ')}`)
   if (client.notes)         push(`- Notas: ${client.notes.slice(0, 300)}`)
   const manager = client.assignments[0]?.user?.name

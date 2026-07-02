@@ -10,9 +10,14 @@ datasource db {
 
 enum Role {
   ADMIN
-  MANAGER
-  ANALYST
-  CS      // Customer Success — sees all clients, read-only
+  CS                 // Customer Success — sees all clients, read-only
+  // ── Papéis legados (RBAC v1) — mantidos até limpeza futura (DECISIONS.md D-011)
+  MANAGER            // @deprecated → GESTOR_TRAFEGO (dados migrados em 20260702061000)
+  ANALYST            // @deprecated → ANALISTA_TRAFEGO
+  // ── RBAC v2 (matriz oficial) ────────────────────────────────────────────────
+  SUPERVISOR_TRAFEGO // supervisiona gestores/analistas de tráfego
+  ANALISTA_TRAFEGO   // analista de tráfego (acesso limitado)
+  GESTOR_TRAFEGO     // gestor: vê/altera apenas clientes atribuídos
 }
 
 model User {

@@ -40,7 +40,7 @@ export function DashboardShell({ children, session, unreadAlerts, counts, homeHr
   }, [])
 
   return (
-    <NavProvider value={{ viewMode, mobileOpen, setMobileOpen }}>
+    <NavProvider value={{ role: session.role, viewMode, mobileOpen, setMobileOpen }}>
       <div className="ak-app-bg flex h-screen overflow-hidden bg-[#05141C] print:block print:h-auto print:bg-white">
         {/* Sidebar desktop — fixa a partir de lg. Escondida no mobile (vira drawer). */}
         <div className="hidden lg:block print:hidden">

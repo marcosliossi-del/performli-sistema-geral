@@ -23,12 +23,16 @@ import { useModalA11y } from '@/lib/useModalA11y'
 type Tab = 'comentarios' | 'atividade' | 'anexos'
 
 export function TaskDrawer({
-  task, canEdit, onClose,
+  task, canEdit, canEditStatusOnly = false, onClose,
 }: {
   task: OperacionalTask | null
   canEdit: boolean
+  /** GESTOR_TRAFEGO: só muda status, sem editar campos. */
+  canEditStatusOnly?: boolean
   onClose: () => void
 }) {
+  // GESTOR_TRAFEGO move de coluna (status), mas não edita campos/checklist.
+  const canChangeStatus = canEdit || canEditStatusOnly
   const [detail, setDetail] = useState<TaskDetail | null>(null)
   const [loading, setLoading] = useState(false)
   const [comment, setComment] = useState('')
@@ -266,7 +270,7 @@ export function TaskDrawer({
 
           {/* Coluna lateral */}
           <div className="p-4 space-y-3.5 bg-[#0A1E2C]/30">
-            {canEdit && (
+            {canChangeStatus && (
               <Field k="Status">
                 <select
                   key={statusResetKey}
@@ -277,6 +281,9 @@ export function TaskDrawer({
                 >
                   {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{label(STATUS_LABELS, s)}</option>)}
                 </select>
+                {!canEdit && canEditStatusOnly && (
+                  <p className="text-[10px] text-[#87919E] mt-1">Seu perfil altera apenas o status da tarefa.</p>
+                )}
               </Field>
             )}
             <Field k="Responsável"><span className="flex items-center gap-1.5"><UserIcon size={11} />{m?.assigneeName ?? task.assigneeName}</span></Field>
@@ -332,7 +339,7 @@ export function TaskDrawer({
                 <CheckSquare size={13} /> Concluir
               </button>
             </>
-          ) : canEdit && status !== 'CONCLUIDO' && status !== 'CANCELADO' ? (
+          ) : canChangeStatus && status !== 'CONCLUIDO' && status !== 'CANCELADO' ? (
             <button
               onClick={handleComplete}
               disabled={isPending || requiredOpen > 0}

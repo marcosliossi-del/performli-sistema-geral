@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { assertCan } from '@/lib/permissions'
+import { normalizeRole, can } from '@/lib/rbac'
 import { checkTaskCompletion } from '@/services/task-completion-guard'
 import { statusIdFor } from '@/lib/tasks/statusMap'
 import { mutateTask, type TaskFieldPatch, type ActivityEntry } from '@/lib/tasks/mutate'
@@ -22,6 +23,22 @@ import { runTaskAutomations } from '@/services/task-automation'
 
 type ActionResult = { ok: true; id?: string } | { error: string }
 
+/**
+ * RBAC v2: GESTOR_TRAFEGO só pode mover tarefas de coluna (status). Criar,
+ * atribuir, reordenar, gerenciar dependências/seguidores e editar campos são
+ * ações estruturais bloqueadas — exige `update` em `tarefas` na matriz (que o
+ * GESTOR não tem; ele só tem `update_status_only`). Mensagem operacional.
+ */
+function assertTaskStructuralMutation(role: string): { error: string } | null {
+  if (!can(normalizeRole(role), 'update', 'tarefas')) {
+    return {
+      error:
+        'Como gestor você só pode mover a tarefa de coluna (mudar o status). Criar, atribuir ou editar tarefas é com o staff de operação.',
+    }
+  }
+  return null
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // createTask — mantido (contrato existente, throw). Só agrega statusId espelho.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,6 +53,10 @@ const createSchema = z.object({
 export async function createTask(formData: FormData) {
   const session = await requireSession()
   const { userId } = session
+
+  // GESTOR não cria tarefas (só muda status). Contrato deste action é throw.
+  const structural = assertTaskStructuralMutation(session.role)
+  if (structural) throw new Error(structural.error)
 
   const raw = {
     title:       formData.get('title'),
@@ -459,6 +480,10 @@ type OwnershipOk = { task: { clientId: string | null; assignedTo: string } }
 type OwnershipErr = { error: string }
 
 async function ownershipGuard(taskId: string, session: { userId: string; role: string }): Promise<OwnershipOk | OwnershipErr> {
+  // GESTOR não atribui/segue tarefas — mutação estrutural bloqueada.
+  const structural = assertTaskStructuralMutation(session.role)
+  if (structural) return structural
+
   const task = await prisma.task.findUnique({ where: { id: taskId }, select: { clientId: true, assignedTo: true } })
   if (!task) return { error: 'Tarefa não encontrada.' }
   // Papel + posse SEMPRE (CLAUDE.md #2). Task interna (sem cliente) atribuída
@@ -596,6 +621,9 @@ export async function toggleWatcher(taskId: string, userId: string): Promise<Act
 export async function addTaskDependency(blockingId: string, waitingId: string): Promise<ActionResult> {
   const session = await requireSession()
 
+  const structural = assertTaskStructuralMutation(session.role)
+  if (structural) return structural
+
   if (blockingId === waitingId) return { error: 'Uma tarefa não pode depender de si mesma.' }
 
   const [blocking, waiting] = await Promise.all([
@@ -663,6 +691,9 @@ export async function addTaskDependency(blockingId: string, waitingId: string): 
 // ─────────────────────────────────────────────────────────────────────────────
 export async function removeTaskDependency(blockingId: string, waitingId: string): Promise<ActionResult> {
   const session = await requireSession()
+
+  const structural = assertTaskStructuralMutation(session.role)
+  if (structural) return structural
 
   const [blocking, waiting] = await Promise.all([
     prisma.task.findUnique({ where: { id: blockingId }, select: { id: true, clientId: true, title: true } }),

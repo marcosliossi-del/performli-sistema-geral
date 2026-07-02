@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { formatCurrency } from '@/lib/utils'
 import { KANBAN_STAGES, STAGE_CONFIG, HOT_STATUSES } from '@/components/comercial/types'
 import type { LeadStatus } from '@/components/comercial/types'
+import { normalizeRole, can } from '@/lib/rbac'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,8 +38,8 @@ async function getCrmData() {
 
 export default async function ComercialDashboardPage() {
   const session = await requireSession()
-  // Dashboard comercial: ADMIN/CS/MANAGER podem ver; ANALYST não tem acesso.
-  if (session.role === 'ANALYST') redirect('/')
+  // RBAC v2: Dashboard comercial é SÓ ADMIN (matriz).
+  if (!can(normalizeRole(session.role), 'view', 'comercial')) redirect('/dashboard')
   const leads = await getCrmData()
 
   // Funnel counts

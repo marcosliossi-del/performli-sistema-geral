@@ -214,7 +214,9 @@ function PanelSections({
   variant: 'page' | 'slideover'
   onRequestClose: () => void
 }) {
-  const { data, users, candidates, currentUser, canEdit } = result
+  const { data, users, candidates, currentUser, canEdit, canEditStatusOnly } = result
+  // GESTOR_TRAFEGO move de coluna (status), mas não edita campos/atribui.
+  const canChangeStatus = canEdit || canEditStatusOnly
 
   const [title, setTitle] = useState(data.title)
   const [status, setStatus] = useState<TaskStatus>(data.status)
@@ -421,7 +423,7 @@ function PanelSections({
 
         {/* Linha de controles */}
         <div className="mt-3 flex flex-wrap items-center gap-2.5">
-          {canEdit ? (
+          {canChangeStatus ? (
             <StatusBadge interactive value={currentStatusValue} options={STATUS_OPTIONS} onChange={saveStatus} />
           ) : (
             <StatusBadge value={currentStatusValue} />
@@ -452,6 +454,10 @@ function PanelSections({
             </button>
           )}
         </div>
+
+        {!canEdit && canEditStatusOnly && (
+          <p className="mt-2 text-[11px] text-text-low">Seu perfil altera apenas o status da tarefa.</p>
+        )}
 
         {/* Datas */}
         <div className="mt-3 flex flex-wrap items-end gap-4">

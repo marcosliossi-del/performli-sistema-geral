@@ -35,8 +35,10 @@ import {
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useNav } from './nav-context'
+import { can, normalizeRole, type Module, type Role5 } from '@/lib/rbac'
+import type { SessionPayload } from '@/lib/session'
 
-type Role = 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS'
+type SessionRole = SessionPayload['role']
 
 type CountKey = 'meuDia' | 'abertas' | 'checkins' | 'validacoes' | 'warRooms' | 'alertas' | 'suporte'
 
@@ -44,8 +46,13 @@ type NavItemDef = {
   name: string
   href: string
   icon: React.ElementType
-  /** Which roles can see this item. Omit to show to all roles. */
-  roles?: Role[]
+  /**
+   * Módulo do policy engine que governa a visibilidade deste item. Filtramos por
+   * `can(role, 'view', module)` — MESMA matriz do backend, nunca lista duplicada.
+   * Item sem módulo é sempre visível. Grupos (com `children`) herdam visibilidade
+   * dos filhos: o grupo aparece se ao menos um filho for visível.
+   */
+  module?: Module
   /** Pendency counter key (badge). */
   countKey?: CountKey
   /** Render the badge in alert color when > 0. */
@@ -58,22 +65,24 @@ type NavItemDef = {
 
 type NavSection = {
   label: string
-  /** Which roles can see this entire section. Omit to show to all roles. */
-  roles?: Role[]
   items: NavItemDef[]
 }
 
 // Navegação ÁREA→FUNÇÃO, rasa: bloco fixo do núcleo diário no topo, depois
 // ÁREAS colapsáveis (nav-tree) e leaves acionáveis de 1º nível. 1 rota = 1 rótulo.
+// Mapa item→módulo do policy engine. A visibilidade sai de `can(role,'view',mod)`
+// (mesma matriz do backend). Itens de configuração admin (recorrências, base de
+// conhecimento, equipe, atribuições, visão CEO) mapeiam para `gestaoEquipeEquipe`
+// (SÓ ADMIN na matriz). Ver HANDOFF_AGENTE_4.md → "mapa sidebar→módulo".
 const navigation: NavSection[] = [
   {
-    // Bloco fixo — núcleo diário, sempre visível.
+    // Bloco fixo — núcleo diário. Todos os papéis têm `view` nesses módulos.
     label: '',
     items: [
-      { name: 'Meu Dia',            href: '/meu-dia',     icon: Sun,     countKey: 'meuDia',  alert: true },
-      { name: 'Hub de Suporte',     href: '/suporte',     icon: Headset, countKey: 'suporte' },
-      { name: 'Central de Tarefas', href: '/operacional', icon: ListTodo, countKey: 'abertas' },
-      { name: 'Cockpit',            href: '/cockpit',     icon: Gauge },
+      { name: 'Meu Dia',            href: '/meu-dia',     icon: Sun,     countKey: 'meuDia',  alert: true, module: 'tarefas' },
+      { name: 'Hub de Suporte',     href: '/suporte',     icon: Headset, countKey: 'suporte',              module: 'clientes' },
+      { name: 'Central de Tarefas', href: '/operacional', icon: ListTodo, countKey: 'abertas',             module: 'tarefas' },
+      { name: 'Cockpit',            href: '/cockpit',     icon: Gauge,                                      module: 'cockpit' },
     ],
   },
   {
@@ -82,55 +91,55 @@ const navigation: NavSection[] = [
       {
         name: 'Clientes', href: '/clients', icon: Users, defaultOpen: true,
         children: [
-          { name: 'Clientes',               href: '/clients',    icon: Users },
-          { name: 'Check-ins da semana',    href: '/check-ins',  icon: CheckSquare,     countKey: 'checkins',   alert: true },
-          { name: 'Validação da CS',        href: '/validacoes', icon: ShieldCheck,     countKey: 'validacoes', alert: true, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
-          { name: 'Central de Comunicação', href: '/canais',     icon: MessagesSquare },
-          { name: 'Relatórios',             href: '/reports',    icon: BarChart3 },
+          { name: 'Clientes',               href: '/clients',    icon: Users,           module: 'clientes' },
+          { name: 'Check-ins da semana',    href: '/check-ins',  icon: CheckSquare,     countKey: 'checkins',   alert: true, module: 'clientes' },
+          { name: 'Validação da CS',        href: '/validacoes', icon: ShieldCheck,     countKey: 'validacoes', alert: true, module: 'clientes' },
+          { name: 'Central de Comunicação', href: '/canais',     icon: MessagesSquare,  module: 'clientes' },
+          { name: 'Relatórios',             href: '/reports',    icon: BarChart3,       module: 'clientes' },
         ],
       },
       {
         name: 'Operação de Tráfego', href: '/processos', icon: Activity, defaultOpen: true,
         children: [
-          { name: 'Aceite Operacional',     href: '/aceite',       icon: ShieldCheck, roles: ['ADMIN' as Role, 'CS' as Role, 'MANAGER' as Role] },
-          { name: 'Processos & POPs',       href: '/processos',    icon: BookOpen },
-          { name: 'Recorrências',           href: '/recorrencias', icon: Repeat, roles: ['ADMIN' as Role] },
-          { name: 'Registro de Operações',  href: '/operations',   icon: FileText },
+          { name: 'Aceite Operacional',     href: '/aceite',       icon: ShieldCheck, module: 'operacao' },
+          { name: 'Processos & POPs',       href: '/processos',    icon: BookOpen,    module: 'operacao' },
+          { name: 'Recorrências',           href: '/recorrencias', icon: Repeat,      module: 'gestaoEquipeEquipe' },
+          { name: 'Registro de Operações',  href: '/operations',   icon: FileText,    module: 'operacao' },
         ],
       },
-      { name: 'War Room', href: '/anti-churn', icon: ShieldAlert, countKey: 'warRooms', alert: true },
-      { name: 'Alertas',  href: '/alerts',     icon: Bell,        countKey: 'alertas',  alert: true },
+      { name: 'War Room', href: '/anti-churn', icon: ShieldAlert, countKey: 'warRooms', alert: true, module: 'warRoom' },
+      { name: 'Alertas',  href: '/alerts',     icon: Bell,        countKey: 'alertas',  alert: true, module: 'warRoom' },
       {
         name: 'Comercial', href: '/comercial', icon: Target,
         children: [
-          { name: 'Funil de Vendas',      href: '/pipeline',           icon: Kanban },
-          { name: 'CRM',                  href: '/comercial',          icon: Target },
-          { name: 'Dashboard Comercial',  href: '/comercial/dashboard', icon: BarChart3 },
+          { name: 'Funil de Vendas',      href: '/pipeline',           icon: Kanban,    module: 'comercial' },
+          { name: 'CRM',                  href: '/comercial',          icon: Target,    module: 'comercial' },
+          { name: 'Dashboard Comercial',  href: '/comercial/dashboard', icon: BarChart3, module: 'comercial' },
         ],
       },
       {
-        name: 'Financeiro', href: '/financeiro', icon: TrendingUp, roles: ['ADMIN' as Role],
+        name: 'Financeiro', href: '/financeiro', icon: TrendingUp,
         children: [
-          { name: 'DRE — Financeiro',       href: '/financeiro', icon: TrendingUp },
-          { name: 'Jurídico & Contratos',   href: '/juridico',   icon: Scale },
+          { name: 'DRE — Financeiro',       href: '/financeiro', icon: TrendingUp, module: 'financeiro' },
+          { name: 'Jurídico & Contratos',   href: '/juridico',   icon: Scale,      module: 'juridico' },
         ],
       },
       {
-        name: 'Gestão & Equipe', href: '/team', icon: Building2, roles: ['ADMIN' as Role],
+        name: 'Gestão & Equipe', href: '/team', icon: Building2,
         children: [
-          { name: 'Equipe',                  href: '/team',                 icon: Users },
-          { name: 'Atribuições de Clientes', href: '/managers/assignments', icon: UserPlus },
-          { name: 'Metas da Agência',        href: '/agency/metas',         icon: Target },
-          { name: 'Visão CEO',               href: '/agency',               icon: Building2 },
-          { name: 'Visão Gestor',            href: '/managers',             icon: PieChart },
+          { name: 'Equipe',                  href: '/team',                 icon: Users,     module: 'gestaoEquipeEquipe' },
+          { name: 'Atribuições de Clientes', href: '/managers/assignments', icon: UserPlus,  module: 'gestaoEquipeEquipe' },
+          { name: 'Metas da Agência',        href: '/agency/metas',         icon: Target,    module: 'gestaoEquipeMetas' },
+          { name: 'Visão CEO',               href: '/agency',               icon: Building2, module: 'gestaoEquipeEquipe' },
+          { name: 'Visão Gestor',            href: '/managers',             icon: PieChart,  module: 'gestaoEquipeVisaoGestor' },
         ],
       },
       {
         name: 'Inteligência', href: '/ai-agents', icon: Bot,
         children: [
-          { name: 'Agentes IA',           href: '/ai-agents', icon: Bot },
-          { name: 'Base de Conhecimento', href: '/knowledge', icon: BookMarked, roles: ['ADMIN' as Role] },
-          { name: 'Painel Analítico',     href: '/dashboard', icon: LayoutDashboard },
+          { name: 'Agentes IA',           href: '/ai-agents', icon: Bot,             module: 'inteligencia' },
+          { name: 'Base de Conhecimento', href: '/knowledge', icon: BookMarked,      module: 'gestaoEquipeEquipe' },
+          { name: 'Painel Analítico',     href: '/dashboard', icon: LayoutDashboard, module: 'cockpit' },
         ],
       },
     ],
@@ -154,14 +163,22 @@ function isLeafActive(pathname: string, href: string): boolean {
   )
 }
 
-function canSee(roles: Role[] | undefined, userRole: Role): boolean {
-  return !roles || roles.includes(userRole)
+/**
+ * Visibilidade derivada 100% do policy engine. Grupos herdam dos filhos: o grupo
+ * aparece se ao menos um filho for visível (sem lista de papéis duplicada).
+ */
+function itemVisible(item: NavItemDef, role: Role5): boolean {
+  if (item.children && item.children.length > 0) {
+    return item.children.some((c) => itemVisible(c, role))
+  }
+  if (!item.module) return true
+  return can(role, 'view', item.module)
 }
 
 type Counts = Partial<Record<CountKey, number>>
 
 interface SidebarProps {
-  role: Role
+  role: SessionRole
   counts?: Counts
   /** Destino do logo — home do perfil (pouso). Default defensivo: /cockpit. */
   homeHref?: string
@@ -176,9 +193,12 @@ export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
     setMobileOpen(false)
   }, [pathname, setMobileOpen])
 
-  // Prévia "GESTOR": um ADMIN pode pré-visualizar a navegação sem os itens
-  // exclusivos de ADMIN. Só afeta a UI da sidebar — o RBAC real é do backend.
-  const effectiveRole: Role = role === 'ADMIN' && viewMode === 'GESTOR' ? 'MANAGER' : role
+  // Papel canônico + prévia "GESTOR": um ADMIN pode pré-visualizar a navegação
+  // como gestor. A prévia só REBAIXA (ADMIN→GESTOR_TRAFEGO) — o RBAC real é do
+  // backend; aqui é só UX.
+  const base = normalizeRole(role)
+  const effectiveRole: Role5 =
+    base === 'ADMIN' && viewMode === 'GESTOR' ? 'GESTOR_TRAFEGO' : base
 
   return (
     <aside className="lg-sidebar w-60 flex-shrink-0 h-screen sticky top-0 bg-[#0A1E2C] border-r border-[#38435C] flex flex-col">
@@ -199,9 +219,8 @@ export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3 px-2.5 space-y-1">
         {navigation
-          .filter((section) => canSee(section.roles, effectiveRole))
           .map((section, idx) => {
-            const visibleItems = section.items.filter((item) => canSee(item.roles, effectiveRole))
+            const visibleItems = section.items.filter((item) => itemVisible(item, effectiveRole))
             if (visibleItems.length === 0) return null
 
             return (
@@ -213,7 +232,7 @@ export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
                 )}
                 <div className="space-y-0.5">
                   {visibleItems.map((item) =>
-                    item.children && item.children.some((c) => canSee(c.roles, effectiveRole)) ? (
+                    item.children && item.children.some((c) => itemVisible(c, effectiveRole)) ? (
                       <NavGroup key={item.name} item={item} role={effectiveRole} pathname={pathname} counts={counts} />
                     ) : (
                       <NavLeaf key={item.href} item={item} pathname={pathname} counts={counts} />
@@ -227,7 +246,7 @@ export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
 
       {/* Bottom */}
       <div className="p-3 border-t border-[#38435C]">
-        {effectiveRole === 'ADMIN' && (
+        {can(effectiveRole, 'view', 'gestaoEquipeEquipe') && (
           <Link
             href="/settings"
             prefetch
@@ -308,12 +327,12 @@ function NavGroup({
   item, role, pathname, counts,
 }: {
   item: NavItemDef
-  role: Role
+  role: Role5
   pathname: string
   counts?: Counts
 }) {
   const Icon = item.icon
-  const kids = (item.children ?? []).filter((c) => canSee(c.roles, role))
+  const kids = (item.children ?? []).filter((c) => itemVisible(c, role))
   const childActive = kids.some((c) => pathname === c.href || pathname.startsWith(c.href + '/'))
   const [open, setOpen] = useState(childActive || Boolean(item.defaultOpen))
   const count = item.countKey ? counts?.[item.countKey] ?? 0 : 0

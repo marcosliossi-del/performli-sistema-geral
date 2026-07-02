@@ -4,7 +4,7 @@ import type { OperationalRole } from '@prisma/client'
 import { prisma } from './prisma'
 
 export type AuthResult =
-  | { success: true; user: { id: string; name: string; email: string; role: 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS'; operationalRole: OperationalRole | null } }
+  | { success: true; user: { id: string; name: string; email: string; role: 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS' | 'SUPERVISOR_TRAFEGO' | 'ANALISTA_TRAFEGO' | 'GESTOR_TRAFEGO'; operationalRole: OperationalRole | null } }
   | { success: false; error: string }
 
 export async function verifyCredentials(email: string, password: string): Promise<AuthResult> {

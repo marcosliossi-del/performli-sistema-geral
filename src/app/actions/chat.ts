@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess } from '@/lib/audit'
+import { normalizeRole } from '@/lib/rbac'
 
 export type ChatMessageState = {
   error?: string
@@ -36,9 +37,11 @@ export async function sendChatMessage(
 
   if (!chat) return { error: 'Chat não encontrado.' }
 
-  // Participantes do canal interno: ADMIN (Marcos) + CS + gestor atribuído.
-  const isOversight = session.role === 'ADMIN' || session.role === 'CS'
-  const isAssignedManager = session.role === 'MANAGER' && chat.client.assignments.length > 0
+  // Participantes do canal interno: staff amplo (ADMIN/CS/SUPERVISOR/ANALISTA)
+  // + gestor atribuído ao cliente.
+  const role = normalizeRole(session.role)
+  const isOversight = role !== 'GESTOR_TRAFEGO'
+  const isAssignedManager = role === 'GESTOR_TRAFEGO' && chat.client.assignments.length > 0
   if (!isOversight && !isAssignedManager) {
     return { error: 'Apenas o gestor atribuído, a CS e o admin participam deste canal.' }
   }

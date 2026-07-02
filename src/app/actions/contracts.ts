@@ -199,7 +199,8 @@ export async function cancelContract(contractId: string, reason?: string): Promi
 
 export async function fetchAllContracts() {
   const session = await requireSession()
-  if (session.role !== 'ADMIN' && session.role !== 'CS') return []
+  // Contratos = jurídico/financeiro (fee/valor da agência): SÓ ADMIN (matriz).
+  if (session.role !== 'ADMIN') return []
 
   const contracts = await prisma.contract.findMany({
     include: {

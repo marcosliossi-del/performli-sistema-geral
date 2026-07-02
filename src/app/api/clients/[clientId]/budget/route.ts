@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/session'
 import { assertClientMutationAccess } from '@/lib/audit'
+import { normalizeRole, can } from '@/lib/rbac'
 import { getMonthRange } from '@/lib/utils'
 
 export async function PATCH(
@@ -9,13 +10,15 @@ export async function PATCH(
   { params }: { params: Promise<{ clientId: string }> },
 ) {
   const session = await getSession()
-  if (!session || !['ADMIN', 'CS', 'MANAGER'].includes(session.role)) {
+  // Budget de mídia (investimento) é dado de performance — clientes.update.
+  // Staff amplo edita qualquer cliente; GESTOR só a carteira (posse abaixo).
+  if (!session || !can(normalizeRole(session.role), 'update', 'clientes')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const { clientId } = await params
 
-  // Posse: ADMIN/CS em qualquer cliente; MANAGER só nos atribuídos.
+  // Posse: staff amplo em qualquer cliente; GESTOR só nos atribuídos.
   try {
     await assertClientMutationAccess(session, clientId, { allowCS: true })
   } catch {

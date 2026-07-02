@@ -3,16 +3,27 @@ import { UsersRound, DollarSign, UserCog } from 'lucide-react'
 import { ManagersClient } from '@/components/managers/ManagersClient'
 import { formatCurrency } from '@/lib/utils'
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
+import { normalizeRole } from '@/lib/rbac'
 
 export default async function ManagersPage() {
   const session = await requireSession()
-  if (session.role !== 'ADMIN' && session.role !== 'CS') redirect('/dashboard')
+  // RBAC v2: ADMIN tudo; SUPERVISOR/ANALISTA/CS leem todos os gestores;
+  // GESTOR_TRAFEGO só o próprio desempenho (self-scope por userId).
+  const role = normalizeRole(session.role)
 
-  const [managers, mrrData] = await Promise.all([
+  const [allManagers, allMrr] = await Promise.all([
     getManagersOverview(),
     getManagersMRR(),
   ])
+
+  const managers =
+    role === 'GESTOR_TRAFEGO'
+      ? allManagers.filter((m) => m.id === session.userId)
+      : allManagers
+  const mrrData =
+    role === 'GESTOR_TRAFEGO'
+      ? allMrr.filter((m) => m.userId === session.userId)
+      : allMrr
 
   const totalMRR = mrrData.reduce((sum, m) => sum + m.mrr, 0)
 

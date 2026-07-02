@@ -6,16 +6,17 @@ import type { SupportRow } from '@/components/suporte/SupportList'
 import { SupportViews } from '@/components/suporte/SupportViews'
 import { NewSupportDemand } from '@/components/suporte/NewSupportDemand'
 import { Headset } from 'lucide-react'
+import { normalizeRole } from '@/lib/rbac'
 
 export const dynamic = 'force-dynamic'
 
 export default async function SuportePage() {
   const session = await requireSession()
 
-  // Escopo por papel: ADMIN/CS enxergam tudo; MANAGER/ANALYST só demandas de
-  // clientes atribuídos a eles (mesmo padrão de alerts/page.tsx). A segurança
-  // real das mutações vive no backend; aqui é só recorte de leitura.
-  const isViewAll = session.role === 'ADMIN' || session.role === 'CS'
+  // Escopo por papel: staff amplo (ADMIN/CS/SUPERVISOR/ANALISTA) enxerga tudo;
+  // só GESTOR fica restrito a demandas de clientes atribuídos. A segurança real
+  // das mutações vive no backend; aqui é só recorte de leitura.
+  const isViewAll = normalizeRole(session.role) !== 'GESTOR_TRAFEGO'
   const where: Prisma.TaskWhereInput = {
     isSupport: true,
     status: { not: 'CANCELADO' },

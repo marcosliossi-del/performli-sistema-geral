@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { assertCan } from '@/lib/permissions'
+import { normalizeRole, can } from '@/lib/rbac'
 import { checkTaskCompletion } from '@/services/task-completion-guard'
 import { statusIdFor } from '@/lib/tasks/statusMap'
 import { parseDateInput } from '@/lib/tasks/dateInput'
@@ -59,8 +60,9 @@ async function assertTaskWrite(
 export async function createOperacionalTask(input: CreateOperacionalTaskInput): Promise<ActionResult> {
   const session = await requireSession()
 
-  if (session.role === 'ANALYST') {
-    return { error: 'Seu papel não permite criar tarefas.' }
+  // RBAC v2: GESTOR só muda status — não cria tarefas. Staff amplo cria.
+  if (!can(normalizeRole(session.role), 'create', 'tarefas')) {
+    return { error: 'Como gestor você só pode mover tarefas de coluna; a criação é do staff de operação.' }
   }
   if (!input.title || input.title.trim().length < 3) {
     return { error: 'Título obrigatório (mínimo 3 caracteres).' }
@@ -353,9 +355,9 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
   if (!task) return null
 
   // Escopo por papel na LEITURA (mesma regra do loadTaskPanel — fecha IDOR):
-  // ADMIN/CS veem tudo; MANAGER/ANALYST só task de cliente atribuído ou task
-  // interna em que são responsáveis.
-  const isViewAll = session.role === 'ADMIN' || session.role === 'CS'
+  // staff amplo (ADMIN/CS/SUPERVISOR/ANALISTA) vê tudo; só GESTOR_TRAFEGO fica
+  // restrito a task de cliente atribuído ou task interna em que é responsável.
+  const isViewAll = normalizeRole(session.role) !== 'GESTOR_TRAFEGO'
   if (!isViewAll) {
     if (task.clientId) {
       const assigned = await prisma.clientAssignment.findUnique({

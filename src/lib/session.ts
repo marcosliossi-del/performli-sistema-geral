@@ -7,7 +7,17 @@ export type SessionPayload = {
   userId: string
   name: string
   email: string
-  role: 'ADMIN' | 'MANAGER' | 'ANALYST' | 'CS'
+  // Papel bruto do enum Prisma `Role` — inclui legados (MANAGER/ANALYST) e os
+  // papéis v2. Toda decisão de autorização deve passar por `normalizeRole()`
+  // (src/lib/rbac) na fronteira antes de usar este valor.
+  role:
+    | 'ADMIN'
+    | 'MANAGER'
+    | 'ANALYST'
+    | 'CS'
+    | 'SUPERVISOR_TRAFEGO'
+    | 'ANALISTA_TRAFEGO'
+    | 'GESTOR_TRAFEGO'
   // Papel operacional (rotina Arkza) — só para roteamento/pouso por perfil.
   // Opcional: sessões antigas não têm o campo e caem no fallback por role.
   operationalRole?: OperationalRole | null

@@ -2,6 +2,7 @@ import 'server-only'
 import { prisma } from '@/lib/prisma'
 import { writeAuditLog } from '@/lib/audit'
 import { assertCan } from '@/lib/permissions'
+import { normalizeRole, assertTaskPatchAllowed } from '@/lib/rbac'
 import { statusIdFor } from './statusMap'
 import type { Prisma, TaskStatus } from '@prisma/client'
 
@@ -58,6 +59,15 @@ export async function mutateTask(
     select: { id: true, clientId: true, status: true, assignedTo: true },
   })
   if (!current) return { error: 'Tarefa não encontrada.' }
+
+  // Recorte de CAMPO (RBAC v2): GESTOR_TRAFEGO só pode mover a tarefa de coluna
+  // (status). Qualquer outro campo no patch é bloqueado — inclusive em tarefa
+  // interna própria. Demais papéis passam (a ação já é validada por assertCan).
+  try {
+    assertTaskPatchAllowed(normalizeRole(session.role), Object.keys(patch))
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Campo não permitido para o seu papel.' }
+  }
 
   // Papel + posse SEMPRE (CLAUDE.md #2): com clientId delega a
   // assertClientMutationAccess; sem clientId (task interna/de lead) o

@@ -3,12 +3,14 @@
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
+import { normalizeRole } from '@/lib/rbac'
 
 export async function markAlertRead(alertId: string) {
   const session = await requireSession()
 
-  // Posse: ADMIN/CS veem tudo; MANAGER/ANALYST só alertas de clientes atribuídos.
-  const isViewAll = session.role === 'ADMIN' || session.role === 'CS'
+  // Posse: staff amplo (ADMIN/CS/SUPERVISOR/ANALISTA) vê tudo; só GESTOR fica
+  // restrito a alertas de clientes atribuídos.
+  const isViewAll = normalizeRole(session.role) !== 'GESTOR_TRAFEGO'
   const scope = isViewAll
     ? { id: alertId }
     : { id: alertId, client: { assignments: { some: { userId: session.userId } } } }
@@ -21,7 +23,7 @@ export async function markAlertRead(alertId: string) {
 export async function markAllAlertsRead() {
   const session = await requireSession()
 
-  const isViewAll = session.role === 'ADMIN' || session.role === 'CS'
+  const isViewAll = normalizeRole(session.role) !== 'GESTOR_TRAFEGO'
   const where =
     isViewAll
       ? { read: false }

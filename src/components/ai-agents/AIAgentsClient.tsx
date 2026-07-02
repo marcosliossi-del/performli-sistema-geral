@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { ShoppingBag, HeartHandshake, Store, Send, Lightbulb, RotateCcw, Search, X, ChevronDown, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { normalizeRole, type Role5 } from '@/lib/rbac'
 
 export type AgentType = 'ECOMMERCE' | 'LOCAL' | 'CS'
 
@@ -64,11 +65,14 @@ const agents: Record<AgentType, {
   },
 }
 
-const agentsByRole: Record<string, AgentType[]> = {
-  ADMIN:   ['ECOMMERCE', 'LOCAL', 'CS'],
-  CS:      ['ECOMMERCE', 'LOCAL', 'CS'],
-  MANAGER: ['ECOMMERCE', 'LOCAL'],
-  ANALYST: ['ECOMMERCE', 'LOCAL'],
+// Chaveado pelos papéis canônicos (RBAC v2). O `role` recebido é normalizado
+// antes do lookup, então legados (MANAGER/ANALYST) também resolvem.
+const agentsByRole: Record<Role5, AgentType[]> = {
+  ADMIN:              ['ECOMMERCE', 'LOCAL', 'CS'],
+  CS:                 ['ECOMMERCE', 'LOCAL', 'CS'],
+  SUPERVISOR_TRAFEGO: ['ECOMMERCE', 'LOCAL'],
+  ANALISTA_TRAFEGO:   ['ECOMMERCE', 'LOCAL'],
+  GESTOR_TRAFEGO:     ['ECOMMERCE', 'LOCAL'],
 }
 
 interface Message {
@@ -232,7 +236,7 @@ function ClientPicker({
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function AIAgentsClient({ role }: { role: string }) {
-  const allowedTypes    = agentsByRole[role] ?? ['ECOMMERCE', 'LOCAL']
+  const allowedTypes    = agentsByRole[normalizeRole(role)] ?? ['ECOMMERCE', 'LOCAL']
   const [activeAgent, setActiveAgent]       = useState<AgentType>(allowedTypes[0])
   const [messages, setMessages]             = useState<Message[]>([])
   const [input, setInput]                   = useState('')
