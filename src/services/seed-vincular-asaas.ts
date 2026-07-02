@@ -58,6 +58,19 @@ const VINCULOS: Vinculo[] = [
   { razaoAsaas: 'SR DOS PASTÉIS RIO PRETO LTDA', clientAliases: ['Donna Sô', 'Donna So', 'DonnaSo Pastelaria', 'Donna Sô Pastelaria'] },
 ]
 
+// Ex-clientes (churn) confirmados pelo dono em 2026-07-02 — sem cliente no
+// Performli de propósito; ficam FORA do relatório de pendências para sempre.
+const IGNORAR_CHURN = [
+  '38.431.296 Lavinia Ribeiro',
+  'LAVINIA RIBEIRO',
+  'BOOM CLOSET LTDA',
+  'Bruno Henrique Godoi',
+  'M.E.A de Araujo',
+  'Marcela Sousa Concept',
+  'Maria Clara Moro Cabrelli',
+  'RAYANE EVELYN TEIXEIRA DE FREITAS 41545988803',
+]
+
 export type VincularResult = {
   vinculados: number
   jaVinculados: number
@@ -151,7 +164,10 @@ export async function vincularAsaasClientes(): Promise<VincularResult> {
     select: { name: true },
     orderBy: { name: 'asc' },
   })
-  result.semVinculo = [...new Set(orfaos.map((o) => o.name))]
+  const ignorados = new Set(IGNORAR_CHURN.map((n) => normalize(n)))
+  result.semVinculo = [...new Set(
+    orfaos.map((o) => o.name).filter((n) => !ignorados.has(normalize(n))),
+  )]
 
   return result
 }
