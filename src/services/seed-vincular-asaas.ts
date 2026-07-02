@@ -121,38 +121,57 @@ export async function vincularAsaasClientes(): Promise<VincularResult> {
         result.vinculados++
       }
 
-      // Religa os customers do Asaas cujo nome bate com a razão social
-      // (normalizado — tolera caixa/acentos da transcrição).
-      const candidatos = await prisma.asaasCustomer.findMany({
-        where: { clientId: null },
-        select: { id: true, name: true },
-      })
+      // Religa o customer do Asaas cujo nome bate com a razão social
+      // (normalizado — tolera caixa/acentos da transcrição). Quando existe
+      // DUPLICATA no Asaas (mesmo nome 2x, ex.: Soul By DM), o vínculo vai
+      // para o registro que tem a assinatura/faturas — o vazio é o duplicado.
       const alvo = normalize(v.razaoAsaas)
-      const ids = candidatos.filter((c) => normalize(c.name) === alvo).map((c) => c.id)
-      // O vínculo customer↔cliente é 1-para-1 (clientId @unique). Customer
-      // DUPLICADO no Asaas (mesmo nome 2x, ex.: Soul By DM): religa o primeiro
-      // e reporta os demais — o dono decide se apaga a duplicata no Asaas.
-      if (ids.length) {
-        const jaLigado = await prisma.asaasCustomer.findFirst({
-          where: { clientId: hit.id },
-          select: { id: true },
-        })
-        if (!jaLigado) {
-          await prisma.asaasCustomer.update({
-            where: { id: ids[0] },
-            data: { clientId: hit.id },
+      const mesmoNome = await prisma.asaasCustomer.findMany({
+        where: { OR: [{ clientId: null }, { clientId: hit.id }] },
+        select: {
+          id: true,
+          name: true,
+          clientId: true,
+          subscriptions: { where: { status: 'ACTIVE' }, select: { id: true } },
+          payments: { orderBy: { dueDate: 'desc' }, take: 1, select: { dueDate: true } },
+          _count: { select: { payments: true } },
+        },
+      })
+      const candidatos = mesmoNome.filter((c) => normalize(c.name) === alvo)
+      if (candidatos.length) {
+        // Melhor candidato: assinatura ATIVA > fatura mais recente > mais faturas.
+        const score = (c: (typeof candidatos)[number]) =>
+          (c.subscriptions.length > 0 ? 1e15 : 0) +
+          (c.payments[0]?.dueDate?.getTime() ?? 0) +
+          c._count.payments
+        const melhor = [...candidatos].sort((a, b) => score(b) - score(a))[0]
+
+        if (melhor.clientId !== hit.id) {
+          // Troca de vínculo (1-para-1, clientId @unique): solta o registro
+          // antigo/vazio e liga o que tem a assinatura e as faturas.
+          await prisma.$transaction([
+            prisma.asaasCustomer.updateMany({ where: { clientId: hit.id }, data: { clientId: null } }),
+            prisma.asaasCustomer.update({ where: { id: melhor.id }, data: { clientId: hit.id } }),
+          ])
+          await writeAuditLog({
+            action: 'asaas.customerReligado',
+            entityType: 'AsaasCustomer',
+            entityId: melhor.id,
+            clientId: hit.id,
+            metadata: {
+              razaoAsaas: v.razaoAsaas,
+              assinaturasAtivas: melhor.subscriptions.length,
+              faturas: melhor._count.payments,
+            },
           })
           result.customersReligados += 1
         }
-        if (jaLigado && ids.length >= 1) {
-          // Cliente JÁ tem um customer vinculado e sobrou outro com o mesmo
-          // nome órfão: é a duplicata no Asaas (ex.: Soul By DM), não um
-          // cliente sem vínculo.
+
+        const sobras = candidatos.filter((c) => c.id !== melhor.id)
+        if (sobras.length) {
           result.duplicadosNoAsaas.push(
-            `${v.razaoAsaas} (duplicata no Asaas — o cliente já está vinculado ao outro registro; apague este customer lá)`,
+            `${v.razaoAsaas} (${sobras.length + 1} customers com o mesmo nome no Asaas — o vínculo ficou no que tem assinatura/faturas; o duplicado sem movimentação pode ser apagado lá)`,
           )
-        } else if (ids.length > 1) {
-          result.duplicadosNoAsaas.push(`${v.razaoAsaas} (${ids.length} customers com o mesmo nome no Asaas)`)
         }
       }
     } catch (err) {
