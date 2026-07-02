@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runResultadoUpdate } from '@/services/resultado-engine'
+import { isCronAuthorized } from '@/lib/cron-auth'
 
 /**
  * /api/cron/resultados — atualiza o Resultado semanal (ROAS/GA4) dos clientes
@@ -9,12 +10,7 @@ import { runResultadoUpdate } from '@/services/resultado-engine'
  */
 
 function isAuthorized(request: NextRequest): boolean {
-  const expectedSecret = process.env.CRON_SECRET
-  if (!expectedSecret) return false
-  const authHeader = request.headers.get('authorization')
-  const bearerSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-  const customSecret = request.headers.get('x-cron-secret')
-  return (bearerSecret ?? customSecret) === expectedSecret
+  return isCronAuthorized(request) // comparação timing-safe compartilhada
 }
 
 async function handle(request: NextRequest) {

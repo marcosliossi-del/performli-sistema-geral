@@ -22,6 +22,7 @@ import { checkCheckins } from '@/services/checkin-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/app/actions/goals'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
 import { renewExpiredContracts } from '@/services/contract-renewal'
+import { isCronAuthorized } from '@/lib/cron-auth'
 
 /**
  * GET /api/cron/daily  ← Vercel Cron triggers GET requests
@@ -33,12 +34,7 @@ import { renewExpiredContracts } from '@/services/contract-renewal'
  */
 
 function isAuthorized(request: NextRequest): boolean {
-  const expectedSecret = process.env.CRON_SECRET
-  if (!expectedSecret) return false
-  const authHeader = request.headers.get('authorization')
-  const bearerSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-  const customSecret = request.headers.get('x-cron-secret')
-  return (bearerSecret ?? customSecret) === expectedSecret
+  return isCronAuthorized(request) // comparação timing-safe compartilhada
 }
 
 async function runDailySync() {

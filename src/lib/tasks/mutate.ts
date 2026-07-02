@@ -7,10 +7,19 @@ import type { Prisma, TaskStatus } from '@prisma/client'
 
 type SessionLike = { userId: string; role: string }
 
-/** Patch de campos escalares da Task (sem relações). */
-export type TaskFieldPatch = Omit<
+/**
+ * Patch de campos EDITÁVEIS da Task (allow-list — security-review R:
+ * mass assignment). Campos sensíveis (clientId, statusId, idempotencyKey,
+ * requesterId, origin, isSupport, requires*, riskScore) ficam FORA por tipo:
+ * quem precisa mudá-los usa fluxo próprio, nunca o patch genérico.
+ * `status`+`statusId` são espelhados internamente pelo mutateTask (D-004).
+ */
+export type TaskFieldPatch = Pick<
   Prisma.TaskUncheckedUpdateInput,
-  'activities' | 'checklist' | 'comments' | 'attachments' | 'watchers' | 'approvals' | 'customValues' | 'auxAssignees' | 'dependsOn' | 'blocks' | 'subtasks' | 'id'
+  | 'title' | 'description' | 'assignedTo' | 'dueDate' | 'startDate'
+  | 'priority' | 'status' | 'supportCategory' | 'supportDirection'
+  | 'tags' | 'orderIndex' | 'recurrenceRule' | 'evidence' | 'completionNotes'
+  | 'blockReason' | 'delayReason' | 'completedAt' | 'completedById'
 >
 
 export type ActivityEntry = {

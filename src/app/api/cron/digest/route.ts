@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendDailyDigest } from '@/services/notifications/daily-digest'
+import { isCronAuthorized } from '@/lib/cron-auth'
 
 /**
  * GET /api/cron/digest
@@ -10,15 +11,7 @@ import { sendDailyDigest } from '@/services/notifications/daily-digest'
  */
 
 function isAuthorized(request: NextRequest): boolean {
-  const expectedSecret = process.env.CRON_SECRET
-  if (!expectedSecret) {
-    console.error('[cron/digest] CRON_SECRET env var is not set — all requests will be rejected')
-    return false
-  }
-  const authHeader  = request.headers.get('authorization')
-  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-  const customToken = request.headers.get('x-cron-secret')
-  return (bearerToken ?? customToken) === expectedSecret
+  return isCronAuthorized(request) // comparação timing-safe compartilhada
 }
 
 export async function GET(request: NextRequest) {
