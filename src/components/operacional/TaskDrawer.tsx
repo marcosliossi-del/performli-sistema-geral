@@ -303,7 +303,7 @@ export function TaskDrawer({
         </div>
 
         {/* ── Rodapé: avisos + ações ── */}
-        <div className="px-5 py-3.5 border-t border-[#38435C] flex items-center gap-2.5 ak-glass-strong">
+        <div className="px-5 py-3.5 border-t border-[#38435C] flex items-center gap-2.5 lg-glass-strong">
           {requiredOpen > 0 && (
             <span className="text-[11px] text-[#EF4444] mr-auto">⚠ {requiredOpen} {requiredOpen === 1 ? 'campo obrigatório pendente' : 'campos obrigatórios pendentes'}</span>
           )}

@@ -415,7 +415,7 @@ a:focus-visible, button:focus-visible, [role="button"]:focus-visible {
   border: 1px solid var(--ak-hair);
   border-radius: var(--ak-radius);
   box-shadow: var(--ak-shadow-card);
-  transition: border-color .2s var(--ak-ease), box-shadow .25s var(--ak-ease);
+  transition: border-color .2s var(--ak-ease), box-shadow .25s var(--ak-ease), transform .3s var(--ak-spring);
 }
 .lg-card:hover {
   border-color: color-mix(in oklab, var(--ak-brand) 24%, var(--ak-hair));
