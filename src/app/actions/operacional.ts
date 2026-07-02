@@ -85,10 +85,30 @@ export async function createOperacionalTask(input: CreateOperacionalTaskInput): 
   return { ok: true, id: task.id }
 }
 
-/** Adiciona comentário a uma tarefa + registra atividade. */
-export async function addTaskComment(taskId: string, body: string): Promise<ActionResult> {
+export type AddTaskCommentResult =
+  | {
+      ok: true
+      comment: {
+        id: string
+        body: string
+        authorId: string
+        authorName: string
+        /** ISO string — compatível com o campo `createdAt` de `PanelComment`. */
+        createdAt: string
+      }
+    }
+  | { error: string }
+
+/**
+ * Adiciona comentário a uma tarefa + registra atividade.
+ * Retorna o registro criado ({ ok, comment }) para que a UI substitua o
+ * comentário otimista (id temporário) pelo real sem recarregar. `authorName`
+ * vem da sessão (autor = usuário atual); `createdAt` em ISO string.
+ */
+export async function addTaskComment(taskId: string, body: string): Promise<AddTaskCommentResult> {
   const session = await requireSession()
-  if (!body.trim()) return { error: 'Comentário vazio.' }
+  const trimmed = body.trim()
+  if (!trimmed) return { error: 'Comentário vazio.' }
 
   const task = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true, clientId: true } })
   if (!task) return { error: 'Tarefa não encontrada.' }
@@ -97,15 +117,25 @@ export async function addTaskComment(taskId: string, body: string): Promise<Acti
     await assertClientMutationAccess(session, task.clientId, { allowCS: true })
   }
 
-  await prisma.taskComment.create({
-    data: { taskId, authorId: session.userId, body: body.trim() },
+  const created = await prisma.taskComment.create({
+    data: { taskId, authorId: session.userId, body: trimmed },
+    select: { id: true, body: true, authorId: true, createdAt: true },
   })
   await prisma.taskActivity.create({
     data: { taskId, actorId: session.userId, action: 'commented' },
   })
 
   revalidatePath('/operacional')
-  return { ok: true }
+  return {
+    ok: true,
+    comment: {
+      id: created.id,
+      body: created.body,
+      authorId: created.authorId,
+      authorName: session.name,
+      createdAt: created.createdAt.toISOString(),
+    },
+  }
 }
 
 /** Marca/desmarca um item de checklist. */
@@ -122,6 +152,76 @@ export async function toggleChecklistItem(itemId: string, done: boolean): Promis
   }
 
   await prisma.taskChecklistItem.update({ where: { id: itemId }, data: { done } })
+  revalidatePath('/operacional')
+  return { ok: true }
+}
+
+/**
+ * Adiciona um item ao checklist da tarefa. Item novo nasce opcional
+ * (required = false) e ao fim da lista (order = maior atual + 1). Mesmo guard
+ * de posse do toggleChecklistItem. Registra atividade 'checklist_item_added'.
+ */
+export async function addChecklistItem(taskId: string, label: string): Promise<ActionResult> {
+  const session = await requireSession()
+  const trimmed = label.trim()
+  if (!trimmed) return { error: 'Descreva o item do checklist.' }
+
+  const task = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true, clientId: true } })
+  if (!task) return { error: 'Tarefa não encontrada.' }
+
+  if (task.clientId) {
+    await assertClientMutationAccess(session, task.clientId, { allowCS: true })
+  }
+
+  const last = await prisma.taskChecklistItem.aggregate({
+    where: { taskId },
+    _max: { order: true },
+  })
+  const nextOrder = (last._max.order ?? -1) + 1
+
+  const created = await prisma.taskChecklistItem.create({
+    data: { taskId, label: trimmed, required: false, order: nextOrder },
+    select: { id: true },
+  })
+  await prisma.taskActivity.create({
+    data: { taskId, actorId: session.userId, action: 'checklist_item_added', toValue: trimmed },
+  })
+
+  revalidatePath('/operacional')
+  return { ok: true, id: created.id }
+}
+
+/**
+ * Remove um item do checklist. Só remove item OPCIONAL e NÃO concluído — item
+ * obrigatório ou já marcado não some silenciosamente (regra de evidência). Mesmo
+ * guard de posse. Registra atividade 'checklist_item_removed'.
+ */
+export async function removeChecklistItem(itemId: string): Promise<ActionResult> {
+  const session = await requireSession()
+  const item = await prisma.taskChecklistItem.findUnique({
+    where: { id: itemId },
+    select: { id: true, taskId: true, label: true, done: true, required: true, task: { select: { clientId: true } } },
+  })
+  if (!item) return { error: 'Item não encontrado.' }
+
+  if (item.task?.clientId) {
+    await assertClientMutationAccess(session, item.task.clientId, { allowCS: true })
+  }
+
+  if (item.required) {
+    return { error: 'Este item é obrigatório e não pode ser removido. Desmarque a obrigatoriedade antes.' }
+  }
+  if (item.done) {
+    return { error: 'Este item já foi concluído e não pode ser removido do checklist.' }
+  }
+
+  await prisma.$transaction([
+    prisma.taskChecklistItem.delete({ where: { id: itemId } }),
+    prisma.taskActivity.create({
+      data: { taskId: item.taskId, actorId: session.userId, action: 'checklist_item_removed', fromValue: item.label },
+    }),
+  ])
+
   revalidatePath('/operacional')
   return { ok: true }
 }
