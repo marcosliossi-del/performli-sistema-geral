@@ -28,7 +28,9 @@
  */
 
 const DIGITS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-const BASE = BigInt(DIGITS.length) // 62n
+const BASE = BigInt(DIGITS.length) // 62
+const ZERO = BigInt(0)
+const TWO = BigInt(2)
 
 function digitVal(ch: string): bigint {
   return BigInt(DIGITS.indexOf(ch))
@@ -36,7 +38,7 @@ function digitVal(ch: string): bigint {
 
 /** Fração inteira: interpreta a string como 0.d1d2… em L dígitos → inteiro em [0, BASE^L). */
 function toInt(padded: string): bigint {
-  let acc = 0n
+  let acc = ZERO
   for (const ch of padded) acc = acc * BASE + digitVal(ch)
   return acc
 }
@@ -85,12 +87,12 @@ export function orderBetween(a: string | null, b: string | null): string {
 
   // Busca a menor resolução L em que exista um inteiro entre lo e hi.
   while (length <= MAX_LEN) {
-    const lo = a === null ? 0n : toInt(padRight(a, length))
+    const lo = a === null ? ZERO : toInt(padRight(a, length))
     // b === null → borda superior é a fração 1.0 = BASE^length.
     const hi = b === null ? BASE ** BigInt(length) : toInt(padRight(b, length))
 
-    if (hi - lo >= 2n) {
-      const mid = (lo + hi) / 2n
+    if (hi - lo >= TWO) {
+      const mid = (lo + hi) / TWO
       return trimTrailingZeros(toStr(mid, length))
     }
     length++ // adjacentes nesta resolução: aumenta profundidade e tenta de novo.

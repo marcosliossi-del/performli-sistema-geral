@@ -14,6 +14,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getWeekRange } from '@/lib/utils'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 import type { ClientResultado, ClientEtapa } from '@prisma/client'
 
 // ROAS alvo padrão quando o cliente não tem meta de ROAS cadastrada (Goal metric=ROAS).
@@ -148,6 +149,7 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
                 type: 'DEMANDA_INTERNA',
                 priority: 'ALTA',
                 status: 'A_FAZER',
+                statusId: statusIdFor('A_FAZER'), // espelho FK (D-004)
                 origin: 'AUTOMACAO',
                 clientId: c.id,
                 assignedTo: managerId,

@@ -19,6 +19,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { writeAuditLog } from '@/lib/audit'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 import { materializeRecurringTasksForClient } from './recurrence-engine'
 
 type InitialTaskSpec = {
@@ -151,6 +152,7 @@ export async function runClientOnboarding(clientId: string): Promise<{
             type: 'ONBOARDING',
             priority: spec.priority,
             status: 'A_FAZER',
+            statusId: statusIdFor('A_FAZER'), // espelho FK (D-004)
             origin: 'AUTOMACAO',
             clientId: client.id,
             assignedTo: assigneeId,

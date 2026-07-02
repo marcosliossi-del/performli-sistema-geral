@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { slugify } from '@/lib/utils'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 import { PipelineStage, BusinessType } from '@prisma/client'
 import { runClientOnboarding } from '@/services/client-onboarding'
 
@@ -81,6 +82,7 @@ export async function createClient(
         type: 'ONBOARDING',
         priority: 'ALTA',
         status: 'A_FAZER',
+        statusId: statusIdFor('A_FAZER'), // espelho FK (D-004)
         origin: 'AUTOMACAO',
         clientId: client.id,
         assignedTo: assignedUserId,

@@ -6,8 +6,8 @@ import { z } from 'zod'
  *
  * NÃO usa lib nova de datas: extrai a data-parede (wall clock) no fuso alvo via
  * Intl.DateTimeFormat, faz aritmética de calendário em pseudo-UTC (métodos
- * getUTC*/Date.UTC — imunes a DST porque é matemática pura de UTC) e reconverte
- * a data-parede resultante para o instante UTC correto.
+ * getUTCDate/setUTCDate/Date.UTC — imunes a DST porque é matemática pura de
+ * UTC) e reconverte a data-parede resultante para o instante UTC correto.
  */
 
 export const DEFAULT_TZ = 'America/Sao_Paulo'
