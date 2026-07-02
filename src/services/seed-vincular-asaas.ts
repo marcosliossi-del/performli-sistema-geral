@@ -62,14 +62,17 @@ export type VincularResult = {
   vinculados: number
   jaVinculados: number
   clienteNaoEncontrado: string[]
-  /** Customers do Asaas que seguem sem vínculo (dono aponta quem são). */
+  /** Customers RELEVANTES (fatura nos últimos 60 dias) ainda sem vínculo. */
   semVinculo: string[]
+  /** Mesmo nome 2x+ no Asaas — o dono decide se limpa lá. */
+  duplicadosNoAsaas: string[]
   customersReligados: number
 }
 
 export async function vincularAsaasClientes(): Promise<VincularResult> {
   const result: VincularResult = {
-    vinculados: 0, jaVinculados: 0, clienteNaoEncontrado: [], semVinculo: [], customersReligados: 0,
+    vinculados: 0, jaVinculados: 0, clienteNaoEncontrado: [], semVinculo: [],
+    duplicadosNoAsaas: [], customersReligados: 0,
   }
 
   const clients = await prisma.client.findMany({ select: { id: true, name: true, slug: true, razaoSocial: true } })
@@ -113,25 +116,42 @@ export async function vincularAsaasClientes(): Promise<VincularResult> {
       })
       const alvo = normalize(v.razaoAsaas)
       const ids = candidatos.filter((c) => normalize(c.name) === alvo).map((c) => c.id)
+      // O vínculo customer↔cliente é 1-para-1 (clientId @unique). Customer
+      // DUPLICADO no Asaas (mesmo nome 2x, ex.: Soul By DM): religa o primeiro
+      // e reporta os demais — o dono decide se apaga a duplicata no Asaas.
       if (ids.length) {
-        const religados = await prisma.asaasCustomer.updateMany({
-          where: { id: { in: ids } },
-          data: { clientId: hit.id },
+        const jaLigado = await prisma.asaasCustomer.findFirst({
+          where: { clientId: hit.id },
+          select: { id: true },
         })
-        result.customersReligados += religados.count
+        if (!jaLigado) {
+          await prisma.asaasCustomer.update({
+            where: { id: ids[0] },
+            data: { clientId: hit.id },
+          })
+          result.customersReligados += 1
+        }
+        if (ids.length > 1) {
+          result.duplicadosNoAsaas.push(`${v.razaoAsaas} (${ids.length} customers com o mesmo nome no Asaas)`)
+        }
       }
     } catch (err) {
       result.clienteNaoEncontrado.push(`${v.razaoAsaas} (erro: ${err instanceof Error ? err.message : 'desconhecido'})`)
     }
   }
 
-  // Relatório: customers que continuam órfãos (o dono aponta quem são).
+  // Relatório: só órfãos RELEVANTES — com fatura nos últimos 60 dias (o
+  // histórico completo do Asaas tem ex-clientes/fornecedores/time e é ruído).
+  const corte = new Date(Date.now() - 60 * 86_400_000)
   const orfaos = await prisma.asaasCustomer.findMany({
-    where: { clientId: null },
+    where: {
+      clientId: null,
+      payments: { some: { dueDate: { gte: corte } } },
+    },
     select: { name: true },
     orderBy: { name: 'asc' },
   })
-  result.semVinculo = orfaos.map((o) => o.name)
+  result.semVinculo = [...new Set(orfaos.map((o) => o.name))]
 
   return result
 }
