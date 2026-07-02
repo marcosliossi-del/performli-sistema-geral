@@ -256,10 +256,11 @@ export class GA4Client {
       dimensions: [{ name: 'date' }],
       metrics:    METRIC_NAMES.map((name) => ({ name })),
       orderBys:   [{ dimension: { dimensionName: 'date' } }],
-      // S1-002: fixa o fuso de agregação em America/Sao_Paulo para que o bucket
-      // "date" seja o dia-parede brasileiro (não o fuso default da propriedade),
-      // consistente com o carimbo do snapshot (@db.Date) e com o resto do sistema.
-      timeZone:   'America/Sao_Paulo',
+      // S1-002: o bucket "date" já vem no fuso configurado na PROPRIEDADE GA4
+      // (propriedades da Arkza = America/Sao_Paulo). A RunReportRequest v1beta
+      // NÃO aceita campo `timeZone` (HTTP 400) — o fuso é da propriedade. O
+      // carimbo do snapshot em meio-dia UTC (parseGA4Date, @db.Date) preserva o
+      // dia-parede sem off-by-one.
       limit: 100,
     }
 
