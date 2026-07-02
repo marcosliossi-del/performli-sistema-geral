@@ -17,8 +17,9 @@ import { getWeekRange } from '@/lib/utils'
 import { statusIdFor } from '@/lib/tasks/statusMap'
 import type { ClientResultado, ClientEtapa } from '@prisma/client'
 
-// ROAS alvo padrão quando o cliente não tem meta de ROAS cadastrada (Goal metric=ROAS).
-const DEFAULT_ROAS_TARGET = 2.0
+// Precedência do alvo de ROAS: Goal(ROAS) vigente > Client.roasMinimo (ficha).
+// NÃO há mais fallback silencioso para 2.0 (S1-008): sem nenhum alvo cadastrado,
+// o resultado fica "sem meta ROAS" (AutomationLog) e NÃO é classificado/alertado.
 
 function classify(roas: number, target: number): { resultado: ClientResultado; etapa: ClientEtapa } {
   const ratio = target > 0 ? roas / target : 0
@@ -55,6 +56,7 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
       id: true,
       name: true,
       resultadoWeek: true,
+      roasMinimo: true, // fallback de alvo quando não há Goal(ROAS) — item 7
       goals: {
         where: { metric: 'ROAS' },
         orderBy: { startDate: 'desc' },
@@ -91,9 +93,25 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
       // Faturamento → sempre GA4 (conversionValue). Investimento → plataformas de anúncio.
       let revenue = 0
       let spend = 0
+      let hasGa4 = false
       for (const s of snaps) {
-        if (s.platformAccount.platform === 'GA4') revenue += Number(s.conversionValue ?? 0)
-        else spend += Number(s.spend ?? 0)
+        if (s.platformAccount.platform === 'GA4') {
+          hasGa4 = true
+          revenue += Number(s.conversionValue ?? 0)
+        } else {
+          spend += Number(s.spend ?? 0)
+        }
+      }
+
+      // S1-005: sem NENHUM snapshot GA4 na janela, a receita é INDETERMINADA
+      // (não medida) — não é 0 real. Tratar como spend<=0: log + pular, nunca
+      // classificar como PÉSSIMO nem gerar Alert/Task de otimização.
+      if (!hasGa4) {
+        await prisma.automationLog.create({
+          data: { clientId: c.id, status: 'FALHA', reason: `resultado.semDados — sem GA4 na semana ${windowKey} (faturamento indeterminado)` },
+        })
+        failed++
+        continue
       }
 
       if (spend <= 0) {
@@ -105,7 +123,30 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
       }
 
       const roas = revenue / spend
-      const target = c.goals[0]?.targetValue != null ? Number(c.goals[0].targetValue) : DEFAULT_ROAS_TARGET
+
+      // Precedência do alvo: Goal(ROAS) > Client.roasMinimo (item 7). Sem nenhum
+      // dos dois → "sem meta ROAS": registra, mantém o ROAS realizado, mas NÃO
+      // classifica nem gera alerta de péssimo por falta de meta (S1-008).
+      const goalTarget   = c.goals[0]?.targetValue != null ? Number(c.goals[0].targetValue) : null
+      const clientTarget = c.roasMinimo != null ? Number(c.roasMinimo) : null
+      const target = goalTarget ?? clientTarget
+
+      if (target == null || !(target > 0)) {
+        await prisma.client.update({
+          where: { id: c.id },
+          data: {
+            resultadoRoas: roas,
+            resultadoWeek: windowKey,
+            resultadoUpdatedAt: now,
+          },
+        })
+        await prisma.automationLog.create({
+          data: { clientId: c.id, status: 'SUCESSO', reason: `resultado.semMetaRoas — ROAS ${roas.toFixed(2)} sem meta cadastrada (${windowKey})` },
+        })
+        updated++
+        continue
+      }
+
       const { resultado, etapa } = classify(roas, target)
 
       await prisma.client.update({

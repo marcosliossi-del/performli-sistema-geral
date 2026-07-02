@@ -20,7 +20,7 @@ import { checkLeadFollowups } from '@/services/lead-followup-checker'
 import { escalateOverdueTasks, markOverdueTasks } from '@/services/task-escalation'
 import { detectSilentAtRiskClients } from '@/services/antichurn-monitor'
 import { checkCheckins } from '@/services/checkin-monitor'
-import { syncWeeklyGoalsFromMonthly } from '@/app/actions/goals'
+import { syncWeeklyGoalsFromMonthly } from '@/services/weekly-goals-sync'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
 import { renewExpiredContracts } from '@/services/contract-renewal'
 import { isCronAuthorized } from '@/lib/cron-auth'
@@ -110,7 +110,13 @@ async function runDailySync() {
   if (isMonday) {
     try {
       const syncResult = await syncWeeklyGoalsFromMonthly()
-      summary.weeklyGoalsSync = { ok: true, created: syncResult.created, total: syncResult.total }
+      summary.weeklyGoalsSync = {
+        ok: true,
+        created: syncResult.created,
+        updated: syncResult.updated,
+        skipped: syncResult.skipped,
+        total: syncResult.total,
+      }
     } catch (err) {
       summary.weeklyGoalsSync = {
         ok: false,
