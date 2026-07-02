@@ -23,10 +23,17 @@ import type { Prisma } from '@prisma/client'
 const MARCOS_EXTERNAL_ID = '152690431'
 
 // Enum real AsaasPaymentStatus (schema): PAGO = RECEIVED|CONFIRMED; ABERTO =
-// PENDING|OVERDUE; ESTORNO = REFUNDED.
+// PENDING|OVERDUE; ESTORNO/CLAWBACK = REFUNDED e também os estados EM ANÁLISE
+// (REFUND_REQUESTED, CHARGEBACK_REQUESTED) — dinheiro em risco NUNCA passa
+// silencioso: qualquer contestação reabre a cobrança para o financeiro agir.
 const STATUS_PAGO = new Set(['RECEIVED', 'CONFIRMED'])
 const STATUS_ABERTO = new Set(['PENDING', 'OVERDUE'])
-const STATUS_ESTORNO = new Set(['REFUNDED'])
+const STATUS_ESTORNO = new Set(['REFUNDED', 'REFUND_REQUESTED', 'CHARGEBACK_REQUESTED'])
+const ESTORNO_LABEL: Record<string, string> = {
+  REFUNDED: 'Pagamento estornado no Asaas',
+  REFUND_REQUESTED: 'Estorno SOLICITADO no Asaas (em análise)',
+  CHARGEBACK_REQUESTED: 'CHARGEBACK aberto no Asaas (contestação)',
+}
 
 // Status de Task considerados "fechados" (não reconciliar de novo por cima).
 const TASK_FECHADA = new Set(['CONCLUIDO', 'CANCELADO'])
@@ -125,6 +132,13 @@ export async function reconcileAsaasTasks(): Promise<ReconcileResult> {
               idempotencyKey,
             },
           })
+          await writeAuditLog({
+            action: 'asaas.cobrancaCriada',
+            entityType: 'Task',
+            entityId: idempotencyKey,
+            clientId,
+            metadata: { paymentId: p.id, valor: Number(p.value), vencimento: p.dueDate?.toISOString() ?? null },
+          })
           result.geradas++
         }
         continue
@@ -172,7 +186,7 @@ export async function reconcileAsaasTasks(): Promise<ReconcileResult> {
             statusId: statusIdFor('A_FAZER'),
             completedAt: null,
             completedById: null,
-            completionNotes: `Pagamento estornado no Asaas (${brl(valorEfetivo)}) — cobrança reaberta automaticamente.`,
+            completionNotes: `${ESTORNO_LABEL[p.status] ?? 'Pagamento estornado no Asaas'} (${brl(valorEfetivo)}) — cobrança reaberta automaticamente.`,
           },
         })
         await prisma.taskActivity.create({
@@ -189,7 +203,7 @@ export async function reconcileAsaasTasks(): Promise<ReconcileResult> {
           entityType: 'Task',
           entityId: existing.id,
           clientId,
-          metadata: { paymentId: p.id, valorEstornado: Number(valorEfetivo) },
+          metadata: { paymentId: p.id, valorEstornado: Number(valorEfetivo), statusAsaas: p.status },
         })
         result.reabertas++
         continue
