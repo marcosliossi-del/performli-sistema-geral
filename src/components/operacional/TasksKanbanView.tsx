@@ -27,6 +27,9 @@ export function TasksKanbanView({
   tasks: OperacionalTask[]
   handlers: BoardHandlers
 }) {
+  // GESTOR_TRAFEGO (status-only) também arrasta entre colunas para mudar status.
+  const canDrag = handlers.canEdit || handlers.canEditStatusOnly
+
   const columns = useMemo<Column[]>(() => {
     const present = new Set(tasks.map((t) => t.status))
     const statuses = PIPELINE_STATUS_ORDER.filter((s) => KANBAN_BASE_STATUS.includes(s) || present.has(s))
@@ -51,6 +54,12 @@ export function TasksKanbanView({
     if (!task) return
 
     const destStatus = destination.droppableId
+    // GESTOR_TRAFEGO só move de coluna (status); reordenar dentro da coluna é
+    // edição de campo — bloqueia com motivo operacional.
+    if (destStatus === source.droppableId && !handlers.canEdit) {
+      toast('Seu perfil altera apenas o status da tarefa.', 'err')
+      return
+    }
     // Handlers rethrow no erro (rollback já aplicado); aqui mostramos o toast
     // porque o drag não passa por um átomo interativo da Fase 3.
     try {
@@ -110,7 +119,7 @@ export function TasksKanbanView({
                         key={t.id}
                         draggableId={t.id}
                         index={index}
-                        isDragDisabled={!handlers.canEdit}
+                        isDragDisabled={!canDrag}
                       >
                         {(prov, snap) => (
                           <div
@@ -122,7 +131,7 @@ export function TasksKanbanView({
                               task={toTaskVM(t)}
                               onOpen={handlers.onOpen}
                               dragHandleProps={
-                                handlers.canEdit && prov.dragHandleProps
+                                canDrag && prov.dragHandleProps
                                   // As libs de DnD e a Fase 3 divergem no tipo do handle;
                                   // os props são spread num elemento, então o cast é seguro.
                                   ? (prov.dragHandleProps as unknown as React.HTMLAttributes<HTMLElement>)

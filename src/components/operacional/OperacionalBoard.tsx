@@ -250,11 +250,13 @@ function CalendarView({ tasks, onSelect }: { tasks: OperacionalTask[]; onSelect:
 }
 
 export function OperacionalBoard({
-  tasks: initialTasks, ctx, canEdit, initialTaskId, currentUser,
+  tasks: initialTasks, ctx, canEdit, canEditStatusOnly = false, initialTaskId, currentUser,
 }: {
   tasks: OperacionalTask[]
   ctx: NovaTarefaContext
   canEdit: boolean
+  /** GESTOR_TRAFEGO: só move de coluna (status), sem editar/criar. */
+  canEditStatusOnly?: boolean
   initialTaskId?: string
   currentUser: { id: string; name: string }
 }) {
@@ -304,6 +306,7 @@ export function OperacionalBoard({
   // onDragEnd do Kanban exibem o toast.
   const handlers: BoardHandlers = {
     canEdit,
+    canEditStatusOnly,
     users: usersOpts,
     onOpen: (id) => router.push(`/t/${id}`),
 
@@ -480,7 +483,7 @@ export function OperacionalBoard({
         </div>
       )}
 
-      {selected && <TaskDrawer task={selected} canEdit={canEdit} onClose={() => setSelected(null)} />}
+      {selected && <TaskDrawer task={selected} canEdit={canEdit} canEditStatusOnly={canEditStatusOnly} onClose={() => setSelected(null)} />}
       {novaOpen && <NovaTarefaModal ctx={ctx} onClose={() => setNovaOpen(false)} />}
     </div>
   )

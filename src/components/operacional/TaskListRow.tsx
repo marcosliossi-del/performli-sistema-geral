@@ -20,7 +20,9 @@ import {
  */
 export function TaskListRow({ task, handlers }: { task: OperacionalTask; handlers: BoardHandlers }) {
   const overdue = isOverdue(task)
-  const { canEdit } = handlers
+  const { canEdit, canEditStatusOnly } = handlers
+  // GESTOR_TRAFEGO só move de coluna: status ativo, resto estático.
+  const canChangeStatus = canEdit || canEditStatusOnly
   const priority = task.priority as TaskPriority
 
   return (
@@ -31,7 +33,7 @@ export function TaskListRow({ task, handlers }: { task: OperacionalTask; handler
       )}
     >
       <div className="w-40 shrink-0">
-        {canEdit ? (
+        {canChangeStatus ? (
           <StatusBadge
             value={legacyStatusValue(task.status)}
             interactive
@@ -62,7 +64,10 @@ export function TaskListRow({ task, handlers }: { task: OperacionalTask; handler
         </div>
       )}
 
-      <div className="w-40 shrink-0 text-right">
+      <div
+        className="w-40 shrink-0 text-right"
+        title={!canEdit && canEditStatusOnly ? 'Seu perfil altera apenas o status da tarefa.' : undefined}
+      >
         <DueDateEditor
           dueDate={task.dueDate}
           editable={canEdit}
@@ -70,7 +75,10 @@ export function TaskListRow({ task, handlers }: { task: OperacionalTask; handler
         />
       </div>
 
-      <div className="w-16 shrink-0">
+      <div
+        className="w-16 shrink-0"
+        title={!canEdit && canEditStatusOnly ? 'Seu perfil altera apenas o status da tarefa.' : undefined}
+      >
         {canEdit ? (
           <AssigneeAvatars
             assignees={task.assignees}
