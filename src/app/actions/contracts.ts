@@ -203,7 +203,7 @@ export async function fetchAllContracts() {
 
   const contracts = await prisma.contract.findMany({
     include: {
-      client:      { select: { id: true, name: true, slug: true } },
+      client:      { select: { id: true, name: true, slug: true, razaoSocial: true } },
       responsible: { select: { id: true, name: true } },
     },
     orderBy: { endDate: 'asc' },

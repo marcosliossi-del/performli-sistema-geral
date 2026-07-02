@@ -14,6 +14,7 @@ export async function updateClient(
   clientId: string,
   data: {
     name?: string
+    razaoSocial?: string | null
     industry?: string | null
     website?: string | null
     notes?: string | null
@@ -38,6 +39,11 @@ export async function updateClient(
   }
 
   const updateData: Record<string, unknown> = {}
+
+  if (data.razaoSocial !== undefined) {
+    // Razão social EXATAMENTE como está no Asaas (chave de conciliação).
+    updateData.razaoSocial = data.razaoSocial?.trim() || null
+  }
 
   if (data.name !== undefined && data.name.trim()) {
     updateData.name = data.name.trim()

@@ -7,6 +7,7 @@ import { materializeRecurringTasksForClient } from '@/services/recurrence-engine
 import { importarSuporteClickUp } from '@/services/seed-suporte'
 import { migrarClickUp, type LoteName } from '@/services/clickup-migration'
 import { reconcileAsaasTasks } from '@/services/asaas-task-reconciler'
+import { vincularAsaasClientes } from '@/services/seed-vincular-asaas'
 
 // Backfill pode processar vários clientes — dá folga ao tempo de execução.
 export const maxDuration = 60
@@ -92,6 +93,11 @@ export async function POST(req: NextRequest) {
       const lote = lotesValidos.includes(loteParam) ? loteParam : 'tudo'
       const migracao = await migrarClickUp(lote)
       return NextResponse.json({ ok: true, phase, lote, migracao })
+    }
+
+    if (phase === 'vincular-asaas') {
+      const vinculo = await vincularAsaasClientes()
+      return NextResponse.json({ ok: true, phase, vinculo })
     }
 
     if (phase === 'reconciliar-asaas') {

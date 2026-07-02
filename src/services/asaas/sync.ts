@@ -17,8 +17,19 @@ async function syncCustomers() {
 
   // Load all agency clients ONCE and match in memory — avoids 2-3 DB queries per customer
   const allClients = await prisma.client.findMany({
-    select: { id: true, document: true, name: true },
+    select: { id: true, document: true, name: true, razaoSocial: true },
   })
+
+  // Normalização tolerante (acentos/caixa/espaços) — mesma filosofia do
+  // matching de carteiras. Razão social é a chave preferencial: o dono mantém
+  // Client.razaoSocial EXATAMENTE como está no Asaas (name = fantasia/loja).
+  const norm = (v: string | null | undefined) =>
+    (v ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim()
 
   function matchClient(asaasId: string | null, name: string): string | null {
     const doc = normalizeDoc(asaasId)
@@ -26,8 +37,12 @@ async function syncCustomers() {
       const byDoc = allClients.find(c => normalizeDoc(c.document) === doc)
       if (byDoc) return byDoc.id
     }
-    const lower = name.toLowerCase().trim()
-    return allClients.find(c => c.name.toLowerCase().trim() === lower)?.id ?? null
+    const alvo = norm(name)
+    if (!alvo) return null
+    // 1º razão social (chave de conciliação), depois nome fantasia.
+    const byRazao = allClients.find(c => norm(c.razaoSocial) === alvo)
+    if (byRazao) return byRazao.id
+    return allClients.find(c => norm(c.name) === alvo)?.id ?? null
   }
 
   await Promise.all(active.map(c => {

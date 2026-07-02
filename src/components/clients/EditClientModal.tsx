@@ -9,6 +9,7 @@ import { useModalA11y } from '@/lib/useModalA11y'
 interface ClientData {
   id: string
   name: string
+  razaoSocial: string | null
   industry: string | null
   website: string | null
   notes: string | null
@@ -35,6 +36,7 @@ const industries = [
 export function EditClientModal({ client, onClose }: Props) {
   const [form, setForm] = useState({
     name: client.name,
+    razaoSocial: client.razaoSocial ?? '',
     industry: client.industry ?? '',
     website: client.website ?? '',
     notes: client.notes ?? '',
@@ -65,6 +67,7 @@ export function EditClientModal({ client, onClose }: Props) {
     try {
       const result = await updateClient(client.id, {
         name: form.name,
+        razaoSocial: form.razaoSocial || null,
         industry: form.industry || null,
         website: form.website || null,
         source: form.source || null,
@@ -119,13 +122,24 @@ export function EditClientModal({ client, onClose }: Props) {
         <form onSubmit={handleSave} className="p-5 space-y-4 overflow-y-auto flex-1">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2 space-y-1.5">
-              <label className="text-xs text-[#87919E]">Nome *</label>
+              <label className="text-xs text-[#87919E]">Nome (fantasia / loja) *</label>
               <input
                 value={form.name}
                 onChange={(e) => set('name', e.target.value)}
                 required
                 className="w-full h-9 px-3 rounded-lg bg-[#1B2B3A] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
               />
+            </div>
+
+            <div className="col-span-2 space-y-1.5">
+              <label className="text-xs text-[#87919E]">Razão social (exatamente como está no Asaas)</label>
+              <input
+                value={form.razaoSocial}
+                onChange={(e) => set('razaoSocial', e.target.value)}
+                placeholder="Ex.: Thais — LALLUZI: preencha a razão social do Asaas"
+                className="w-full h-9 px-3 rounded-lg bg-[#1B2B3A] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
+              />
+              <p className="text-[10px] text-[#647488]">Usada para conciliar faturas do Asaas automaticamente com este cliente.</p>
             </div>
 
             {/* Tipo de negócio */}

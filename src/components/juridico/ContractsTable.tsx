@@ -152,6 +152,9 @@ export function ContractsTable({ contracts, clients, users }: Props) {
                       <tr key={contract.id} className="hover:bg-[#38435C]/15 transition-colors group">
                         <td className="px-4 py-3">
                           <span className="font-medium text-[#EBEBEB]">{contract.client.name}</span>
+                          {contract.client.razaoSocial && (
+                            <span className="block text-[10px] text-[#647488]">{contract.client.razaoSocial}</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-[#87919E]">
                           {contract.type === 'FEE_MENSAL' ? 'Fee Mensal' : contract.type === 'PROJETO' ? 'Projeto' : 'Avulso'}

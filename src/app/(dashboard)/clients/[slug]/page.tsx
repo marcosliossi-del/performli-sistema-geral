@@ -272,6 +272,7 @@ export default async function ClientDetailPage({
             client={{
               id: client.id,
               name: client.name,
+              razaoSocial: client.razaoSocial ?? null,
               industry: client.industry,
               website: client.website,
               notes: client.notes,
