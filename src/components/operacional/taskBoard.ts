@@ -32,7 +32,14 @@ export type BoardHandlers = {
   onReorderSeed: (orderedIds: string[]) => Promise<void>
   /** Criação rápida — cria SEMPRE em "A fazer" (createOperacionalTask). */
   onQuickCreate: (title: string) => Promise<void>
+  /** Edição plena (criar/editar campos/atribuir/reordenar). GESTOR_TRAFEGO=false. */
   canEdit: boolean
+  /**
+   * Papel que SÓ move de coluna (altera status), sem editar campos/atribuir —
+   * GESTOR_TRAFEGO. Quando true (e canEdit false), o dropdown de status fica
+   * ativo, mas prioridade/prazo/responsáveis/criação ficam bloqueados.
+   */
+  canEditStatusOnly: boolean
   /** Universo de responsáveis selecionáveis. */
   users: AssigneeUser[]
 }

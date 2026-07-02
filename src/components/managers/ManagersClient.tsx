@@ -6,6 +6,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { healthLabels, healthBgClasses } from '@/lib/health'
 import { HealthStatus } from '@prisma/client'
 import type { ManagerWithStats } from '@/lib/dal'
+import { roleLabel } from '@/lib/rbac'
 
 // ── Cores por gestor (sequencial) ─────────────────────────────────────────────
 const MANAGER_COLORS = [
@@ -101,11 +102,7 @@ export function ManagersClient({ managers }: Props) {
                       {manager.name}
                     </p>
                     <p className="text-[#87919E] text-[10px] uppercase tracking-wide">
-                      {manager.role === 'ADMIN'
-                        ? 'Administrador'
-                        : manager.role === 'MANAGER'
-                        ? 'Gestor'
-                        : 'Analista'}
+                      {roleLabel(manager.role)}
                     </p>
                   </div>
                   <span

@@ -5,13 +5,18 @@ import { MoreHorizontal, ShieldCheck, UserCheck, UserX, Trash2, AlertTriangle } 
 import { cn } from '@/lib/utils'
 import { updateUserRole, toggleUserActive, deleteUser } from '@/app/actions/team'
 import { Role } from '@prisma/client'
+import { normalizeRole, roleLabel, type Role5 } from '@/lib/rbac'
 
-const roleLabels: Record<string, string> = { ADMIN: 'Admin', MANAGER: 'Gestor', ANALYST: 'Analista', CS: 'Succ. Clientes' }
-const roleBadge: Record<string, string> = {
-  ADMIN:   'bg-[#95BBE2]/15 text-[#95BBE2]',
-  MANAGER: 'bg-[#A78BFA]/15 text-[#A78BFA]',
-  ANALYST: 'bg-[#38435C]/50 text-[#87919E]',
-  CS:      'bg-[#34D399]/15 text-[#34D399]',
+// Papéis canônicos atribuíveis (matriz RBAC v2). Legados (MANAGER/ANALYST) ainda
+// existem no enum, mas novos papéis usam sempre os nomes canônicos.
+const ASSIGNABLE_ROLES: Role5[] = ['ADMIN', 'SUPERVISOR_TRAFEGO', 'ANALISTA_TRAFEGO', 'CS', 'GESTOR_TRAFEGO']
+
+const roleBadge: Record<Role5, string> = {
+  ADMIN:              'bg-[#95BBE2]/15 text-[#95BBE2]',
+  SUPERVISOR_TRAFEGO: 'bg-[#54e0ee]/15 text-[#54e0ee]',
+  ANALISTA_TRAFEGO:   'bg-[#38435C]/50 text-[#87919E]',
+  GESTOR_TRAFEGO:     'bg-[#A78BFA]/15 text-[#A78BFA]',
+  CS:                 'bg-[#34D399]/15 text-[#34D399]',
 }
 
 interface Props {
@@ -79,9 +84,9 @@ export function TeamMemberRow({ user, isSelf, isAdmin }: Props) {
           </div>
         </td>
         <td className="px-4 py-3">
-          <span className={cn('inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium', roleBadge[user.role])}>
+          <span className={cn('inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium', roleBadge[normalizeRole(user.role)])}>
             <ShieldCheck size={10} />
-            {roleLabels[user.role]}
+            {roleLabel(user.role)}
           </span>
         </td>
         <td className="px-4 py-3 text-sm text-[#87919E]">
@@ -115,15 +120,15 @@ export function TeamMemberRow({ user, isSelf, isAdmin }: Props) {
                     className="fixed w-48 bg-[#0A1E2C] border border-[#38435C] rounded-xl shadow-xl z-50 py-1 overflow-hidden"
                   >
                     <p className="px-3 py-1.5 text-[10px] font-semibold text-[#87919E] uppercase tracking-wider">Alterar perfil</p>
-                    {(['ADMIN', 'MANAGER', 'CS', 'ANALYST'] as Role[])
-                      .filter((r) => r !== user.role)
+                    {ASSIGNABLE_ROLES
+                      .filter((r) => r !== normalizeRole(user.role))
                       .map((r) => (
                         <button
                           key={r}
-                          onClick={() => changeRole(r)}
+                          onClick={() => changeRole(r as Role)}
                           className="w-full text-left px-3 py-2 text-sm text-[#EBEBEB] hover:bg-[#38435C]/50 transition-colors"
                         >
-                          Tornar {roleLabels[r]}
+                          Tornar {roleLabel(r)}
                         </button>
                       ))}
 
