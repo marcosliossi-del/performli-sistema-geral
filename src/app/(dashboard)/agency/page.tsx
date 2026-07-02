@@ -23,7 +23,7 @@ export default async function AgencyPage() {
   if (session.role !== 'ADMIN') redirect('/dashboard')
 
   const data = await getAgencyOverview()
-  const total = data.health.otimo + data.health.regular + data.health.ruim + data.health.unknown
+  const total = data.health.otimo + data.health.regular + data.health.ruim + data.health.semMeta + data.health.aguardandoDados
 
   const pct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
 
@@ -90,12 +90,23 @@ export default async function AgencyPage() {
           {data.health.ruim > 0 && (
             <div className="bg-[#EF4444] rounded-full" style={{ width: `${pct(data.health.ruim)}%` }} />
           )}
-          {data.health.unknown > 0 && (
-            <div className="bg-[#38435C] rounded-full" style={{ width: `${pct(data.health.unknown)}%` }} />
+          {(data.health.semMeta + data.health.aguardandoDados) > 0 && (
+            <div className="bg-[#38435C] rounded-full" style={{ width: `${pct(data.health.semMeta + data.health.aguardandoDados)}%` }} />
           )}
         </div>
-        {data.health.unknown > 0 && (
-          <p className="text-[10px] text-[#87919E] mt-1">{data.health.unknown} cliente(s) sem metas configuradas</p>
+        {(data.health.semMeta > 0 || data.health.aguardandoDados > 0) && (
+          <div className="mt-1 space-y-0.5">
+            {data.health.aguardandoDados > 0 && (
+              <p className="text-[10px] text-[#87919E]">
+                {data.health.aguardandoDados} cliente(s) com meta cadastrada aguardando dados/sync — a saúde aparece assim que o próximo sync rodar
+              </p>
+            )}
+            {data.health.semMeta > 0 && (
+              <p className="text-[10px] text-[#87919E]">
+                {data.health.semMeta} cliente(s) sem meta configurada — cadastre a meta em Metas para acompanhar a saúde
+              </p>
+            )}
+          </div>
         )}
       </div>
 

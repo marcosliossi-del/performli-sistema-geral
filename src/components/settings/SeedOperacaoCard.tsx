@@ -167,6 +167,22 @@ export function SeedOperacaoCard() {
     }
   }
 
+  async function runMigrarMetasFaturamento() {
+    setLoading(true)
+    try {
+      const res = await post('?phase=migrar-metas-faturamento')
+      const m = res.migracao ?? res
+      toast(
+        `Metas de faturamento: ${m?.migrados ?? 0} criada(s); ${m?.semRoas?.length ?? 0} sem ROAS, ${m?.semBudget?.length ?? 0} sem budget.`,
+        'ok',
+      )
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível migrar as metas.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function runReconciliarAsaas() {
     setLoading(true)
     setReconcile(null)
@@ -419,6 +435,15 @@ export function SeedOperacaoCard() {
           >
             {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
             Conciliar Asaas agora
+          </button>
+          <button
+            type="button"
+            onClick={runMigrarMetasFaturamento}
+            disabled={loading}
+            className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+            Criar metas de faturamento (dos ROAS)
           </button>
         </div>
 

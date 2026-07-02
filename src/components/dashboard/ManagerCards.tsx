@@ -175,8 +175,14 @@ function ManagerCard({ manager }: { manager: ManagerStat }) {
                             {healthLabels[c.overallStatus as HealthStatus]}
                           </span>
                         </div>
+                      ) : c.hasActiveGoal ? (
+                        <span className="text-[10px] text-[#95BBE2]" title="Meta cadastrada — saúde aparece após o próximo sync">
+                          aguardando dados
+                        </span>
                       ) : (
-                        <span className="text-[10px] text-[#87919E]">sem meta</span>
+                        <span className="text-[10px] text-[#87919E]" title="Cliente sem meta configurada">
+                          sem meta
+                        </span>
                       )}
                       {c.streakDays != null && c.streakDays >= 3 && c.streakStatus && (
                         <span className={`text-[9px] px-1 py-0.5 rounded-full ${

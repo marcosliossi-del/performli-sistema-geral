@@ -204,8 +204,22 @@ export async function createGoal(prevState: GoalState, formData: FormData): Prom
   const period = periodRaw === 'MONTHLY' ? 'MONTHLY' : 'WEEKLY'
 
   try {
-    await prisma.goal.create({
-      data: {
+    // Re-salvar a MESMA meta (clientId+metric+period+startDate) é o caminho
+    // normal do modal (métricas locais MENSAGENS/LEADS/AGENDAMENTOS…). `create`
+    // batia no @@unique e retornava P2002 "já existe". UPSERT pela chave única
+    // (mesmo padrão de `upsertMonthlyGoals`): atualiza targetValue+endDate+notes,
+    // cria o resto.
+    await prisma.goal.upsert({
+      where: {
+        clientId_metric_period_startDate: {
+          clientId,
+          metric: metric as MetricType,
+          period,
+          startDate: start,
+        },
+      },
+      update: { targetValue: target, endDate: end, notes: notes || null },
+      create: {
         clientId,
         metric:      metric as MetricType,
         period,
@@ -215,11 +229,7 @@ export async function createGoal(prevState: GoalState, formData: FormData): Prom
         notes:       notes || null,
       },
     })
-  } catch (e: unknown) {
-    const err = e as { code?: string }
-    if (err?.code === 'P2002') {
-      return { error: 'Já existe uma meta para esta métrica neste período.' }
-    }
+  } catch {
     return { error: 'Erro ao salvar meta. Tente novamente.' }
   }
 

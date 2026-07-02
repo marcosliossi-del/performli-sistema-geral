@@ -7,8 +7,16 @@ import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { slugify } from '@/lib/utils'
 import { BusinessType } from '@prisma/client'
+import { investimentoTotal, roasEsperado } from '@/lib/metas/projection'
 
 export type UpdateClientState = { error?: string; success?: boolean; slug?: string }
+
+/** Converte um Decimal? do Prisma em number|null preservando o "não informado". */
+function num(v: { toString(): string } | null | undefined): number | null {
+  if (v == null) return null
+  const n = Number(v.toString())
+  return Number.isFinite(n) ? n : null
+}
 
 export async function updateClient(
   clientId: string,
@@ -25,11 +33,28 @@ export async function updateClient(
     contractStart?: Date | null
     source?: string | null
     businessType?: BusinessType | null
+    // Budget de mídia por canal (R$). O investimento total NÃO é aceito aqui:
+    // é derivado da soma dos três canais.
+    investimentoMeta?: number | null
+    investimentoGoogle?: number | null
+    investimentoTiktok?: number | null
   }
 ): Promise<UpdateClientState> {
   const session = await requireSession()
 
-  const client = await prisma.client.findUnique({ where: { id: clientId }, select: { slug: true, name: true } })
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: {
+      slug: true,
+      name: true,
+      // Valores atuais de budget/faturamento para recalcular o ROAS esperado
+      // usando fallback nos canais que não vieram no `data` desta edição.
+      investimentoMeta: true,
+      investimentoGoogle: true,
+      investimentoTiktok: true,
+      faturamentoEsperado: true,
+    },
+  })
   if (!client) return { error: 'Cliente não encontrado.' }
 
   try {
@@ -65,6 +90,36 @@ export async function updateClient(
   if ('contractStart' in data) updateData.contractStart = data.contractStart ?? null
   if ('source' in data) updateData.source = data.source ?? null
   if ('businessType' in data && data.businessType != null) updateData.businessType = data.businessType
+
+  if ('investimentoMeta' in data) updateData.investimentoMeta = data.investimentoMeta ?? null
+  if ('investimentoGoogle' in data) updateData.investimentoGoogle = data.investimentoGoogle ?? null
+  if ('investimentoTiktok' in data) updateData.investimentoTiktok = data.investimentoTiktok ?? null
+
+  // ROAS esperado é DERIVADO (faturamento-alvo ÷ investimento total) — nunca é
+  // digitado à mão. Sempre que qualquer budget de canal muda, recalculamos.
+  const budgetTocado =
+    'investimentoMeta' in data ||
+    'investimentoGoogle' in data ||
+    'investimentoTiktok' in data
+  if (budgetTocado) {
+    // Valores FINAIS: o que veio no `data` prevalece; o que não veio usa o
+    // valor atual do banco (fallback), para não zerar canais fora desta edição.
+    const metaFinal =
+      'investimentoMeta' in data ? data.investimentoMeta ?? null : num(client.investimentoMeta)
+    const googleFinal =
+      'investimentoGoogle' in data ? data.investimentoGoogle ?? null : num(client.investimentoGoogle)
+    const tiktokFinal =
+      'investimentoTiktok' in data ? data.investimentoTiktok ?? null : num(client.investimentoTiktok)
+
+    const total = investimentoTotal(metaFinal, googleFinal, tiktokFinal)
+    const faturamentoAtual = num(client.faturamentoEsperado)
+    // Sem faturamento-alvo (null) ou sem budget → roasEsperado retorna null;
+    // nesse caso NÃO mexemos no roasMinimo atual (não zeramos).
+    if (faturamentoAtual != null) {
+      const roas = roasEsperado(faturamentoAtual, total)
+      if (roas != null) updateData.roasMinimo = roas
+    }
+  }
 
   const updated = await prisma.client.update({ where: { id: clientId }, data: updateData })
 

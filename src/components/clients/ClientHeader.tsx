@@ -20,6 +20,9 @@ interface Props {
     contractStart: Date | null
     source: string | null
     businessType: BusinessType
+    investimentoMeta: number | null
+    investimentoGoogle: number | null
+    investimentoTiktok: number | null
   }
 }
 

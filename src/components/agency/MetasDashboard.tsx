@@ -149,7 +149,7 @@ function ClientCard({ c }: { c: ClientProgress }) {
       <div className="space-y-1">
         <div className="flex justify-between text-[10px] text-[#87919E]">
           <span>Faturamento</span>
-          <span>{c.goalFaturamento ? `meta ${formatCurrency(c.goalFaturamento)}` : 'sem meta'}</span>
+          <span>{c.goalFaturamento ? `meta ${formatCurrency(c.goalFaturamento)}` : 'sem meta de faturamento'}</span>
         </div>
         <div className="h-2 rounded-full bg-[#38435C]/60 overflow-hidden">
           <div
@@ -215,7 +215,7 @@ function ClientCard({ c }: { c: ClientProgress }) {
               )}
             </div>
           ) : (
-            <span className="text-xs text-[#87919E]/50">sem meta</span>
+            <span className="text-xs text-[#87919E]/50">sem meta de budget</span>
           )}
         </div>
 

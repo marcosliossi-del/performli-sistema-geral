@@ -5,6 +5,7 @@ import { updateClient, deleteClient } from '@/app/actions/updateClient'
 import { X, Trash2, AlertTriangle, ShoppingCart, MapPin } from 'lucide-react'
 import { BusinessType } from '@prisma/client'
 import { useModalA11y } from '@/lib/useModalA11y'
+import { investimentoTotal } from '@/lib/metas/projection'
 
 interface ClientData {
   id: string
@@ -20,6 +21,9 @@ interface ClientData {
   contractStart: Date | null
   source: string | null
   businessType: BusinessType
+  investimentoMeta: number | null
+  investimentoGoogle: number | null
+  investimentoTiktok: number | null
 }
 
 interface Props {
@@ -49,6 +53,9 @@ export function EditClientModal({ client, onClose }: Props) {
       ? new Date(client.contractStart).toISOString().split('T')[0]
       : '',
     businessType: client.businessType as BusinessType,
+    investimentoMeta: client.investimentoMeta?.toString() ?? '',
+    investimentoGoogle: client.investimentoGoogle?.toString() ?? '',
+    investimentoTiktok: client.investimentoTiktok?.toString() ?? '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -59,6 +66,17 @@ export function EditClientModal({ client, onClose }: Props) {
   function set(field: keyof typeof form, value: string) {
     setForm((f) => ({ ...f, [field]: value }))
   }
+
+  // Investimento total é DERIVADO (soma dos 3 canais) — recalculado ao vivo com
+  // o mesmo helper puro usado no backend, para não haver duas contas divergentes.
+  const parse = (v: string): number | null => (v ? parseFloat(v) : null)
+  const totalInvestimento = investimentoTotal(
+    parse(form.investimentoMeta),
+    parse(form.investimentoGoogle),
+    parse(form.investimentoTiktok),
+  )
+  const brl = (n: number) =>
+    n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -78,6 +96,9 @@ export function EditClientModal({ client, onClose }: Props) {
         contractValue: form.contractValue ? parseFloat(form.contractValue) : null,
         contractStart: form.contractStart ? new Date(form.contractStart) : null,
         businessType: form.businessType,
+        investimentoMeta: form.investimentoMeta ? parseFloat(form.investimentoMeta) : null,
+        investimentoGoogle: form.investimentoGoogle ? parseFloat(form.investimentoGoogle) : null,
+        investimentoTiktok: form.investimentoTiktok ? parseFloat(form.investimentoTiktok) : null,
       })
       if (result.error) {
         setError(result.error)
@@ -251,6 +272,64 @@ export function EditClientModal({ client, onClose }: Props) {
                 type="date"
                 className="w-full h-9 px-3 rounded-lg bg-[#1B2B3A] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
               />
+            </div>
+
+            {/* Budget de mídia planejado por canal. O total é derivado (soma) e
+                alimenta o ROAS esperado = faturamento-alvo ÷ investimento total. */}
+            <div className="col-span-2 pt-1">
+              <p className="text-xs font-semibold text-[#EBEBEB]">Investimento em mídia (planejado)</p>
+              <p className="text-[10px] text-[#647488]">Quanto será investido por canal neste ciclo. O total é somado automaticamente.</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-[#87919E]">Investimento Meta (R$)</label>
+              <input
+                value={form.investimentoMeta}
+                onChange={(e) => set('investimentoMeta', e.target.value)}
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                className="w-full h-9 px-3 rounded-lg bg-[#1B2B3A] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-[#87919E]">Investimento Google (R$)</label>
+              <input
+                value={form.investimentoGoogle}
+                onChange={(e) => set('investimentoGoogle', e.target.value)}
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                className="w-full h-9 px-3 rounded-lg bg-[#1B2B3A] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-[#87919E]">Investimento TikTok (R$)</label>
+              <input
+                value={form.investimentoTiktok}
+                onChange={(e) => set('investimentoTiktok', e.target.value)}
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                className="w-full h-9 px-3 rounded-lg bg-[#1B2B3A] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-[#87919E]">Investimento Total (R$)</label>
+              <input
+                value={brl(totalInvestimento)}
+                readOnly
+                disabled
+                aria-label="Investimento total (soma automática dos canais)"
+                className="w-full h-9 px-3 rounded-lg bg-[#0F1F2C] border border-[#38435C] text-sm text-[#95BBE2] font-semibold cursor-not-allowed"
+              />
+              <p className="text-[10px] text-[#647488]">Soma automática dos três canais. Não é editável.</p>
             </div>
 
             <div className="col-span-2 space-y-1.5">
