@@ -28,7 +28,7 @@ export function GoalPaceCard({ goals, daysElapsed, daysInMonth }: Props) {
         <div>
           <h2 className="text-sm font-semibold text-[#EBEBEB]">Ritmo das Metas Mensais</h2>
           <p className="text-[10px] text-[#87919E] mt-0.5">
-            Dia {daysElapsed} de {daysInMonth} — baseado no ritmo atual (fonte: GA4)
+            Dia {daysElapsed} de {daysInMonth} — realizado no mês (fonte única: mesma base de /agency/metas)
           </p>
         </div>
       </div>
@@ -85,7 +85,7 @@ export function GoalPaceCard({ goals, daysElapsed, daysInMonth }: Props) {
               {/* Current vs expected */}
               <div className="space-y-1.5 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-[#87919E]">Acumulado hoje</span>
+                  <span className="text-[#87919E]">Realizado no mês</span>
                   <span className="font-semibold text-[#EBEBEB]">
                     {formatValue(goal.metric, goal.actualValue)}
                   </span>

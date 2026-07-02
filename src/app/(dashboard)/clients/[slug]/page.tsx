@@ -197,6 +197,11 @@ export default async function ClientDetailPage({
   const weeklyGoals = client.goals.filter((g) => g.period === 'WEEKLY')
   const monthlyGoals = client.goals.filter((g) => g.period === 'MONTHLY')
 
+  // S2-014 — FONTE ÚNICA de "realizado no mês": reusa o realizado MTD já
+  // computado por getGoalPaceMetrics (helper src/lib/metas/realizado.ts), a MESMA
+  // base de /agency/metas. NÃO usar HealthScore.actualValue aqui (divergia).
+  const monthlyRealizadoByMetric = new Map(paceGoals.map((p) => [p.metric, p.actualValue]))
+
   const overallStatus: HealthStatus | null =
     weeklyGoals.length === 0
       ? null
@@ -588,13 +593,16 @@ export default async function ClientDetailPage({
       {/* ── Metas do Mês ────────────────────────────────────────────────────── */}
       {monthlyGoals.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold text-[#EBEBEB] mb-3">Metas do Mês</h2>
+          <h2 className="text-sm font-semibold text-[#EBEBEB] mb-3">
+            Metas do Mês <span className="text-[10px] font-normal text-[#87919E]">· realizado no mês</span>
+          </h2>
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
             {monthlyGoals.map((goal) => {
               const hs = goal.healthScores[0]
               const status = hs?.status ?? null
               const pct = hs ? Math.round(Number(hs.achievementPct)) : null
-              const actual = hs ? Number(hs.actualValue) : null
+              // Realizado da FONTE ÚNICA (MTD), não de HealthScore.actualValue.
+              const actual = monthlyRealizadoByMetric.get(goal.metric) ?? null
 
               return (
                 <Card key={goal.id}>
@@ -895,8 +903,8 @@ function ResultadoStrip({ resultado, etapa, roas, atualizadoEm }: { resultado: s
       )}
       {roas != null && (
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-[#87919E] mb-1">ROAS</p>
-          <span className="text-sm font-mono text-[#EBEBEB] tabular">{roas.toFixed(2)}</span>
+          <p className="text-[10px] uppercase tracking-wider text-[#87919E] mb-1">ROAS · semana passada</p>
+          <span className="text-sm font-mono text-[#EBEBEB] tabular">{roas.toFixed(2)}x</span>
         </div>
       )}
       {atualizadoEm && (
