@@ -11,6 +11,14 @@ type LoteResult = {
   erros: string[]
 }
 
+type VinculoResult = {
+  vinculados: number
+  jaVinculados: number
+  clienteNaoEncontrado: string[]
+  semVinculo: string[]
+  customersReligados: number
+}
+
 type ReconcileResult = {
   geradas: number
   conciliadas: number
@@ -38,6 +46,7 @@ export function SeedOperacaoCard() {
   const [suporte, setSuporte] = useState<{ criadas: number; puladas: number; semCliente: string[]; erros: string[] } | null>(null)
   const [migracao, setMigracao] = useState<Record<string, LoteResult> | null>(null)
   const [reconcile, setReconcile] = useState<ReconcileResult | null>(null)
+  const [vinculo, setVinculo] = useState<VinculoResult | null>(null)
 
   async function post(qs: string) {
     const res = await fetch(`/api/admin/seed-operacao${qs}`, { method: 'POST' })
@@ -135,6 +144,21 @@ export function SeedOperacaoCard() {
       toast(`Migração ClickUp concluída: ${totalCriadas} item(ns) criado(s).`, 'ok')
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Não foi possível migrar do ClickUp.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function runVincularAsaas() {
+    setLoading(true)
+    setVinculo(null)
+    try {
+      const res = await post('?phase=vincular-asaas')
+      setVinculo(res.vinculo ?? null)
+      const v = res.vinculo
+      toast(`Vínculo Asaas: ${v?.vinculados ?? 0} cliente(s) vinculado(s), ${v?.customersReligados ?? 0} customer(s) religado(s).`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível vincular o Asaas.', 'err')
     } finally {
       setLoading(false)
     }
@@ -349,6 +373,15 @@ export function SeedOperacaoCard() {
           </button>
           <button
             type="button"
+            onClick={runVincularAsaas}
+            disabled={loading}
+            className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+            Vincular clientes ao Asaas
+          </button>
+          <button
+            type="button"
             onClick={runReconciliarAsaas}
             disabled={loading}
             className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
@@ -357,6 +390,24 @@ export function SeedOperacaoCard() {
             Conciliar Asaas agora
           </button>
         </div>
+
+        {vinculo && (
+          <div className="mt-4 text-xs text-[#87919E] space-y-1.5 border-t border-[#38435C]/60 pt-3">
+            <p>
+              Razões sociais gravadas: <span className="text-[#EBEBEB]">{vinculo.vinculados}</span>
+              {' · '}já vinculadas: <span className="text-[#EBEBEB]">{vinculo.jaVinculados}</span>
+              {' · '}customers religados: <span className="text-[#EBEBEB]">{vinculo.customersReligados}</span>
+            </p>
+            {vinculo.clienteNaoEncontrado.length > 0 && (
+              <p className="text-[#ff5e6a]">Cliente não encontrado: {vinculo.clienteNaoEncontrado.join(' · ')}</p>
+            )}
+            {vinculo.semVinculo.length > 0 && (
+              <p className="text-[#e3ad45]">
+                Customers do Asaas SEM vínculo (me diga quem são): {vinculo.semVinculo.join(' · ')}
+              </p>
+            )}
+          </div>
+        )}
 
         {migracao && (
           <div className="mt-4 text-xs text-[#87919E] space-y-1.5">

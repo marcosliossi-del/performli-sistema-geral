@@ -145,6 +145,9 @@ enum InteractionType {
 model Client {
   id             String        @id @default(cuid())
   name           String
+  // Razão social EXATAMENTE como está no Asaas — chave de conciliação
+  // automática customer↔cliente (name = nome fantasia/loja).
+  razaoSocial    String?
   slug           String        @unique
   logoUrl        String?
   industry       String?

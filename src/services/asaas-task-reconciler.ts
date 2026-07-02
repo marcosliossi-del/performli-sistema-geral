@@ -113,8 +113,11 @@ export async function reconcileAsaasTasks(): Promise<ReconcileResult> {
 
       // ── 1. GERAÇÃO ──────────────────────────────────────────────────────────
       if (!existing) {
-        if (aberto && clientStatus === 'ACTIVE') {
-          const vencida = p.status === 'OVERDUE'
+        // Desenho aprovado pelo dono (2026-07-02): tarefa SÓ na exceção.
+        // Fatura em dia não vira tarefa (o Asaas cobra sozinho e o painel
+        // Financeiro mostra o fluxo); apenas a VENCIDA exige ação humana.
+        if (aberto && p.status === 'OVERDUE' && clientStatus === 'ACTIVE') {
+          const vencida = true
           await prisma.task.create({
             data: {
               title: `Receber ${clientName} — ${brl(p.value)} (venc. ${ddmm(p.dueDate)})`,

@@ -9,6 +9,7 @@ interface Props {
   client: {
     id: string
     name: string
+    razaoSocial: string | null
     industry: string | null
     website: string | null
     notes: string | null
