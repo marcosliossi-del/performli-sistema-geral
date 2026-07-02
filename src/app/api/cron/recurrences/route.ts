@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runTaskRecurrences } from '@/services/recurrence-engine'
 import { runScheduledTaskRecurrences } from '@/services/task-schedule-recurrence'
+import { isCronAuthorized } from '@/lib/cron-auth'
 
 /**
  * /api/cron/recurrences — cron DEDICADO de recorrências (audit §3). Cobre DOIS
@@ -12,12 +13,7 @@ import { runScheduledTaskRecurrences } from '@/services/task-schedule-recurrence
  */
 
 function isAuthorized(request: NextRequest): boolean {
-  const expectedSecret = process.env.CRON_SECRET
-  if (!expectedSecret) return false
-  const authHeader = request.headers.get('authorization')
-  const bearerSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-  const customSecret = request.headers.get('x-cron-secret')
-  return (bearerSecret ?? customSecret) === expectedSecret
+  return isCronAuthorized(request) // comparação timing-safe compartilhada
 }
 
 async function handle(request: NextRequest) {
