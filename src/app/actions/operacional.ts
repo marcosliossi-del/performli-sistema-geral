@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
+import { assertCan } from '@/lib/permissions'
 import { checkTaskCompletion } from '@/services/task-completion-guard'
 import { statusIdFor } from '@/lib/tasks/statusMap'
 import { TaskType, TaskPriority } from '@prisma/client'
@@ -27,6 +28,24 @@ export type CreateOperacionalTaskInput = {
  * BLOCO 2 — Cria uma tarefa na Central Operacional (campos ricos).
  * Valida papel + posse do cliente. Registra TaskActivity + AuditLog.
  */
+
+/**
+ * Guard de escrita compartilhado (fecha R2 do security-review): com cliente,
+ * papel+posse via assertClientMutationAccess(allowCS); task interna só pelo
+ * responsável — demais papéis passam pelo assertCan (barra ANALYST).
+ */
+async function assertTaskWrite(
+  session: { userId: string; role: string },
+  task: { clientId: string | null; assignedTo: string | null },
+): Promise<void> {
+  if (task.clientId) {
+    await assertClientMutationAccess(session, task.clientId, { allowCS: true })
+    return
+  }
+  if (task.assignedTo === session.userId) return
+  await assertCan(session, 'task.write', {})
+}
+
 export async function createOperacionalTask(input: CreateOperacionalTaskInput): Promise<ActionResult> {
   const session = await requireSession()
 
@@ -109,13 +128,12 @@ export async function addTaskComment(taskId: string, body: string): Promise<AddT
   const session = await requireSession()
   const trimmed = body.trim()
   if (!trimmed) return { error: 'Comentário vazio.' }
+  if (trimmed.length > 5000) return { error: 'Comentário longo demais (máx. 5.000 caracteres).' }
 
-  const task = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true, clientId: true } })
+  const task = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true, clientId: true, assignedTo: true } })
   if (!task) return { error: 'Tarefa não encontrada.' }
 
-  if (task.clientId) {
-    await assertClientMutationAccess(session, task.clientId, { allowCS: true })
-  }
+  await assertTaskWrite(session, task)
 
   const created = await prisma.taskComment.create({
     data: { taskId, authorId: session.userId, body: trimmed },
@@ -143,13 +161,11 @@ export async function toggleChecklistItem(itemId: string, done: boolean): Promis
   const session = await requireSession()
   const item = await prisma.taskChecklistItem.findUnique({
     where: { id: itemId },
-    select: { id: true, task: { select: { clientId: true } } },
+    select: { id: true, task: { select: { clientId: true, assignedTo: true } } },
   })
-  if (!item) return { error: 'Item não encontrado.' }
+  if (!item || !item.task) return { error: 'Item não encontrado.' }
 
-  if (item.task?.clientId) {
-    await assertClientMutationAccess(session, item.task.clientId, { allowCS: true })
-  }
+  await assertTaskWrite(session, item.task)
 
   await prisma.taskChecklistItem.update({ where: { id: itemId }, data: { done } })
   revalidatePath('/operacional')
@@ -165,13 +181,12 @@ export async function addChecklistItem(taskId: string, label: string): Promise<A
   const session = await requireSession()
   const trimmed = label.trim()
   if (!trimmed) return { error: 'Descreva o item do checklist.' }
+  if (trimmed.length > 200) return { error: 'Item longo demais (máx. 200 caracteres).' }
 
-  const task = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true, clientId: true } })
+  const task = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true, clientId: true, assignedTo: true } })
   if (!task) return { error: 'Tarefa não encontrada.' }
 
-  if (task.clientId) {
-    await assertClientMutationAccess(session, task.clientId, { allowCS: true })
-  }
+  await assertTaskWrite(session, task)
 
   const last = await prisma.taskChecklistItem.aggregate({
     where: { taskId },
@@ -200,13 +215,11 @@ export async function removeChecklistItem(itemId: string): Promise<ActionResult>
   const session = await requireSession()
   const item = await prisma.taskChecklistItem.findUnique({
     where: { id: itemId },
-    select: { id: true, taskId: true, label: true, done: true, required: true, task: { select: { clientId: true } } },
+    select: { id: true, taskId: true, label: true, done: true, required: true, task: { select: { clientId: true, assignedTo: true } } },
   })
-  if (!item) return { error: 'Item não encontrado.' }
+  if (!item || !item.task) return { error: 'Item não encontrado.' }
 
-  if (item.task?.clientId) {
-    await assertClientMutationAccess(session, item.task.clientId, { allowCS: true })
-  }
+  await assertTaskWrite(session, item.task)
 
   if (item.required) {
     return { error: 'Este item é obrigatório e não pode ser removido. Desmarque a obrigatoriedade antes.' }
@@ -271,6 +284,8 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
       status: true,
       evidence: true,
       assignedTo: true,
+      clientId: true,
+      auxAssignees: { select: { userId: true } },
       description: true,
       type: true,
       priority: true,
@@ -295,6 +310,25 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
     },
   })
   if (!task) return null
+
+  // Escopo por papel na LEITURA (mesma regra do loadTaskPanel — fecha IDOR):
+  // ADMIN/CS veem tudo; MANAGER/ANALYST só task de cliente atribuído ou task
+  // interna em que são responsáveis.
+  const isViewAll = session.role === 'ADMIN' || session.role === 'CS'
+  if (!isViewAll) {
+    if (task.clientId) {
+      const assigned = await prisma.clientAssignment.findUnique({
+        where: { clientId_userId: { clientId: task.clientId, userId: session.userId } },
+        select: { id: true },
+      })
+      if (!assigned) return null
+    } else {
+      const isResponsible =
+        task.assignedTo === session.userId ||
+        task.auxAssignees.some((a) => a.userId === session.userId)
+      if (!isResponsible) return null
+    }
+  }
 
   const ids = Array.from(
     new Set([
