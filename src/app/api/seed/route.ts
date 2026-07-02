@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { hash } from 'bcryptjs'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 
 export async function POST(request: NextRequest) {
   // Nunca em produção: cria usuários com senhas de exemplo. Só dev/homolog.
@@ -101,12 +102,12 @@ export async function POST(request: NextRequest) {
     await prisma.task.createMany({
       skipDuplicates: true,
       data: [
-        { title: 'Revisar criativos da campanha de ROAS – Loja Alpha', clientId: lojaAlpha.id, assignedTo: ana.id, status: 'A_FAZER', priority: 'ALTA' },
-        { title: 'Ajustar lances no Meta – E-commerce Beta', clientId: ecommerceBeta.id, assignedTo: carlos.id, status: 'EM_ANDAMENTO', priority: 'ALTA' },
-        { title: 'Ligar para Marca Gamma – risco de churn', clientId: marcaGamma.id, assignedTo: ana.id, status: 'A_FAZER', priority: 'ALTA' },
-        { title: 'Configurar rastreamento GA4 – Tech Delta', clientId: techDelta.id, assignedTo: carlos.id, status: 'CONCLUIDO', priority: 'MEDIA' },
-        { title: 'Criar novos públicos no Meta – Fit Store', clientId: fitStore.id, assignedTo: ana.id, status: 'EM_ANDAMENTO', priority: 'MEDIA' },
-        { title: 'Relatório mensal – Imóveis Prime', clientId: imoveisPrime.id, assignedTo: carlos.id, status: 'A_FAZER', priority: 'BAIXA' },
+        { title: 'Revisar criativos da campanha de ROAS – Loja Alpha', clientId: lojaAlpha.id, assignedTo: ana.id, status: 'A_FAZER', statusId: statusIdFor('A_FAZER'), priority: 'ALTA' },
+        { title: 'Ajustar lances no Meta – E-commerce Beta', clientId: ecommerceBeta.id, assignedTo: carlos.id, status: 'EM_ANDAMENTO', statusId: statusIdFor('EM_ANDAMENTO'), priority: 'ALTA' },
+        { title: 'Ligar para Marca Gamma – risco de churn', clientId: marcaGamma.id, assignedTo: ana.id, status: 'A_FAZER', statusId: statusIdFor('A_FAZER'), priority: 'ALTA' },
+        { title: 'Configurar rastreamento GA4 – Tech Delta', clientId: techDelta.id, assignedTo: carlos.id, status: 'CONCLUIDO', statusId: statusIdFor('CONCLUIDO'), priority: 'MEDIA' },
+        { title: 'Criar novos públicos no Meta – Fit Store', clientId: fitStore.id, assignedTo: ana.id, status: 'EM_ANDAMENTO', statusId: statusIdFor('EM_ANDAMENTO'), priority: 'MEDIA' },
+        { title: 'Relatório mensal – Imóveis Prime', clientId: imoveisPrime.id, assignedTo: carlos.id, status: 'A_FAZER', statusId: statusIdFor('A_FAZER'), priority: 'BAIXA' },
       ],
     })
 

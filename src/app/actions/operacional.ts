@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { checkTaskCompletion } from '@/services/task-completion-guard'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 import { TaskType, TaskPriority } from '@prisma/client'
 
 type ActionResult = { ok: true; id?: string } | { error: string }
@@ -52,6 +53,8 @@ export async function createOperacionalTask(input: CreateOperacionalTaskInput): 
       description: input.description?.trim() || null,
       type: input.type ?? 'SIMPLES',
       priority: input.priority ?? 'MEDIA',
+      status: 'A_FAZER',
+      statusId: statusIdFor('A_FAZER'),
       origin: 'MANUAL',
       dueDate: input.dueDate ? new Date(input.dueDate) : null,
       clientId: input.clientId || null,
@@ -290,7 +293,7 @@ export async function submitTaskForValidation(taskId: string, evidence: string):
   await prisma.$transaction([
     prisma.task.update({
       where: { id: taskId },
-      data: { status: 'AGUARDANDO_CS', evidence: ev },
+      data: { status: 'AGUARDANDO_CS', statusId: statusIdFor('AGUARDANDO_CS'), evidence: ev },
     }),
     prisma.taskApproval.create({
       data: { taskId, approved: null },
@@ -363,8 +366,8 @@ export async function decideTaskValidation(taskId: string, approved: boolean, no
     prisma.task.update({
       where: { id: taskId },
       data: approved
-        ? { status: 'CONCLUIDO', completedAt: now, completedById: session.userId, blockReason: null }
-        : { status: 'AJUSTES_SOLICITADOS' },
+        ? { status: 'CONCLUIDO', statusId: statusIdFor('CONCLUIDO'), completedAt: now, completedById: session.userId, blockReason: null }
+        : { status: 'AJUSTES_SOLICITADOS', statusId: statusIdFor('AJUSTES_SOLICITADOS') },
     }),
     pending
       ? prisma.taskApproval.update({

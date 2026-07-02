@@ -11,6 +11,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 import type { AgencyLeadStatus } from '@prisma/client'
 
 // Estágios "quentes" (em negociação) — NOVO/FECHADO/PERDIDO ficam de fora.
@@ -74,6 +75,7 @@ export async function checkLeadFollowups(): Promise<{ leadsChecked: number; crea
           type: 'FOLLOWUP',
           priority: 'ALTA',
           status: 'A_FAZER',
+          statusId: statusIdFor('A_FAZER'), // espelho FK (D-004)
           origin: 'AUTOMACAO',
           assignedTo: assignee,
           leadId: lead.id,

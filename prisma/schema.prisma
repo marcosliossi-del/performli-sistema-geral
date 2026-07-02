@@ -863,6 +863,10 @@ model Task {
   recurrence    TaskRecurrenceRule? @relation(fields: [recurrenceId], references: [id])
   idempotencyKey String?    @unique // (template+cliente+janela)
 
+  // ── Recorrência por task estilo ClickUp (D-010): regra individual na task ───
+  // Shape validado por zod em lib/tasks/recurrence.ts (parseRecurrenceRule).
+  recurrenceRule Json?
+
   evidence      String?
   blockReason   String?
   delayReason   String?

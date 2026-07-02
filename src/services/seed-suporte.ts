@@ -22,6 +22,7 @@
 import { prisma } from '@/lib/prisma'
 import { normalize } from '@/services/seed-carteiras'
 import { writeAuditLog } from '@/lib/audit'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 import type { SupportCategory, TaskPriority } from '@prisma/client'
 
 // externalId (ClickUp) do ADMIN Marcos — fallback final de responsável.
@@ -152,6 +153,7 @@ export async function importarSuporteClickUp(): Promise<ImportSuporteResult> {
           supportDirection: 'NOS_PARA_CLIENTE',
           type: 'CS',
           status: 'A_FAZER',
+          statusId: statusIdFor('A_FAZER'), // espelho FK (D-004)
           priority: item.priority,
           origin: 'MANUAL',
           dueDate: new Date(item.dueDateMs),

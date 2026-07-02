@@ -25,6 +25,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { writeAuditLog } from '@/lib/audit'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 import type { TaskStatus } from '@prisma/client'
 
 // Status terminais que NÃO devem ser cancelados (já fechados).
@@ -107,7 +108,8 @@ export async function runClientOffboarding(
         origin: 'RECORRENCIA',
         status: { notIn: TERMINAL_STATUSES },
       },
-      data: { status: 'CANCELADO' },
+      // Espelho statusId (D-004): mantém a FK coerente com o enum.
+      data: { status: 'CANCELADO', statusId: statusIdFor('CANCELADO') },
     })
     tasksClosed = res.count
   } catch (err) {
@@ -155,6 +157,7 @@ export async function runClientOffboarding(
             type: 'ONBOARDING',
             priority: 'ALTA',
             status: 'A_FAZER',
+            statusId: statusIdFor('A_FAZER'), // espelho FK (D-004)
             origin: 'AUTOMACAO',
             clientId: client.id,
             assignedTo: assigneeId,

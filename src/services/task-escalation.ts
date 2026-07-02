@@ -9,6 +9,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 
 const ESCALATE_AFTER_DAYS = 2
 
@@ -66,7 +67,8 @@ export async function markOverdueTasks(): Promise<{ marked: number }> {
       dueDate: { lt: now },
       status: { in: ['A_FAZER', 'AJUSTES_SOLICITADOS'] },
     },
-    data: { status: 'ATRASADO' },
+    // Espelho statusId (D-004): mantém a FK coerente com o enum.
+    data: { status: 'ATRASADO', statusId: statusIdFor('ATRASADO') },
   })
   return { marked: res.count }
 }

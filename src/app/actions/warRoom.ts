@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 import { MetricType, WarRoomOutcome, Prisma } from '@prisma/client'
 
 export type WarRoomPlanInput = {
@@ -163,6 +164,7 @@ async function upsertWarRoomTask(args: {
       type: 'WAR_ROOM',
       priority: 'CRITICA',
       status: 'EM_ANDAMENTO',
+      statusId: statusIdFor('EM_ANDAMENTO'), // espelho FK (D-004)
       origin: 'AUTOMACAO',
       clientId: args.clientId,
       assignedTo: args.responsibleId,
@@ -227,6 +229,7 @@ export async function closeWarRoom(
       where: { id: linked.id },
       data: {
         status: newStatus,
+        statusId: statusIdFor(newStatus), // espelho FK (D-004)
         ...(newStatus === 'CONCLUIDO' ? { completedAt: new Date(), completedById: session.userId } : {}),
         activities: { create: { actorId: session.userId, action: 'status_changed', fromValue: linked.status, toValue: newStatus } },
       },

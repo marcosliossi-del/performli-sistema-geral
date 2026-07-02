@@ -17,6 +17,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getWeekRange } from '@/lib/utils'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 import type { TaskType, TaskPriority, TaskStatus } from '@prisma/client'
 
 // Papéis suportados pelo fan-out por cliente ativo.
@@ -192,6 +193,7 @@ async function createTaskForClientRule(
         type: tpl.defaultType,
         priority: tpl.defaultPriority,
         status: tpl.defaultStatus,
+        statusId: statusIdFor(tpl.defaultStatus), // espelho FK (D-004)
         origin: 'RECORRENCIA',
         clientId: client.id,
         assignedTo: assigneeId,
