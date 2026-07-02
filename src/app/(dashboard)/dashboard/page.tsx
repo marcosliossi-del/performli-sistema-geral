@@ -11,28 +11,50 @@ import { WeeklyChecklistCard } from '@/components/dashboard/WeeklyChecklistCard'
 import { Card } from '@/components/ui/card'
 import {
   AlertTriangle,
+  AlertCircle,
   RefreshCw,
   CheckCircle2,
   TrendingDown,
-  TrendingUp,
   ArrowDownRight,
   ArrowUpRight,
+  ShieldAlert,
+  Scale,
+  Bell,
   Clock,
 } from 'lucide-react'
+import { AlertType } from '@prisma/client'
 import { timeAgo } from '@/lib/utils'
 import { RecalcHealthButton } from '@/components/dashboard/RecalcHealthButton'
 import { SendDigestButton } from '@/components/dashboard/SendDigestButton'
 
-const alertIcons = {
-  STATUS_DROPPED_TO_RUIM: { icon: AlertTriangle, color: 'text-[#EF4444]' },
-  STATUS_DROPPED_TO_REGULAR: { icon: TrendingDown, color: 'text-[#EAB308]' },
-  STATUS_IMPROVED_TO_OTIMO: { icon: CheckCircle2, color: 'text-[#22C55E]' },
-  SYNC_FAILED: { icon: AlertTriangle, color: 'text-[#EAB308]' },
-  BUDGET_EXHAUSTED: { icon: AlertTriangle, color: 'text-[#EF4444]' },
-  BUDGET_WARNING: { icon: AlertTriangle, color: 'text-[#EAB308]' },
-  KPI_DROP_24H: { icon: ArrowDownRight, color: 'text-[#EF4444]' },
-  KPI_SPIKE_24H: { icon: ArrowUpRight, color: 'text-[#22C55E]' },
+// Exaustivo sobre AlertType (espelha src/app/(dashboard)/alerts/page.tsx). Se um
+// novo AlertType for criado, o TS obriga a mapeá-lo aqui — nada cai num fallback
+// amarelo enganoso. Ícone desconhecido usa tom neutro (cinza), nunca warning.
+const alertIcons: Record<AlertType, { icon: typeof AlertTriangle; color: string }> = {
+  STATUS_DROPPED_TO_RUIM:         { icon: AlertTriangle,  color: 'text-[#EF4444]' },
+  STATUS_DROPPED_TO_REGULAR:      { icon: TrendingDown,   color: 'text-[#EAB308]' },
+  STATUS_IMPROVED_TO_OTIMO:       { icon: CheckCircle2,   color: 'text-[#22C55E]' },
+  SYNC_FAILED:                    { icon: AlertTriangle,  color: 'text-[#EAB308]' },
+  BUDGET_EXHAUSTED:               { icon: AlertTriangle,  color: 'text-[#EF4444]' },
+  BUDGET_WARNING:                 { icon: AlertTriangle,  color: 'text-[#EAB308]' },
+  KPI_DROP_24H:                   { icon: ArrowDownRight, color: 'text-[#EF4444]' },
+  KPI_SPIKE_24H:                  { icon: ArrowUpRight,   color: 'text-[#22C55E]' },
+  ROAS_BELOW_TARGET_2W:           { icon: ShieldAlert,    color: 'text-[#EF4444]' },
+  FATURAMENTO_BELOW_70PCT_WEEK2:  { icon: ShieldAlert,    color: 'text-[#EF4444]' },
+  CONTRACT_EXPIRING_SOON:         { icon: Scale,          color: 'text-[#F59E0B]' },
+  WARROOM_NO_REVIEW:              { icon: ShieldAlert,    color: 'text-[#EAB308]' },
+  WARROOM_EXIT_CRITERIA_MET:      { icon: CheckCircle2,   color: 'text-[#22C55E]' },
+  WARROOM_REGRESSION:             { icon: TrendingDown,   color: 'text-[#EF4444]' },
+  INVOICE_OVERDUE:                { icon: AlertCircle,    color: 'text-[#EF4444]' },
+  CLIENT_WITHOUT_BILLING:         { icon: AlertTriangle,  color: 'text-[#EAB308]' },
+  ANTICHURN_ACTION_NEEDED:        { icon: ShieldAlert,    color: 'text-[#EF4444]' },
+  CHECKIN_MISSING:                { icon: AlertTriangle,  color: 'text-[#EAB308]' },
+  CHECKIN_REJECTED_STALE:         { icon: AlertCircle,    color: 'text-[#EF4444]' },
+  TASK_AUTOMATION:                { icon: Bell,           color: 'text-[#95BBE2]' },
 }
+
+// Fallback neutro para qualquer valor fora do enum (nunca amarelo/warning).
+const alertIconFallback = { icon: Bell, color: 'text-[#87919E]' }
 
 export default async function DashboardPage() {
   const session = await requireSession()
@@ -58,10 +80,15 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-4 text-xs text-[#87919E]">
-          {lastSyncAt && (
+          {lastSyncAt ? (
             <div className="flex items-center gap-1.5">
               <Clock size={12} />
               <span>Último sync {timeAgo(new Date(lastSyncAt))}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-[#EF4444]">
+              <AlertTriangle size={12} />
+              <span>Nunca sincronizado</span>
             </div>
           )}
           <div className="flex items-center gap-1.5">
@@ -181,7 +208,7 @@ export default async function DashboardPage() {
           ) : (
             <div className="space-y-2">
               {alerts.map((alert) => {
-                const config = alertIcons[alert.type as keyof typeof alertIcons] ?? alertIcons.SYNC_FAILED
+                const config = alertIcons[alert.type as AlertType] ?? alertIconFallback
                 const Icon = config.icon
                 return (
                   <Card key={alert.id} className="p-3">

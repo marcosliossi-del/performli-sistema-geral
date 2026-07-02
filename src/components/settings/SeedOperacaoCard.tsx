@@ -48,6 +48,7 @@ export function SeedOperacaoCard() {
   const [migracao, setMigracao] = useState<Record<string, LoteResult> | null>(null)
   const [reconcile, setReconcile] = useState<ReconcileResult | null>(null)
   const [vinculo, setVinculo] = useState<VinculoResult | null>(null)
+  const [confirmCancel, setConfirmCancel] = useState(false)
 
   async function post(qs: string) {
     const res = await fetch(`/api/admin/seed-operacao${qs}`, { method: 'POST' })
@@ -124,6 +125,7 @@ export function SeedOperacaoCard() {
     try {
       const res = await post('?phase=cancelar')
       setCandidates([])
+      setConfirmCancel(false)
       toast(`${res.cancelled?.length ?? 0} cliente(s) cancelado(s) (fora da carteira).`, 'ok')
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Não foi possível cancelar.', 'err')
