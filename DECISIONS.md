@@ -69,3 +69,13 @@
 - **Decisão:** o A2 adiciona `Task.recurrenceRule Json?` (shape `{ freq: 'DAILY'|'WEEKLY'|'MONTHLY', interval, byWeekday?: number[], mode: 'onComplete'|'schedule', skipWeekends?: boolean }`) com migration aditiva idempotente própria, e implementa `computeNextOccurrence` puro + clone on-complete com dedupe `recur:{originTaskId}:{occurrenceDate}`.
 - **Descartado:** reusar TaskRecurrenceRule para regras por task (acoplaria o motor de templates a um caso individual).
 - **Consequência:** dois mecanismos de recorrência coexistem com papéis claros: templates por cliente (15 fixas) e regra individual por task (ClickUp-style).
+
+## D-011 — RBAC v2: mapeamento de papéis e estratégia aditiva
+
+- **Contexto:** o projeto RBAC v2 adota a matriz oficial ADMIN · SUPERVISOR_TRAFEGO · ANALISTA_TRAFEGO · CS · GESTOR_TRAFEGO. O enum `Role` (schema; no banco `pg_type='Role'`) hoje tem ADMIN, CS, MANAGER, ANALYST, com **usuários reais** em produção. Remover valor de enum é destrutivo (não-aditivo) e a regra do repo exige migrations aditivas + não quebrar produção.
+- **Decisão:** transição **aditiva em duas migrations Postgres separadas** (limitação: valor de enum recém-criado não é usável na mesma transação):
+  (a) `20260702060000_rbac_roles_add_values` — `ALTER TYPE "Role" ADD VALUE IF NOT EXISTS` para SUPERVISOR_TRAFEGO, ANALISTA_TRAFEGO, GESTOR_TRAFEGO;
+  (b) `20260702061000_rbac_roles_data_migration` — `UPDATE "User"` remapeando **MANAGER→GESTOR_TRAFEGO** e **ANALYST→ANALISTA_TRAFEGO** (ADMIN/CS inalterados). SUPERVISOR_TRAFEGO é papel novo sem dados legados.
+  Os valores legados **MANAGER e ANALYST permanecem no enum** como legado até uma limpeza futura (migration própria, quando nenhum código/dado os referenciar). Código NOVO usa exclusivamente os nomes novos.
+- **Descartado:** (1) renomear os valores do enum in-place — Postgres `ALTER TYPE RENAME VALUE` existe mas quebraria todo o código TS que compara literais `'MANAGER'`/`'ANALYST'` de uma vez (big-bang, viola "não quebrar produção"); (2) drop/recreate do enum — destrutivo.
+- **Consequência:** durante a convivência, o BANCO não terá mais linhas MANAGER/ANALYST após (b), mas o CÓDIGO ainda compara esses literais — o Agente 3 varre e adapta (lista completa no HANDOFF_AGENTE_1). Seeds que ainda gravam papéis legados (`seed-operacao.ts`, `prisma/seed.ts`, `api/seed/route.ts`) devem ser atualizados para os nomes novos para não reintroduzir legado. A remoção final dos valores legados do enum é uma decisão/ADR futura.
