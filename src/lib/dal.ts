@@ -6,7 +6,7 @@ import { getSession } from './session'
 import { redirect } from 'next/navigation'
 import { HealthStatus, Prisma } from '@prisma/client'
 import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
-import { normalizeRole, scopeClients, stripSensitive } from './rbac'
+import { normalizeRole, stripSensitive } from './rbac'
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 

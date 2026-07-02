@@ -11,7 +11,7 @@ export default async function TeamPage() {
   const members = await getTeamMembers()
 
   const active   = members.filter((m) => m.active).length
-  const managers = members.filter((m) => m.role === 'MANAGER').length
+  const managers = members.filter((m) => m.role === 'GESTOR_TRAFEGO' || m.role === 'MANAGER').length
   const admins   = members.filter((m) => m.role === 'ADMIN').length
   const isAdmin  = role === 'ADMIN'
 
@@ -32,7 +32,7 @@ export default async function TeamPage() {
           { label: 'Admins',    value: admins,   sub: 'acesso total' },
           { label: 'Gestores',  value: managers, sub: 'gestão de clientes' },
           { label: 'Succ. Clientes', value: members.filter((m) => m.role === 'CS').length, sub: 'visão geral' },
-          { label: 'Analistas', value: members.filter((m) => m.role === 'ANALYST').length, sub: 'somente leitura' },
+          { label: 'Analistas', value: members.filter((m) => m.role === 'ANALISTA_TRAFEGO' || m.role === 'SUPERVISOR_TRAFEGO' || m.role === 'ANALYST').length, sub: 'staff de tráfego' },
         ].map((kpi) => (
           <div key={kpi.label} className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl p-4">
             <p className="text-xs text-[#87919E] mb-1">{kpi.label}</p>
