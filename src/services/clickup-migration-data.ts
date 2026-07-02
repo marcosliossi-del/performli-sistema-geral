@@ -124,6 +124,12 @@ export const MIG_METAS: MigMeta[] = [
 // ─── Lote 5: Gestão de Contratos (reconciliação — NUNCA duplicar) ─────────────
 // Regra do dono: se o cliente JÁ tem Contract no Performli, desconsiderar o do
 // ClickUp. Sem match de cliente → relatório 'não conciliado' (sem chute).
+// Mapeamento pessoa→cliente CONFIRMADO pelo Marcos em 2026-07-02: Marina→Soul
+// By DM · Victor→Family Restaurante (cliente criado se faltar) · Rayane→Skaebne
+// (churn: contrato entra como CANCELADO, histórico) · Laura→Lalolli · Pedro→
+// Tuca Clothing (gestor→Leandro) · João→New Man · Maitê→Bambola · Luana→Laralu
+// · Rafaela→Lamici · Thais→Lalluzi · Daniela→Duplo Sentido (já tem contrato →
+// pulado, sem duplicar).
 export type MigContrato = {
   clickupId: string
   nomeClickUp: string
@@ -134,20 +140,20 @@ export type MigContrato = {
 }
 export const MIG_CONTRATOS: MigContrato[] = [
   { clickupId: '868juc150', nomeClickUp: 'Contrato | Tayna Moda Feminina', clientAliases: ['Tayna Moda Feminina'], vigenciaFimMs: 1795935600000 },
-  { clickupId: '868jhh6y9', nomeClickUp: 'Contrato | Marina', clientAliases: ['Marina'], vigenciaFimMs: 1794034800000 },
-  { clickupId: '868jhh5x1', nomeClickUp: 'Contrato | VICTOR', clientAliases: ['Victor'], vigenciaFimMs: 1794034800000 },
-  { clickupId: '868j3cfz9', nomeClickUp: 'Contrato | Rayane', clientAliases: ['Rayane'], vigenciaFimMs: 1791010800000 },
-  { clickupId: '868hz1d77', nomeClickUp: 'Contrato | Laura', clientAliases: ['Laura', 'Laura Mastrandéa', 'Laura Mastrandea'], vigenciaFimMs: 1789974000000 },
-  { clickupId: '868hvh1e6', nomeClickUp: 'Contrato | Pedro', clientAliases: ['Pedro'], vigenciaFimMs: 1796540400000 },
-  { clickupId: '868hvh19r', nomeClickUp: 'Contrato | João', clientAliases: ['João', 'Joao'], vigenciaFimMs: 1790578800000 },
+  { clickupId: '868jhh6y9', nomeClickUp: 'Contrato | Marina', clientAliases: ['Soul By DM', 'Soul'], vigenciaFimMs: 1794034800000 },
+  { clickupId: '868jhh5x1', nomeClickUp: 'Contrato | VICTOR', clientAliases: ['Family Restaurante'], vigenciaFimMs: 1794034800000 },
+  { clickupId: '868j3cfz9', nomeClickUp: 'Contrato | Rayane', clientAliases: ['Skaebne'], vigenciaFimMs: 1791010800000 },
+  { clickupId: '868hz1d77', nomeClickUp: 'Contrato | Laura', clientAliases: ['Lalolli'], vigenciaFimMs: 1789974000000 },
+  { clickupId: '868hvh1e6', nomeClickUp: 'Contrato | Pedro', clientAliases: ['Tuca Clothing', 'Tuca'], vigenciaFimMs: 1796540400000 },
+  { clickupId: '868hvh19r', nomeClickUp: 'Contrato | João', clientAliases: ['New Man Store', 'New Man'], vigenciaFimMs: 1790578800000 },
   { clickupId: '868hcmuc3', nomeClickUp: 'Contrato | Catita Store', clientAliases: ['Catita Store'], vigenciaFimMs: 1786258800000 },
   { clickupId: '868h9ahvd', nomeClickUp: 'Contrato | Lavinny Store', clientAliases: ['Lavinny Store', 'Lavinny'], vigenciaFimMs: 1785654000000 },
-  { clickupId: '868h77m13', nomeClickUp: 'Contrato | Maitê', clientAliases: ['Maitê', 'Maite'], vigenciaFimMs: 1816585200000 },
-  { clickupId: '868gmr4he', nomeClickUp: 'Contrato | Luana', clientAliases: ['Luana'], vigenciaFimMs: 1802761200000 },
-  { clickupId: '868gf8um1', nomeClickUp: 'Contrato | Rafaela', clientAliases: ['Rafaela'], vigenciaFimMs: 1796540400000 },
-  { clickupId: '868g8hr91', nomeClickUp: 'Contrato | Thais', clientAliases: ['Thais', 'Thaís'], vigenciaFimMs: 1796540400000 },
+  { clickupId: '868h77m13', nomeClickUp: 'Contrato | Maitê', clientAliases: ['Bambola'], vigenciaFimMs: 1816585200000 },
+  { clickupId: '868gmr4he', nomeClickUp: 'Contrato | Luana', clientAliases: ['Laralu', 'Laralu Store'], vigenciaFimMs: 1802761200000 },
+  { clickupId: '868gf8um1', nomeClickUp: 'Contrato | Rafaela', clientAliases: ['Lamici'], vigenciaFimMs: 1796540400000 },
+  { clickupId: '868g8hr91', nomeClickUp: 'Contrato | Thais', clientAliases: ['Lalluzi', 'Lalluzi Modas'], vigenciaFimMs: 1796540400000 },
   { clickupId: '868g7m73z', nomeClickUp: 'Contrato | Leticia Store', clientAliases: ['Leticia Store', 'Letícia Store'], vigenciaFimMs: 1796540400000 },
-  { clickupId: '868fd0uj5', nomeClickUp: 'Contrato | Daniela', clientAliases: ['Daniela'], vigenciaFimMs: 1783407600000 },
+  { clickupId: '868fd0uj5', nomeClickUp: 'Contrato | Daniela', clientAliases: ['Duplo Sentido Atacado', 'Duplo Sentido [Atacado]'], vigenciaFimMs: 1783407600000 },
   { clickupId: '868e9u52w', nomeClickUp: 'Contrato | Via Miami RP', clientAliases: ['Via Miami', 'Via Miami RP'], vigenciaFimMs: 1796540400000 },
   { clickupId: '868e1fq8g', nomeClickUp: 'Contrato – My Muse BR', clientAliases: ['My Muse', 'My Muse BR', 'My Muse Confecções'], vigenciaFimMs: 1802761200000 },
 ]
