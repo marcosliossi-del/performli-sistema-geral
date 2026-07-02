@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { logout } from '@/app/actions/auth'
 import type { SessionPayload } from '@/lib/session'
+import { roleLabel } from '@/lib/rbac'
 import { useState } from 'react'
 
 interface TopNavProps {
@@ -15,13 +16,6 @@ interface TopNavProps {
   onOpenSearch?: () => void
   /** Abre o drawer da sidebar no mobile (abaixo de lg). */
   onOpenMobileNav?: () => void
-}
-
-const roleLabels: Record<SessionPayload['role'], string> = {
-  ADMIN:   'Admin',
-  MANAGER: 'Gestor',
-  ANALYST: 'Analista',
-  CS:      'Succ. Clientes',
 }
 
 export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAlerts = 0, onOpenSearch, onOpenMobileNav }: TopNavProps) {
@@ -121,7 +115,7 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
             </div>
             <div className="text-left hidden sm:block">
               <p className="text-xs font-medium text-[#EBEBEB] leading-none">{session.name.split(' ')[0]}</p>
-              <p className="text-[10px] text-[#87919E] mt-0.5">{roleLabels[session.role]}</p>
+              <p className="text-[10px] text-[#87919E] mt-0.5">{roleLabel(session.role)}</p>
             </div>
             <ChevronDown size={12} className="text-[#87919E]" />
           </button>

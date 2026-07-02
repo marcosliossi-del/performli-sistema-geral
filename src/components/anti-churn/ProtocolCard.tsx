@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { ShieldAlert, Clock, ChevronDown, ChevronUp, Save } from 'lucide-react'
 import { updateProtocolStatus, updateProtocolBriefing } from '@/app/actions/protocols'
 import { CriticalProtocolStatus, AlertType } from '@prisma/client'
+import { can, normalizeRole } from '@/lib/rbac'
 import Link from 'next/link'
 
 type Protocol = {
@@ -76,7 +77,9 @@ export function ProtocolCard({ protocol, role }: { protocol: Protocol; role: str
   const [briefing, setBriefing] = useState(protocol.briefingCS ?? '')
   const [isPending, startTransition] = useTransition()
 
-  const canEdit = role === 'ADMIN' || role === 'MANAGER' || role === 'CS'
+  // Espelha o policy engine: War Room é carteira do gestor (GESTOR_TRAFEGO tem
+  // update). O backend continua a barreira real; aqui é só UX.
+  const canEdit = can(normalizeRole(role), 'update', 'warRoom')
   const next = NEXT_STATUS[protocol.status]
   const isEncerrado = protocol.status === 'ENCERRADO'
 

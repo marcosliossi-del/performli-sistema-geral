@@ -56,6 +56,31 @@ export function normalizeRole(role: Role | string): Role5 {
   }
 }
 
+/**
+ * Rótulos amigáveis (pt-BR) de cada papel canônico — fonte única para toda a UI
+ * que mostra o papel do usuário (TopNav, equipe, gestores, recorrências). Curtos
+ * de propósito: cabem em avatares/menus estreitos.
+ */
+export const ROLE5_LABELS = {
+  ADMIN: 'Admin',
+  SUPERVISOR_TRAFEGO: 'Supervisor',
+  ANALISTA_TRAFEGO: 'Analista',
+  CS: 'Sucesso do Cliente',
+  GESTOR_TRAFEGO: 'Gestor',
+} as const satisfies Readonly<Record<Role5, string>>
+
+/**
+ * Rótulo amigável de um papel (aceita legados do enum Prisma via normalização).
+ * Nunca lança: papel desconhecido cai no próprio valor bruto (defensivo p/ UI).
+ */
+export function roleLabel(role: Role | string): string {
+  try {
+    return ROLE5_LABELS[normalizeRole(role)]
+  } catch {
+    return String(role)
+  }
+}
+
 /** Type guard para papel canônico. */
 export function isRole5(value: unknown): value is Role5 {
   return (

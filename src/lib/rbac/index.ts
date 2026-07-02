@@ -11,7 +11,9 @@
 export {
   type Role5,
   ROLE5_ALL,
+  ROLE5_LABELS,
   normalizeRole,
+  roleLabel,
   isRole5,
 } from './roles'
 
