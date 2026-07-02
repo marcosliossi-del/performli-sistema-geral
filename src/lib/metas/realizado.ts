@@ -1,0 +1,174 @@
+/**
+ * FONTE ÚNICA de "realizado" por (cliente, métrica, período).
+ *
+ * Corrige o finding S2-014 da auditoria de metas: a mesma meta mostrava
+ * "realizado" calculado de formas diferentes conforme a tela
+ * (Σ GA4 conversionValue MTD em /agency/metas × HealthScore.actualValue no
+ * Client 360 × Client.resultadoRoas na anti-churn), e o ROAS aparecia em 3
+ * períodos distintos sem rótulo. Isso fazia os números divergirem entre telas.
+ *
+ * Aqui existe UMA regra canônica:
+ *  - FATURAMENTO / SALES (e-commerce) → Σ GA4 conversionValue (bruto) da janela.
+ *  - Métricas de anúncio (LEADS/MENSAGENS/CONVERSIONS/SPEND/…) → soma das
+ *    plataformas de anúncio, via a MESMA agregação do health-scorer
+ *    (`aggregateSnapshots`), para não haver duas contas divergentes.
+ *  - ROAS → revenue ÷ spend da MESMA janela (nunca mistura semana com MTD).
+ *
+ * Janelas padronizadas (fuso America/Sao_Paulo, reusando os helpers de utils):
+ *  - MTD             → 1º dia do mês corrente (00:00 SP) até agora.
+ *  - SEMANA_FECHADA  → domingo–sábado anterior (mesma janela do resultado-engine,
+ *                      `getWeekRange(hoje - 7d)`), que alimenta Client.resultadoRoas.
+ *
+ * Toda saída deixa EXPLÍCITO qual janela e qual fonte foram usadas
+ * (`{ valor, periodoLabel, fonte }`), porque número certo com rótulo ambíguo
+ * ainda é atrito.
+ */
+
+import { prisma } from '@/lib/prisma'
+import {
+  getWeekRange,
+  saoPauloDateString,
+  saoPauloDayStart,
+  formatSaoPauloDateTime,
+} from '@/lib/utils'
+import { aggregateSnapshots, type AggregatableSnapshot } from '@/services/health-scorer'
+import type { MetricType, BusinessType } from '@prisma/client'
+
+export type RealizadoPeriodo = 'MTD' | 'SEMANA_FECHADA'
+
+export type Realizado = {
+  /** Valor realizado da fonte canônica; null = indeterminado (sem dado na janela). */
+  valor: number | null
+  /** Rótulo curto do período, p/ exibir junto do número ("no mês" / "semana passada"). */
+  periodoLabel: string
+  /** De onde o número veio (GA4, plataformas de anúncio, GA4 ÷ investimento…). */
+  fonte: string
+}
+
+type Janela = { start: Date; end: Date; label: string }
+
+/** Resolve a janela [start, end] e o rótulo de exibição para o período pedido. */
+export function resolveJanela(periodo: RealizadoPeriodo, now: Date = new Date()): Janela {
+  if (periodo === 'SEMANA_FECHADA') {
+    // Mesma janela do resultado-engine (a semana que contém "hoje - 7 dias"),
+    // para que o realizado bata com Client.resultadoRoas.
+    const { start, end } = getWeekRange(new Date(now.getTime() - 7 * 86_400_000))
+    return { start, end, label: 'semana passada' }
+  }
+  // MTD — 1º dia do mês corrente (00:00 no fuso SP) até agora.
+  const spDay = saoPauloDateString(now) // 'YYYY-MM-DD' (dia-parede SP)
+  const start = saoPauloDayStart(`${spDay.slice(0, 7)}-01`)
+  return { start, end: now, label: 'no mês' }
+}
+
+/** Fonte canônica declarada por métrica (apenas rótulo p/ a UI). */
+function fonteDe(metric: MetricType): string {
+  if (metric === 'FATURAMENTO' || metric === 'SALES') return 'GA4 (faturamento bruto)'
+  if (metric === 'ROAS') return 'GA4 ÷ investimento (mesma janela)'
+  return 'plataformas de anúncio'
+}
+
+const snapInclude = { platformAccount: { select: { platform: true } } } as const
+
+async function loadBusinessType(clientId: string): Promise<BusinessType> {
+  const c = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { businessType: true },
+  })
+  return c?.businessType ?? 'ECOMMERCE'
+}
+
+/**
+ * Realizado de UMA métrica de UM cliente na janela do período.
+ * `businessType` é opcional; se omitido, é buscado (1 query extra).
+ */
+export async function getRealizado(
+  clientId: string,
+  metric: MetricType,
+  periodo: RealizadoPeriodo,
+  businessType?: BusinessType,
+): Promise<Realizado> {
+  const janela = resolveJanela(periodo)
+  const bt = businessType ?? (await loadBusinessType(clientId))
+
+  const snaps = await prisma.metricSnapshot.findMany({
+    where: { clientId, date: { gte: janela.start, lte: janela.end } },
+    include: snapInclude,
+  })
+
+  const valor = aggregateSnapshots(snaps as AggregatableSnapshot[], metric, bt)
+  return { valor, periodoLabel: janela.label, fonte: fonteDe(metric) }
+}
+
+/**
+ * Realizado de VÁRIAS métricas de UM cliente na MESMA janela, com uma única
+ * query de snapshots (evita N+1 quando a tela mostra várias metas do cliente).
+ * Retorna um Map<metric, Realizado>.
+ */
+export async function getRealizadoForMetrics(
+  clientId: string,
+  metrics: MetricType[],
+  periodo: RealizadoPeriodo,
+  businessType?: BusinessType,
+): Promise<Map<MetricType, Realizado>> {
+  const janela = resolveJanela(periodo)
+  const out = new Map<MetricType, Realizado>()
+  if (metrics.length === 0) return out
+
+  const bt = businessType ?? (await loadBusinessType(clientId))
+  const snaps = await prisma.metricSnapshot.findMany({
+    where: { clientId, date: { gte: janela.start, lte: janela.end } },
+    include: snapInclude,
+  })
+
+  for (const metric of new Set(metrics)) {
+    const valor = aggregateSnapshots(snaps as AggregatableSnapshot[], metric, bt)
+    out.set(metric, { valor, periodoLabel: janela.label, fonte: fonteDe(metric) })
+  }
+  return out
+}
+
+/**
+ * Variante BATCH para várias telas de visão geral: realizado de UMA métrica
+ * para VÁRIOS clientes, com UMA única query de snapshots (sem N+1).
+ * Retorna Map<clientId, Realizado>. Clientes sem snapshot ficam com valor null.
+ */
+export async function getRealizadoBatch(
+  clients: Array<{ id: string; businessType: BusinessType }>,
+  metric: MetricType,
+  periodo: RealizadoPeriodo,
+): Promise<Map<string, Realizado>> {
+  const janela = resolveJanela(periodo)
+  const out = new Map<string, Realizado>()
+  if (clients.length === 0) return out
+
+  const snaps = await prisma.metricSnapshot.findMany({
+    where: { clientId: { in: clients.map((c) => c.id) }, date: { gte: janela.start, lte: janela.end } },
+    include: snapInclude, // clientId (scalar) já vem por padrão
+  })
+
+  const byClient = new Map<string, AggregatableSnapshot[]>()
+  for (const s of snaps) {
+    const arr = byClient.get(s.clientId) ?? []
+    arr.push(s as AggregatableSnapshot)
+    byClient.set(s.clientId, arr)
+  }
+
+  const fonte = fonteDe(metric)
+  for (const c of clients) {
+    const arr = byClient.get(c.id) ?? []
+    const valor = aggregateSnapshots(arr, metric, c.businessType)
+    out.set(c.id, { valor, periodoLabel: janela.label, fonte })
+  }
+  return out
+}
+
+/** Rótulo humano do período — usado por telas que só têm o enum em mãos. */
+export function periodoLabelDe(periodo: RealizadoPeriodo): string {
+  return periodo === 'SEMANA_FECHADA' ? 'semana passada' : 'no mês'
+}
+
+/** Data/hora legível (SP) do fim da janela — p/ "atualizado em". */
+export function janelaFimLabel(periodo: RealizadoPeriodo, now: Date = new Date()): string {
+  return formatSaoPauloDateTime(resolveJanela(periodo, now).end)
+}

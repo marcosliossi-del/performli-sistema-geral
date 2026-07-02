@@ -43,7 +43,7 @@ const PRORATE_METRICS: Set<MetricType> = new Set([
 // Trend beyond this threshold (in either direction) shifts the status one level.
 const TREND_THRESHOLD_PCT = 20
 
-type Snapshot = {
+export type AggregatableSnapshot = {
   spend:            unknown
   roas:             unknown
   cpl:              unknown
@@ -61,6 +61,9 @@ type Snapshot = {
   platformAccount: { platform: string }
 }
 
+// Alias interno para manter as assinaturas existentes deste módulo.
+type Snapshot = AggregatableSnapshot
+
 // ── Aggregation ───────────────────────────────────────────────────────────────
 
 /**
@@ -69,8 +72,8 @@ type Snapshot = {
  *   ECOMMERCE → GA4 for revenue/purchases (strict — no Meta fallback)
  *   LOCAL      → Meta Ads for all conversion metrics
  */
-function aggregateSnapshots(
-  snapshots:    Snapshot[],
+export function aggregateSnapshots(
+  snapshots:    AggregatableSnapshot[],
   metric:       MetricType,
   businessType: BusinessType,
 ): number | null {

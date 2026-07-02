@@ -8,6 +8,7 @@ import { HealthStatus, Prisma } from '@prisma/client'
 import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
 import { normalizeRole, stripSensitive, scopeClients, isRevenueMetric } from './rbac'
 import { readCronHeartbeat, CRON_STALE_HOURS } from './cron-heartbeat'
+import { getRealizadoForMetrics } from './metas/realizado'
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 
@@ -2501,6 +2502,11 @@ export const getGoalPaceMetrics = cache(async (clientId: string): Promise<GoalPa
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
   const { start: monthStart, end: monthEnd } = getMonthRange(today)
 
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { businessType: true },
+  })
+
   const goals = await prisma.goal.findMany({
     where: {
       clientId,
@@ -2517,12 +2523,22 @@ export const getGoalPaceMetrics = cache(async (clientId: string): Promise<GoalPa
     },
   })
 
+  // S2-014: o "realizado" (acumulado hoje) vem da FONTE ÚNICA (helper MTD),
+  // não de HealthScore.actualValue — que divergia de /agency/metas. O HealthScore
+  // continua sendo a NOTA (status/achievementPct). Uma única query de snapshots.
+  const realizadoByMetric = await getRealizadoForMetrics(
+    clientId,
+    goals.map((g) => g.metric),
+    'MTD',
+    client?.businessType,
+  )
+
   return goals.map((goal): GoalPaceMetrics => {
     const target = Number(goal.targetValue)
     const dailyTarget = daysInMonth > 0 ? target / daysInMonth : null
     const weeklyTarget = daysInMonth > 0 ? (target / daysInMonth) * 7 : null
     const hs = goal.healthScores[0]
-    const actualValue = hs ? Number(hs.actualValue) : null
+    const actualValue = realizadoByMetric.get(goal.metric)?.valor ?? null
     const paceExpected = dailyTarget !== null ? dailyTarget * daysElapsed : null
     const paceAchievement =
       actualValue !== null && paceExpected !== null && paceExpected > 0
