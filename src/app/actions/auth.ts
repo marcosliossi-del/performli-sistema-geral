@@ -54,7 +54,11 @@ export async function login(prevState: LoginState, formData: FormData): Promise<
 }
 
 function isSafeRelativePath(path: string | null): path is string {
-  return Boolean(path) && path!.startsWith('/') && !path!.startsWith('//')
+  // Só caminho relativo à PRÓPRIA origem: "/" único no início (nem "//" nem
+  // "/\", que navegadores normalizam para URL de outro host), sem barra
+  // invertida nem caracteres de controle em qualquer posição.
+  if (!path) return false
+  return /^\/(?![/\\])[^\x00-\x1f\\]*$/.test(path)
 }
 
 export async function logout() {
