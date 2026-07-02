@@ -33,7 +33,7 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
     .toUpperCase()
 
   return (
-    <header className="ak-topbar h-16 flex items-center justify-between px-6 bg-[#05141C] border-b border-[#38435C] sticky top-0 z-40">
+    <header className="lg-topbar h-16 flex items-center justify-between px-6 bg-[#05141C] border-b border-[#38435C] sticky top-0 z-40">
       {/* Search — abre o command palette (⌘K) */}
       <div className="flex-1 max-w-[440px]">
         <button
@@ -112,7 +112,7 @@ export function TopNav({ session, viewMode = 'ADMIN', onViewModeChange, unreadAl
                 className="fixed inset-0 z-10"
                 onClick={() => setUserMenuOpen(false)}
               />
-              <div className="absolute right-0 mt-2 w-48 bg-[#0A1E2C] border border-[#38435C] rounded-xl shadow-xl z-20 py-1 overflow-hidden">
+              <div className="lg-glass absolute right-0 mt-2 w-48 bg-[#0A1E2C] border border-[#38435C] rounded-xl shadow-xl z-20 py-1 overflow-hidden">
                 <div className="px-4 py-3 border-b border-[#38435C]">
                   <p className="text-sm font-medium text-[#EBEBEB] truncate">{session.name}</p>
                   <p className="text-xs text-[#87919E] truncate mt-0.5">{session.email}</p>

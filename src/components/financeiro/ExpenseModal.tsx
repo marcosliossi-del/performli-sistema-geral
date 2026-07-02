@@ -104,7 +104,7 @@ export function ExpenseModal({ expense, onClose, onSaved, onDeleted }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label={expense ? 'Editar despesa' : 'Lançar despesa'}
-        className="relative w-full max-w-md bg-[#0D2137] border border-[#38435C] rounded-2xl shadow-2xl"
+        className="lg-glass-strong relative w-full max-w-md bg-[#0D2137] border border-[#38435C] rounded-2xl shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

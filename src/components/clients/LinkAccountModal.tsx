@@ -96,7 +96,7 @@ function LinkAccountDialog({ clientId, onClose }: { clientId: string; onClose: (
             role="dialog"
             aria-modal="true"
             aria-label="Vincular conta Meta Ads"
-            className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl"
+            className="lg-glass-strong bg-[#0A1E2C] border border-[#38435C] rounded-2xl w-full max-w-md shadow-2xl"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#38435C]">

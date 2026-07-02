@@ -28,7 +28,7 @@ export function ToastViewport() {
         return (
           <div
             key={t.id}
-            className="ak-glass-strong pointer-events-auto flex items-center gap-2.5 border border-white/[0.09] rounded-xl px-4 py-2.5 shadow-[0_24px_70px_-16px_rgba(0,0,0,0.62)] animate-[ak-fade-in_.2s_ease]"
+            className="lg-glass-strong pointer-events-auto flex items-center gap-2.5 border border-white/[0.09] rounded-xl px-4 py-2.5 shadow-[0_24px_70px_-16px_rgba(0,0,0,0.62)] animate-[ak-fade-in_.2s_ease]"
           >
             <span className="sr-only">{t.tone === 'err' ? 'Erro: ' : t.tone === 'ok' ? 'Sucesso: ' : 'Aviso: '}</span>
             <Icon size={15} className={cls} />

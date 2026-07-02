@@ -330,3 +330,122 @@ a:focus-visible, button:focus-visible, [role="button"]:focus-visible {
   animation: ak-shimmer 1.4s ease infinite;
   border-radius: 8px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIQUID GLASS (direção Apple iOS/macOS) — camada ADITIVA
+   Translucidez real + blur em camadas + bordas luminosas + specular highlights.
+   Regras:
+   • backdrop-filter (caro) só em SUPERFÍCIES FIXAS: sidebar, topbar, modais,
+     slide-over, popovers. Cards de lista/kanban usam .lg-card (SEM blur).
+   • NENHUM hex novo — só var(--ak-*), color-mix e rgba de branco/preto.
+   • Fallback sólido via @supports (contraste do texto preservado).
+   • Sheen é estático (compatível com prefers-reduced-motion).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Painéis de vidro — modais, popovers, painéis flutuantes ──
+   Só border-color (não o shorthand): cada elemento controla os lados via seu
+   próprio utilitário (border / border-l), então drawers seguem com borda só à
+   esquerda e modais com borda em volta — sem adicionar traços indesejados. */
+.lg-glass {
+  background: var(--ak-s1);                                   /* fallback sólido */
+  border-color: rgba(255,255,255,.08);
+  box-shadow: var(--ak-shadow-card), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.lg-glass-strong {
+  background: var(--ak-s1);                                   /* fallback sólido */
+  border-color: rgba(255,255,255,.08);
+  box-shadow: var(--ak-shadow-pop), inset 0 1px 0 rgba(255,255,255,.07);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .lg-glass {
+    background: color-mix(in oklab, var(--ak-s1) 60%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    backdrop-filter: blur(20px) saturate(1.4);
+  }
+  .lg-glass-strong {
+    background: color-mix(in oklab, var(--ak-s1) 78%, transparent);
+    -webkit-backdrop-filter: blur(28px) saturate(1.5);
+    backdrop-filter: blur(28px) saturate(1.5);
+  }
+}
+
+/* ── Sidebar: vidro + brilho radial ciano no topo (borda só à direita) ── */
+.lg-sidebar {
+  background:
+    radial-gradient(120% 42% at 50% -6%, rgba(var(--ak-brand-rgb), .12), transparent 68%),
+    var(--ak-s1);
+  border-right: 1px solid rgba(255,255,255,.08);
+  box-shadow: var(--ak-shadow-card), inset 0 1px 0 rgba(255,255,255,.05);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .lg-sidebar {
+    background:
+      radial-gradient(120% 42% at 50% -6%, rgba(var(--ak-brand-rgb), .12), transparent 68%),
+      color-mix(in oklab, var(--ak-s1) 66%, transparent);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    backdrop-filter: blur(22px) saturate(1.4);
+  }
+}
+
+/* ── TopNav: vidro sticky (borda só embaixo) ── */
+.lg-topbar {
+  background: var(--ak-s1);
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  box-shadow: var(--ak-shadow-card), inset 0 1px 0 rgba(255,255,255,.06);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .lg-topbar {
+    background: color-mix(in oklab, var(--ak-s1) 72%, transparent);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    backdrop-filter: blur(24px) saturate(1.5);
+  }
+}
+
+/* ── Overlay de modal: blur atrás do painel (compõe com bg-black/xx do elemento) ── */
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .lg-overlay { -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+}
+
+/* ── Cards de lista/kanban: SEM blur (perf) — só gradiente + borda + sombra ──
+   Aplica APENAS background-image (nunca background-color) para não sobrescrever
+   fundos customizados/translúcidos dos consumidores. Usar sobre uma superfície. */
+.lg-card {
+  position: relative;
+  background-image: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,0) 58%);
+  border: 1px solid var(--ak-hair);
+  border-radius: var(--ak-radius);
+  box-shadow: var(--ak-shadow-card);
+  transition: border-color .2s var(--ak-ease), box-shadow .25s var(--ak-ease);
+}
+.lg-card:hover {
+  border-color: color-mix(in oklab, var(--ak-brand) 24%, var(--ak-hair));
+  box-shadow: var(--ak-shadow-card), 0 0 0 1px color-mix(in oklab, var(--ak-brand) 14%, transparent);
+}
+
+/* ── Specular sheen: reflexo diagonal quase invisível (estático) ── */
+.lg-sheen { position: relative; }
+.lg-sheen::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,0) 42%, rgba(255,255,255,0));
+}
+
+/* ── Borda luminosa (foco/hover) ── */
+.lg-edge { box-shadow: 0 0 0 1px color-mix(in oklab, var(--ak-brand) 25%, transparent); }
+
+/* ── Campo translúcido para inputs sobre superfícies de vidro (opt-in) ── */
+.lg-field { background-color: var(--ak-s1); }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .lg-field { background-color: color-mix(in oklab, var(--ak-s1) 55%, transparent); }
+}
+
+/* ── Botões primários sólidos: gradiente vertical + inner highlight (cor preservada) ──
+   Adiciona só background-image + box-shadow inset; background-color (a marca) fica intacta.
+   Escopo restrito a <button>/[role=button] para não afetar barras/pontos/badges. */
+button.bg-brand, [role="button"].bg-brand,
+button.bg-\[\#95BBE2\], [role="button"].bg-\[\#95BBE2\] {
+  background-image: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,0) 62%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.24);
+}
+
+/* ── Scrollbar fina cross-browser (webkit já existe acima; aqui o Firefox) ── */
+html { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.14) transparent; }

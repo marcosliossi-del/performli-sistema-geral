@@ -121,14 +121,14 @@ function GoalFormDialog({ clientId, businessType, onClose }: { clientId: string;
 
   return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+          <div className="lg-overlay absolute inset-0 bg-black/60" onClick={onClose} />
 
           <div
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="Nova Meta"
-            className="relative w-full max-w-md bg-[#0A1E2C] border border-[#38435C] rounded-2xl shadow-2xl"
+            className="lg-glass-strong relative w-full max-w-md bg-[#0A1E2C] border border-[#38435C] rounded-2xl shadow-2xl"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#38435C]">

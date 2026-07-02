@@ -66,7 +66,7 @@ export function AddInteractionModal({ clientId, onClose, onAdded }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label="Nova Interação"
-        className="bg-[#0A1E2C] border border-[#38435C] rounded-xl w-full max-w-md shadow-2xl"
+        className="lg-glass-strong bg-[#0A1E2C] border border-[#38435C] rounded-xl w-full max-w-md shadow-2xl"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#38435C]">

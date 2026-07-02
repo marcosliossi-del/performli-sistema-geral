@@ -49,7 +49,7 @@ export function Popover({
           role="menu"
           aria-label={label}
           className={cn(
-            'ak-glass-strong absolute top-full z-50 mt-1 min-w-[200px] rounded-xl border border-[var(--ak-hair)] p-1 shadow-[var(--ak-shadow-pop)]',
+            'lg-glass absolute top-full z-50 mt-1 min-w-[200px] rounded-xl border border-[var(--ak-hair)] p-1 shadow-[var(--ak-shadow-pop)]',
             align === 'right' ? 'right-0' : 'left-0',
             panelClassName,
           )}

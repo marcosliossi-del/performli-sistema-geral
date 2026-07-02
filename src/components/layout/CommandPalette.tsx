@@ -86,9 +86,9 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   return (
     <>
-      <div className="ak-scrim fixed inset-0 bg-black/55 z-[60]" onClick={onClose} />
+      <div className="ak-scrim lg-overlay fixed inset-0 bg-black/55 z-[60]" onClick={onClose} />
       <div className="fixed left-1/2 top-[14vh] -translate-x-1/2 w-full max-w-[600px] z-[61] px-4">
-        <div className="ak-glass-strong border border-white/[0.09] rounded-2xl shadow-[0_24px_70px_-16px_rgba(0,0,0,0.62)] overflow-hidden">
+        <div className="lg-glass-strong border border-white/[0.09] rounded-2xl shadow-[0_24px_70px_-16px_rgba(0,0,0,0.62)] overflow-hidden">
           <div className="flex items-center gap-3 px-4 h-14 border-b border-white/[0.07]">
             <Search size={17} className="text-[#647488]" />
             <input
