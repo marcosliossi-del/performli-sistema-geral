@@ -24,6 +24,7 @@ import { Prisma } from '@prisma/client'
 import type { TaskType } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { normalize } from '@/services/seed-carteiras'
+import { runClientOnboarding } from '@/services/client-onboarding'
 import { writeAuditLog } from '@/lib/audit'
 import { statusIdFor } from '@/lib/tasks/statusMap'
 import { occurrenceKey } from '@/lib/tasks/recurClone'
@@ -209,8 +210,59 @@ async function importMetas(idx: Indexes): Promise<LoteResult> {
 }
 
 // ─── Lote contratos → reconciliação (NUNCA duplicar; Performli vence) ──────────
+/**
+ * Ajustes pré-conciliação confirmados pelo dono (2026-07-02). Idempotentes:
+ *  1. Family Restaurante: cliente criado se não existir (contrato do Victor);
+ *  2. Tuca Clothing: gestor passa a ser o Leandro (externalId 81516815).
+ */
+async function ajustesConfirmados(idx: Indexes): Promise<void> {
+  // 1. Family Restaurante
+  if (!idx.clientByNorm.get(normalize('Family Restaurante'))) {
+    const created = await prisma.client.create({
+      data: {
+        name: 'Family Restaurante',
+        slug: 'family-restaurante',
+        status: 'ACTIVE',
+        pipelineStage: 'ATIVO',
+        gestorId: idx.marcosId,
+        assignments: { create: { userId: idx.marcosId, isPrimary: true } },
+      },
+      select: { id: true },
+    })
+    idx.clientByNorm.set(normalize('Family Restaurante'), created.id)
+    idx.clientByNorm.set(normalize('family-restaurante'), created.id)
+    await writeAuditLog({
+      action: 'client.createFromClickup',
+      entityType: 'Client',
+      entityId: created.id,
+      clientId: created.id,
+      metadata: { origem: 'migração ClickUp — contrato Victor' },
+    })
+    try { await runClientOnboarding(created.id) } catch { /* best-effort */ }
+  }
+
+  // 2. Gestor da Tuca → Leandro
+  const leandroId = idx.userByExternal.get('81516815')
+  const tucaId = idx.clientByNorm.get(normalize('Tuca Clothing')) ?? idx.clientByNorm.get(normalize('Tuca'))
+  if (leandroId && tucaId) {
+    const tuca = await prisma.client.findUnique({ where: { id: tucaId }, select: { gestorId: true } })
+    if (tuca && tuca.gestorId !== leandroId) {
+      await prisma.client.update({ where: { id: tucaId }, data: { gestorId: leandroId } })
+      await prisma.clientAssignment.updateMany({ where: { clientId: tucaId, isPrimary: true }, data: { userId: leandroId } })
+      await writeAuditLog({
+        action: 'client.gestorChanged',
+        entityType: 'Client',
+        entityId: tucaId,
+        clientId: tucaId,
+        metadata: { para: 'Leandro (81516815)', origem: 'migração ClickUp (pedido do dono)' },
+      })
+    }
+  }
+}
+
 async function importContratos(idx: Indexes): Promise<LoteResult> {
   const result = emptyResult()
+  await ajustesConfirmados(idx)
 
   for (const c of MIG_CONTRATOS) {
     try {
@@ -235,6 +287,11 @@ async function importContratos(idx: Indexes): Promise<LoteResult> {
         continue
       }
 
+      // Cliente churned (ex.: Skaebne): contrato entra como CANCELADO
+      // (histórico) e NÃO atualiza o cache de vigência do Client.
+      const cliente = await prisma.client.findUnique({ where: { id: clientId }, select: { status: true } })
+      const churned = cliente?.status !== 'ACTIVE'
+
       const endDate = new Date(c.vigenciaFimMs)
       const startDate = new Date(endDate)
       startDate.setUTCMonth(startDate.getUTCMonth() - 6) // ciclo de fee padrão (documentado)
@@ -243,7 +300,7 @@ async function importContratos(idx: Indexes): Promise<LoteResult> {
         data: {
           clientId,
           responsibleId: idx.marcosId,
-          status: 'VIGENTE',
+          status: churned ? 'CANCELADO' : 'VIGENTE',
           type: 'FEE_MENSAL',
           feeValue: 0, // API do ClickUp não expõe o fee — Marcos completa (ver notes)
           startDate,
@@ -253,11 +310,13 @@ async function importContratos(idx: Indexes): Promise<LoteResult> {
         select: { id: true },
       })
 
-      // Amarração cliente↔contrato.
-      await prisma.client.update({
-        where: { id: clientId },
-        data: { contractStart: startDate, contractEndDate: endDate },
-      })
+      // Amarração cliente↔contrato (só para cliente ativo — churned é histórico).
+      if (!churned) {
+        await prisma.client.update({
+          where: { id: clientId },
+          data: { contractStart: startDate, contractEndDate: endDate },
+        })
+      }
 
       await writeAuditLog({
         action: 'contract.importClickup',
