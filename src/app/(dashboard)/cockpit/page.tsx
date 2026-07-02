@@ -139,7 +139,7 @@ export default async function CockpitPage() {
         />
       </div>
 
-      {/* Financeiro — apenas ADMIN/CS */}
+      {/* Financeiro — apenas ADMIN (loader retorna null p/ os demais → seção some) */}
       {data.faturasVencidas && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <OperationalCard

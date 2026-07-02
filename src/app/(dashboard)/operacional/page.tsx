@@ -16,7 +16,9 @@ export default async function OperacionalPage({
     getNovaTarefaContext(userId, role),
   ])
   // GESTOR só move de coluna (status); staff amplo cria/edita/deleta.
-  const canEdit = can(normalizeRole(role), 'update', 'tarefas')
+  const role5 = normalizeRole(role)
+  const canEdit = can(role5, 'update', 'tarefas')
+  const canEditStatusOnly = !canEdit && can(role5, 'update_status_only', 'tarefas')
   const k = board.kpis
 
   return (
@@ -38,7 +40,7 @@ export default async function OperacionalPage({
         <Kpi label="War Room" value={k.warRoom} tone="crit" />
       </div>
 
-      <OperacionalBoard tasks={board.tasks} ctx={ctx} canEdit={canEdit} initialTaskId={initialTaskId} currentUser={{ id: userId, name }} />
+      <OperacionalBoard tasks={board.tasks} ctx={ctx} canEdit={canEdit} canEditStatusOnly={canEditStatusOnly} initialTaskId={initialTaskId} currentUser={{ id: userId, name }} />
     </div>
   )
 }

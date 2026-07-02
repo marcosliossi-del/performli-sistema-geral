@@ -455,6 +455,10 @@ function PanelSections({
           )}
         </div>
 
+        {!canEdit && canEditStatusOnly && (
+          <p className="mt-2 text-[11px] text-text-low">Seu perfil altera apenas o status da tarefa.</p>
+        )}
+
         {/* Datas */}
         <div className="mt-3 flex flex-wrap items-end gap-4">
           <div>
