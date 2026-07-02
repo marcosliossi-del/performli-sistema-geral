@@ -33,11 +33,13 @@ function computeScore(factors: ChurnRiskFactor): number {
 
   // Fator 2: achievement médio (max 30 pts)
   // achievement 0% → 30 pts, 100% → 0 pts, ≥100% → 0 pts
+  // S2-020: quando não há dados, este fator NÃO pontua. A penalidade por
+  // ausência de dados é contada UMA única vez, no Fator 4 (dedicado). Antes,
+  // somava-se +10 aqui E +10 no Fator 4 (= +20), inflando o churn de clientes
+  // novos ou com sync quebrado.
   if (!factors.noData) {
     const achievScore = Math.max(0, 30 - Math.round((factors.avgAchievementPct / 100) * 30))
     score += achievScore
-  } else {
-    score += 10 // penalidade por falta de dados
   }
 
   // Fator 3: tendência (max 20 pts)
@@ -65,8 +67,13 @@ export async function scoreClientChurnRisk(clientId: string): Promise<{
   const eightWeeksAgo = new Date(weekStart)
   eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56)
 
+  // S2-021: filtra period WEEKLY. O scorer é 100% baseado em SEMANAS
+  // (thisWeek/prevWeek/semanas consecutivas em RUIM). Sem este filtro, um
+  // HealthScore MONTHLY (periodStart no dia 1º) entrava na janela semanal e era
+  // contado como uma "semana" extra — distorcendo média, tendência e a contagem
+  // de semanas consecutivas em RUIM.
   const scores = await prisma.healthScore.findMany({
-    where: { clientId, periodStart: { gte: eightWeeksAgo } },
+    where: { clientId, period: 'WEEKLY', periodStart: { gte: eightWeeksAgo } },
     orderBy: { periodStart: 'desc' },
   })
 
