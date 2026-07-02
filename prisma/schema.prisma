@@ -948,6 +948,7 @@ model TaskChecklistItem {
   done     Boolean @default(false)
   required Boolean @default(false)
   order    Int     @default(0)
+  @@index([taskId])
 }
 
 model TaskComment {
@@ -959,6 +960,7 @@ model TaskComment {
   mentions String[] @default([])
   internal Boolean  @default(false)
   createdAt DateTime @default(now())
+  @@index([taskId])
 }
 
 model TaskAttachment {
@@ -969,6 +971,7 @@ model TaskAttachment {
   filename     String?
   uploadedById String?
   createdAt    DateTime @default(now())
+  @@index([taskId])
 }
 
 model TaskActivity {
@@ -1001,6 +1004,7 @@ model TaskApproval {
   note       String?
   decidedAt  DateTime?
   createdAt  DateTime  @default(now())
+  @@index([taskId])
 }
 
 model TaskCustomFieldDefinition {
