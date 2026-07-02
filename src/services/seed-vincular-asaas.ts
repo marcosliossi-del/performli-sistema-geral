@@ -144,7 +144,14 @@ export async function vincularAsaasClientes(): Promise<VincularResult> {
           })
           result.customersReligados += 1
         }
-        if (ids.length > 1) {
+        if (jaLigado && ids.length >= 1) {
+          // Cliente JÁ tem um customer vinculado e sobrou outro com o mesmo
+          // nome órfão: é a duplicata no Asaas (ex.: Soul By DM), não um
+          // cliente sem vínculo.
+          result.duplicadosNoAsaas.push(
+            `${v.razaoAsaas} (duplicata no Asaas — o cliente já está vinculado ao outro registro; apague este customer lá)`,
+          )
+        } else if (ids.length > 1) {
           result.duplicadosNoAsaas.push(`${v.razaoAsaas} (${ids.length} customers com o mesmo nome no Asaas)`)
         }
       }
@@ -165,8 +172,13 @@ export async function vincularAsaasClientes(): Promise<VincularResult> {
     orderBy: { name: 'asc' },
   })
   const ignorados = new Set(IGNORAR_CHURN.map((n) => normalize(n)))
+  // Duplicatas identificadas acima já são reportadas em `duplicadosNoAsaas`;
+  // não repetir o mesmo customer como "sem vínculo".
+  const razoesVinculadas = new Set(VINCULOS.map((v) => normalize(v.razaoAsaas)))
   result.semVinculo = [...new Set(
-    orfaos.map((o) => o.name).filter((n) => !ignorados.has(normalize(n))),
+    orfaos
+      .map((o) => o.name)
+      .filter((n) => !ignorados.has(normalize(n)) && !razoesVinculadas.has(normalize(n))),
   )]
 
   return result
