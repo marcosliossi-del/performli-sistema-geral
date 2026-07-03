@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { updateClient, deleteClient } from '@/app/actions/updateClient'
-import { X, Trash2, AlertTriangle, ShoppingCart, MapPin } from 'lucide-react'
+import { X, Trash2, AlertTriangle, ShoppingCart, MapPin, Building2 } from 'lucide-react'
 import { BusinessType } from '@prisma/client'
 import { useModalA11y } from '@/lib/useModalA11y'
 import { investimentoTotal } from '@/lib/metas/projection'
@@ -170,6 +170,7 @@ export function EditClientModal({ client, onClose }: Props) {
                 {([
                   { value: 'ECOMMERCE', label: 'E-commerce', icon: ShoppingCart, desc: 'ROAS, Faturamento, Conversões' },
                   { value: 'LOCAL',     label: 'Negócio Local', icon: MapPin,     desc: 'Leads, Mensagens, Seguidores' },
+                  { value: 'B2B',       label: 'B2B / Atacado', icon: Building2,  desc: 'Leads, Mensagens — mede como negócio local' },
                 ] as const).map(({ value, label, icon: Icon, desc }) => (
                   <button
                     key={value}

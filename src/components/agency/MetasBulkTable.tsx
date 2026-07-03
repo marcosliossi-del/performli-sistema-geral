@@ -245,7 +245,7 @@ export function MetasBulkTable({
     const allGoals: GoalUpsert[] = []
     for (const client of clients) {
       const row = rows[client.id]
-      allGoals.push(...buildGoals(client.id, row, client.businessType === 'LOCAL'))
+      allGoals.push(...buildGoals(client.id, row, client.businessType === 'LOCAL' || client.businessType === 'B2B'))
     }
     if (allGoals.length === 0) return
 
@@ -270,8 +270,8 @@ export function MetasBulkTable({
     else setMonth(m => m + 1)
   }
 
-  const ecommerceClients = clients.filter(c => c.businessType !== 'LOCAL')
-  const localClients     = clients.filter(c => c.businessType === 'LOCAL')
+  const ecommerceClients = clients.filter(c => c.businessType !== 'LOCAL' && c.businessType !== 'B2B')
+  const localClients     = clients.filter(c => c.businessType === 'LOCAL' || c.businessType === 'B2B')
 
   const totalFatEcommerce = ecommerceClients.reduce((s, c) => {
     const v = parseFloat(rows[c.id]?.faturamento ?? '')

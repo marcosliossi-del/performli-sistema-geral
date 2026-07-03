@@ -222,7 +222,7 @@ export default async function ClientDetailPage({
     return null
   })()
 
-  const isLocal = client.businessType === 'LOCAL'
+  const isLocal = client.businessType === 'LOCAL' || client.businessType === 'B2B'
   const hasData = kpis.faturamento > 0 || kpis.investimento > 0 || kpis.sessoes > 0
 
   const sectionAnchors: ClientSectionAnchor[] = [
