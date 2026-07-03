@@ -45,7 +45,8 @@ function TaskRow({ task }: { task: Task }) {
     // produção — captura e mostra em toast operacional.
     startTransition(async () => {
       try {
-        await updateTaskStatus(task.id, isDone ? 'A_FAZER' : 'CONCLUIDO')
+        const r = await updateTaskStatus(task.id, isDone ? 'A_FAZER' : 'CONCLUIDO')
+        if ('error' in r) toast(r.error, 'err')
       } catch (e) {
         toast(e instanceof Error && e.message ? e.message : 'Não foi possível alterar o status da tarefa.', 'err')
       }

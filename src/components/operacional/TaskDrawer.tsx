@@ -68,7 +68,12 @@ export function TaskDrawer({
     }
     startTransition(async () => {
       try {
-        await updateTaskStatus(task!.id, status as TaskStatus)
+        const r = await updateTaskStatus(task!.id, status as TaskStatus)
+        if ('error' in r) {
+          toast(r.error, 'err')
+          setStatusResetKey((k) => k + 1)
+          return
+        }
         await reload()
       } catch (e) {
         toast(e instanceof Error && e.message ? e.message : 'Não foi possível alterar o status da tarefa.', 'err')
@@ -105,7 +110,8 @@ export function TaskDrawer({
   function handleComplete() {
     startTransition(async () => {
       try {
-        await updateTaskStatus(task!.id, 'CONCLUIDO' as TaskStatus)
+        const r = await updateTaskStatus(task!.id, 'CONCLUIDO' as TaskStatus)
+        if ('error' in r) { toast(r.error, 'err'); return }
         await reload()
         toast('Tarefa concluída')
       } catch (e) {

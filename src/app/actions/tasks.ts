@@ -121,10 +121,15 @@ export async function createTask(formData: FormData) {
 // ─────────────────────────────────────────────────────────────────────────────
 // updateTaskStatus — REFATORADA (assinatura e comportamento visível preservados).
 // Novidades: espelho statusId na MESMA transação, writeAuditLog e clone
-// on-complete quando recurrenceRule.mode === 'onComplete'. Guard continua antes;
-// o throw é mantido porque SupportBoard/SupportList/TaskDrawer dependem dele.
+// on-complete quando recurrenceRule.mode === 'onComplete'.
+// CONTRATO: bloqueio do guard RETORNA { error } (nunca lança) — throw de server
+// action em produção é redigido pelo Next ("Server Components render... digest")
+// e o usuário perde o motivo operacional. Mesmo contrato de decideTaskValidation.
 // ─────────────────────────────────────────────────────────────────────────────
-export async function updateTaskStatus(taskId: string, status: TaskStatus) {
+export async function updateTaskStatus(
+  taskId: string,
+  status: TaskStatus,
+): Promise<{ ok: true } | { error: string }> {
   const session = await requireSession()
   const { userId } = session
 
@@ -168,7 +173,7 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
         where: { id: taskId },
         data: { blockReason: guard.reason ?? 'Conclusão bloqueada: requisitos obrigatórios pendentes.' },
       })
-      throw new Error(guard.reason ?? 'Não é possível concluir: requisitos obrigatórios pendentes.')
+      return { error: guard.reason ?? 'Não é possível concluir: requisitos obrigatórios pendentes.' }
     }
   }
 
@@ -297,6 +302,7 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
   revalidatePath('/operacional')
   revalidatePath('/suporte')
   revalidatePath('/meu-dia')
+  return { ok: true }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
