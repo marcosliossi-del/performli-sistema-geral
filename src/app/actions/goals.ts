@@ -33,7 +33,7 @@ export async function syncWeeklyGoalsFromMonthly(): Promise<{
 
   revalidatePath('/agency/metas')
   revalidatePath('/clients')
-  revalidatePath('/dashboard')
+  revalidatePath('/cockpit')
   return { created: result.created, total: result.total }
 }
 
@@ -108,7 +108,7 @@ export async function upsertMonthlyGoals(
 
   revalidatePath('/agency/metas')
   revalidatePath('/clients')
-  revalidatePath('/dashboard')
+  revalidatePath('/cockpit')
   return { ok: true, saved, ignored }
 }
 

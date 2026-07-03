@@ -12,6 +12,23 @@ import {
 
 type SortKey = 'pct' | 'name' | 'manager' | 'projection'
 
+/** Cliente local/B2B: acompanha meta-resultado (mensagens/agendamentos/…), não faturamento. */
+function isLocal(c: ClientProgress): boolean {
+  return c.businessType !== 'ECOMMERCE'
+}
+
+/** % de progresso principal do cliente: local → meta-resultado; e-commerce → faturamento. */
+function primaryPct(c: ClientProgress): number | null {
+  return isLocal(c) ? c.localPct : c.pctGoalAchieved
+}
+
+/** Tem meta principal definida? (local → meta-resultado; e-commerce → faturamento). */
+function hasGoal(c: ClientProgress): boolean {
+  return isLocal(c) ? c.localGoal != null : c.goalFaturamento != null
+}
+
+const intFmt = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 })
+
 function pctColor(pct: number | null, monthPct: number): string {
   if (pct === null) return 'text-[#87919E]'
   // Compare achievement vs expected pacing
@@ -91,12 +108,72 @@ function InsightPanel({ data, onClose }: { data: ClientInsight; onClose: () => v
   )
 }
 
+/** Bloco de progresso da meta-resultado de cliente local/B2B (mensagens, agendamentos, …). */
+function LocalProgress({
+  c, barWidth, barClass,
+}: { c: ClientProgress; barWidth: number; barClass: string }) {
+  const label = c.localMetricLabel ?? 'Resultado'
+
+  if (c.localGoal == null) {
+    return (
+      <div className="space-y-1">
+        <div className="flex justify-between text-[10px] text-[#87919E]">
+          <span>{label}</span>
+          <span>sem meta de {label.toLowerCase()}</span>
+        </div>
+        <div className="text-[10px] text-[#EBEBEB] font-semibold">
+          {c.localActual != null ? `${intFmt.format(c.localActual)} ${c.periodoLabel}` : '—'}
+        </div>
+      </div>
+    )
+  }
+
+  const actual  = c.localActual ?? 0
+  const paced   = c.localPacedGoal
+  // No ritmo se já alcançou o esperado pró-rata do dia (guarda paced null).
+  const onPace  = paced != null && actual >= paced
+
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-[10px] text-[#87919E]">
+        <span>{label}</span>
+        <span>meta {intFmt.format(c.localGoal)} {c.periodoLabel}</span>
+      </div>
+      <div className="text-[11px] text-[#EBEBEB] font-semibold">
+        {intFmt.format(actual)} de {intFmt.format(c.localGoal)}
+        {c.localPct != null && (
+          <span className="text-[#87919E] font-normal"> · {Math.round(c.localPct)}%</span>
+        )}
+      </div>
+      <div className="h-2 rounded-full bg-[#38435C]/60 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${barClass}`}
+          style={{ width: `${barWidth}%` }}
+        />
+      </div>
+      {paced != null && (
+        <div className="flex items-center gap-1.5 text-[10px] text-[#87919E]">
+          <Target size={10} className="flex-shrink-0" />
+          <span>
+            Ritmo do dia:{' '}
+            <span className={`font-semibold ${onPace ? 'text-[#22C55E]' : 'text-[#EAB308]'}`}>
+              {intFmt.format(Math.round(paced))} esperados
+            </span>
+            {' '}({Math.round(c.pctMonthElapsed * 100)}% do mês) {onPace ? '✓' : '⚠'}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ClientCard({ c }: { c: ClientProgress }) {
   const [insight, setInsight]   = useState<ClientInsight | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [isPending, start]      = useTransition()
 
-  const pct        = c.pctGoalAchieved
+  const local      = isLocal(c)
+  const pct        = primaryPct(c)
   const monthPct   = c.pctMonthElapsed
   const barWidth   = pct != null ? Math.min(100, pct) : 0
   const barClass   = pct != null ? progressBarColor(pct, monthPct) : 'bg-[#38435C]'
@@ -104,7 +181,7 @@ function ClientCard({ c }: { c: ClientProgress }) {
 
   const onTrack    = pct != null && pct >= monthPct * 100 * 0.9
   const behind     = pct != null && pct < monthPct * 100 * 0.7
-  const noGoal     = c.goalFaturamento == null
+  const noGoal     = !hasGoal(c)
 
   const statusIcon = noGoal   ? <Minus size={12} className="text-[#87919E]" />
                    : onTrack  ? <TrendingUp size={12} className="text-[#22C55E]" />
@@ -145,42 +222,48 @@ function ClientCard({ c }: { c: ClientProgress }) {
         </div>
       </div>
 
-      {/* Faturamento progress */}
-      <div className="space-y-1">
-        <div className="flex justify-between text-[10px] text-[#87919E]">
-          <span>Faturamento</span>
-          <span>{c.goalFaturamento ? `meta ${formatCurrency(c.goalFaturamento)}` : 'sem meta de faturamento'}</span>
-        </div>
-        <div className="h-2 rounded-full bg-[#38435C]/60 overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${barClass}`}
-            style={{ width: `${barWidth}%` }}
-          />
-        </div>
-        <div className="flex justify-between text-[10px]">
-          <span className="text-[#EBEBEB] font-semibold">{formatCurrency(c.revenue)}</span>
-          {c.projection != null && c.goalFaturamento != null && (
-            <span className={`${c.projection >= c.goalFaturamento ? 'text-[#22C55E]' : 'text-[#EAB308]'}`}>
-              proj. {formatCurrency(c.projection)}
-            </span>
-          )}
-        </div>
-      </div>
+      {local ? (
+        <LocalProgress c={c} barWidth={barWidth} barClass={barClass} />
+      ) : (
+        <>
+          {/* Faturamento progress */}
+          <div className="space-y-1">
+            <div className="flex justify-between text-[10px] text-[#87919E]">
+              <span>Faturamento</span>
+              <span>{c.goalFaturamento ? `meta ${formatCurrency(c.goalFaturamento)}` : 'sem meta de faturamento'}</span>
+            </div>
+            <div className="h-2 rounded-full bg-[#38435C]/60 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${barClass}`}
+                style={{ width: `${barWidth}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-[10px]">
+              <span className="text-[#EBEBEB] font-semibold">{formatCurrency(c.revenue)}</span>
+              {c.projection != null && c.goalFaturamento != null && (
+                <span className={`${c.projection >= c.goalFaturamento ? 'text-[#22C55E]' : 'text-[#EAB308]'}`}>
+                  proj. {formatCurrency(c.projection)}
+                </span>
+              )}
+            </div>
+          </div>
 
-      {/* Pacing indicator */}
-      {c.pacedGoal != null && c.goalFaturamento != null && (
-        <div className="flex items-center gap-1.5 text-[10px] text-[#87919E]">
-          <Target size={10} className="flex-shrink-0" />
-          <span>
-            Esperado até hoje:{' '}
-            <span className={`font-semibold ${
-              c.revenue >= c.pacedGoal ? 'text-[#22C55E]' : 'text-[#EAB308]'
-            }`}>
-              {formatCurrency(c.pacedGoal)}
-            </span>
-            {' '}({Math.round(c.pctMonthElapsed * 100)}% do mês)
-          </span>
-        </div>
+          {/* Pacing indicator */}
+          {c.pacedGoal != null && c.goalFaturamento != null && (
+            <div className="flex items-center gap-1.5 text-[10px] text-[#87919E]">
+              <Target size={10} className="flex-shrink-0" />
+              <span>
+                Esperado até hoje:{' '}
+                <span className={`font-semibold ${
+                  c.revenue >= c.pacedGoal ? 'text-[#22C55E]' : 'text-[#EAB308]'
+                }`}>
+                  {formatCurrency(c.pacedGoal)}
+                </span>
+                {' '}({Math.round(c.pctMonthElapsed * 100)}% do mês)
+              </span>
+            </div>
+          )}
+        </>
       )}
 
       {/* Divider */}
@@ -188,11 +271,32 @@ function ClientCard({ c }: { c: ClientProgress }) {
 
       {/* Metrics grid */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-        {/* ROAS */}
-        <div>
-          <p className="text-[10px] text-[#87919E] mb-0.5">ROAS</p>
-          <RoasBadge actual={c.roas} goal={c.goalRoas} />
-        </div>
+        {/* ROAS (e-commerce) ou Custo por resultado (local/B2B) */}
+        {local ? (
+          <div>
+            <p className="text-[10px] text-[#87919E] mb-0.5">
+              {c.custoMetricLabel ?? 'Custo'} {c.periodoLabel}
+            </p>
+            {c.custoRealizado != null ? (
+              <span className={`text-xs font-semibold ${
+                c.custoAlvo == null ? 'text-[#EBEBEB]'
+                  : c.custoRealizado <= c.custoAlvo ? 'text-[#22C55E]' : 'text-[#EF4444]'
+              }`}>
+                {formatCurrency(c.custoRealizado)}
+                {c.custoAlvo != null && (
+                  <span className="text-[10px] text-[#87919E]">{' '}/ {formatCurrency(c.custoAlvo)}</span>
+                )}
+              </span>
+            ) : c.custoAlvo != null ? (
+              <span className="text-[10px] text-[#87919E]/50">meta {formatCurrency(c.custoAlvo)}</span>
+            ) : <span className="text-[10px] text-[#87919E]/50">—</span>}
+          </div>
+        ) : (
+          <div>
+            <p className="text-[10px] text-[#87919E] mb-0.5">ROAS</p>
+            <RoasBadge actual={c.roas} goal={c.goalRoas} />
+          </div>
+        )}
 
         {/* Budget */}
         <div>
@@ -294,18 +398,19 @@ function ClientCard({ c }: { c: ClientProgress }) {
 export function MetasDashboard({ clients }: { clients: ClientProgress[] }) {
   const [sort, setSort] = useState<SortKey>('pct')
 
-  const withGoal    = clients.filter((c) => c.goalFaturamento != null)
-  const withoutGoal = clients.filter((c) => c.goalFaturamento == null)
+  const withGoal    = clients.filter((c) => hasGoal(c))
+  const withoutGoal = clients.filter((c) => !hasGoal(c))
 
-  const onTrack  = withGoal.filter((c) => c.pctGoalAchieved != null && c.pctGoalAchieved >= c.pctMonthElapsed * 100 * 0.9).length
-  const atRisk   = withGoal.filter((c) => c.pctGoalAchieved != null && c.pctGoalAchieved >= c.pctMonthElapsed * 100 * 0.7 && c.pctGoalAchieved < c.pctMonthElapsed * 100 * 0.9).length
-  const critical  = withGoal.filter((c) => c.pctGoalAchieved != null && c.pctGoalAchieved < c.pctMonthElapsed * 100 * 0.7).length
+  const onTrack  = withGoal.filter((c) => { const p = primaryPct(c); return p != null && p >= c.pctMonthElapsed * 100 * 0.9 }).length
+  const atRisk   = withGoal.filter((c) => { const p = primaryPct(c); return p != null && p >= c.pctMonthElapsed * 100 * 0.7 && p < c.pctMonthElapsed * 100 * 0.9 }).length
+  const critical  = withGoal.filter((c) => { const p = primaryPct(c); return p != null && p < c.pctMonthElapsed * 100 * 0.7 }).length
 
   const sorted = [...withGoal].sort((a, b) => {
     if (sort === 'pct') {
       // Sort by how far behind pacing (worst first)
-      const scoreA = a.pctGoalAchieved != null ? a.pctGoalAchieved - a.pctMonthElapsed * 100 : 999
-      const scoreB = b.pctGoalAchieved != null ? b.pctGoalAchieved - b.pctMonthElapsed * 100 : 999
+      const pa = primaryPct(a), pb = primaryPct(b)
+      const scoreA = pa != null ? pa - a.pctMonthElapsed * 100 : 999
+      const scoreB = pb != null ? pb - b.pctMonthElapsed * 100 : 999
       return scoreA - scoreB
     }
     if (sort === 'name') return a.name.localeCompare(b.name)

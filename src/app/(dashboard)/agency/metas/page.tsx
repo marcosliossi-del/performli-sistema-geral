@@ -17,7 +17,7 @@ export default async function MetasPage() {
   const role = normalizeRole(session.role)
   // RBAC v2: metas — GESTOR não vê (matriz gestaoEquipeMetas: NONE → redirect);
   // ADMIN vê tudo; SUPERVISOR/ANALISTA/CS leem SEM metas de receita (strip).
-  if (!can(role, 'view', 'gestaoEquipeMetas')) redirect('/dashboard')
+  if (!can(role, 'view', 'gestaoEquipeMetas')) redirect('/cockpit')
 
   const now = new Date()
   const year  = now.getFullYear()

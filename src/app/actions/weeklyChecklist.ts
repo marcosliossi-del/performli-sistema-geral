@@ -38,7 +38,7 @@ export async function toggleChecklistItem(
     data: { items: updated as object[] },
   })
 
-  revalidatePath('/dashboard')
+  revalidatePath('/cockpit')
   return { success: true }
 }
 
@@ -51,6 +51,6 @@ export async function regenerateChecklist(
 
   await generateWeeklyChecklistForManager(session.userId)
 
-  revalidatePath('/dashboard')
+  revalidatePath('/cockpit')
   return { success: true }
 }

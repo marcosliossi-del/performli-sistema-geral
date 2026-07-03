@@ -9,7 +9,6 @@ import {
   ShieldCheck,
   FileText,
   ListTodo,
-  LayoutDashboard,
   CheckSquare,
   Users,
   UserPlus,
@@ -139,7 +138,6 @@ const navigation: NavSection[] = [
         children: [
           { name: 'Agentes IA',           href: '/ai-agents', icon: Bot,             module: 'inteligencia' },
           { name: 'Base de Conhecimento', href: '/knowledge', icon: BookMarked,      module: 'gestaoEquipeEquipe' },
-          { name: 'Painel Analítico',     href: '/dashboard', icon: LayoutDashboard, module: 'cockpit' },
         ],
       },
     ],

@@ -3,6 +3,13 @@
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { saoPauloDayStart } from '@/lib/utils'
+import { getRealizadoBatch } from '@/lib/metas/realizado'
+import {
+  LOCAL_RESULT_METRICS,
+  LOCAL_RESULT_METRIC_SET,
+  costLabelFor,
+} from '@/lib/metas/metricOptions'
+import type { MetricType, BusinessType } from '@prisma/client'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -11,10 +18,23 @@ export type ClientProgress = {
   name: string
   slug: string
   managerName: string
+  businessType: BusinessType
   // Goals
   goalFaturamento: number | null
   goalRoas: number | null
   goalSpend: number | null
+  // Meta-resultado principal do cliente local/B2B (MENSAGENS/LEADS/AGENDAMENTOS/…).
+  // Campos aditivos: null para e-commerce (que segue usando faturamento/ROAS).
+  localMetric: MetricType | null   // métrica-resultado principal (enum)
+  localMetricLabel: string | null  // rótulo humano ("Mensagens", "Agendamentos"…)
+  localGoal: number | null         // alvo mensal da métrica-resultado
+  localActual: number | null       // realizado MTD (fonte canônica getRealizadoBatch)
+  localPct: number | null          // localActual / localGoal * 100
+  localPacedGoal: number | null    // localGoal * diasDecorridos / diasDoMês (pró-rata)
+  custoMetricLabel: 'CPL' | 'CPA' | null // custo-alvo correto p/ a métrica principal
+  custoAlvo: number | null         // meta de CPL/CPA
+  custoRealizado: number | null    // spend ÷ realizado (custo por resultado no mês)
+  periodoLabel: string             // rótulo de período da fonte única ("no mês")
   // Actuals (current month to date)
   revenue: number        // GA4 only
   spend: number          // ad platforms only
@@ -73,6 +93,7 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
       id: true,
       name: true,
       slug: true,
+      businessType: true,
       assignments: {
         where: { isPrimary: true },
         select: { user: { select: { name: true } } },
@@ -83,8 +104,11 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
           period: 'MONTHLY',
           startDate: { lte: monthEnd },
           endDate:   { gte: monthStart },
-          metric:    { in: ['FATURAMENTO', 'ROAS', 'SPEND'] },
+          metric:    { in: ['FATURAMENTO', 'ROAS', 'SPEND', 'CPL', 'CPA', ...LOCAL_RESULT_METRICS.map((m) => m.value)] },
         },
+        // updatedAt asc: se houver mais de uma meta-resultado no mês, a mais
+        // recente prevalece como métrica principal (mesma regra da grade).
+        orderBy: { updatedAt: 'asc' },
         select: { metric: true, targetValue: true },
       },
       metricSnapshots: {
@@ -115,6 +139,45 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
     cur.purchases  += Number(s.conversions ?? 0)
     prevByClient.set(s.clientId, cur)
   }
+
+  // ── Métrica-resultado principal dos clientes local/B2B ────────────────────
+  // Elege a meta-resultado principal por cliente (última por updatedAt, já que
+  // c.goals vem ordenado asc). E-commerce fica de fora (usa faturamento/ROAS).
+  const localGoalByClient = new Map<string, { metric: MetricType; goal: number }>()
+  for (const c of clients) {
+    if (c.businessType === 'ECOMMERCE') continue
+    let elected: { metric: MetricType; goal: number } | null = null
+    for (const g of c.goals) {
+      if (LOCAL_RESULT_METRIC_SET.has(g.metric)) {
+        const goal = Number(g.targetValue)
+        if (goal > 0) elected = { metric: g.metric, goal }
+      }
+    }
+    if (elected) localGoalByClient.set(c.id, elected)
+  }
+
+  // Realizado MTD da métrica principal SEM N+1: agrupa clientes por métrica e
+  // faz UMA query por métrica distinta (getRealizadoBatch), não por cliente.
+  const clientsByMetric = new Map<MetricType, Array<{ id: string; businessType: BusinessType }>>()
+  const btById = new Map(clients.map((c) => [c.id, c.businessType]))
+  for (const [clientId, { metric }] of localGoalByClient) {
+    const bt = btById.get(clientId) ?? 'LOCAL'
+    const arr = clientsByMetric.get(metric) ?? []
+    arr.push({ id: clientId, businessType: bt })
+    clientsByMetric.set(metric, arr)
+  }
+
+  const localActualByClient = new Map<string, number | null>()
+  let localPeriodoLabel = 'no mês'
+  for (const [metric, group] of clientsByMetric) {
+    const realizados = await getRealizadoBatch(group, metric, 'MTD')
+    for (const [clientId, r] of realizados) {
+      localActualByClient.set(clientId, r.valor)
+      localPeriodoLabel = r.periodoLabel
+    }
+  }
+
+  const labelByMetric = new Map(LOCAL_RESULT_METRICS.map((m) => [m.value, m.label]))
 
   return clients.map((c): ClientProgress => {
     const ga4  = c.metricSnapshots.filter((x) => x.platformAccount.platform === 'GA4')
@@ -151,6 +214,38 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
     const pctGoal     = gFat != null && gFat > 0 ? (revenue / gFat) * 100 : null
     const pctSpend    = gSpend != null && gSpend > 0 ? (spend / gSpend) * 100 : null
 
+    // ── Meta-resultado local/B2B ──────────────────────────────────────────
+    const localElected = localGoalByClient.get(c.id)
+    let localMetric: MetricType | null = null
+    let localMetricLabel: string | null = null
+    let localGoal: number | null = null
+    let localActual: number | null = null
+    let localPct: number | null = null
+    let localPacedGoal: number | null = null
+    let custoMetricLabel: 'CPL' | 'CPA' | null = null
+    let custoAlvo: number | null = null
+    let custoRealizado: number | null = null
+
+    if (localElected) {
+      localMetric      = localElected.metric
+      localMetricLabel = labelByMetric.get(localElected.metric) ?? null
+      localGoal        = localElected.goal   // já garantido > 0 na eleição
+      localActual      = localActualByClient.get(c.id) ?? null
+      localPct         = localActual != null && localGoal > 0
+        ? (localActual / localGoal) * 100
+        : null
+      localPacedGoal   = (localGoal / totalDays) * daysElapsed
+
+      // Custo-alvo correto: CPL p/ LEADS, CPA p/ o resto.
+      custoMetricLabel = costLabelFor(localElected.metric)
+      const custoGoal  = c.goals.find((g) => g.metric === custoMetricLabel)
+      custoAlvo        = custoGoal ? Number(custoGoal.targetValue) : null
+      // Custo realizado = investimento ÷ resultados (guarda divisão por zero).
+      custoRealizado   = localActual != null && localActual > 0 && spend > 0
+        ? spend / localActual
+        : null
+    }
+
     const prev = prevByClient.get(c.id)
     const prevRevenue     = prev ? prev.revenue : null
     const prevTicketMedio = prev && prev.purchases > 0 && prev.revenue > 0
@@ -162,9 +257,20 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
       name: c.name,
       slug: c.slug,
       managerName: c.assignments[0]?.user?.name ?? '—',
+      businessType: c.businessType,
       goalFaturamento: gFat,
       goalRoas: gRoas,
       goalSpend: gSpend,
+      localMetric,
+      localMetricLabel,
+      localGoal,
+      localActual,
+      localPct,
+      localPacedGoal,
+      custoMetricLabel,
+      custoAlvo,
+      custoRealizado,
+      periodoLabel: localPeriodoLabel,
       revenue,
       spend,
       purchases,

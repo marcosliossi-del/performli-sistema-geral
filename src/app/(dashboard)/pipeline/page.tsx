@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 export default async function PipelinePage() {
   const session = await requireSession()
   // RBAC v2: Pipeline CRM é SÓ ADMIN (matriz comercial).
-  if (!can(normalizeRole(session.role), 'view', 'comercial')) redirect('/dashboard')
+  if (!can(normalizeRole(session.role), 'view', 'comercial')) redirect('/cockpit')
   const clients = await getPipelineClients(session.userId, session.role)
 
   return (

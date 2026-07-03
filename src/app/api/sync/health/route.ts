@@ -94,8 +94,8 @@ export async function POST(request: NextRequest) {
     { created: 0, updated: 0, alerts: 0 }
   )
 
-  // Invalidate Next.js page cache so the dashboard reloads with fresh health scores
-  revalidatePath('/dashboard', 'page')
+  // Invalidate Next.js page cache so the cockpit reloads with fresh health scores
+  revalidatePath('/cockpit', 'page')
   revalidatePath('/clients', 'page')
 
   return NextResponse.json({
