@@ -490,6 +490,14 @@ model CriticalProtocol {
   closedOutcome WarRoomOutcome?                // Resultado do encerramento
   lastReviewedAt DateTime?                     // WAR-16: última revisão semanal registrada
 
+  // ── WAR-14/15: substituição dos 2 PDFs manuais (aditivo, Json nullable) ──
+  // Documento de diagnóstico que o gestor preenchia até quarta e enviava no
+  // chat; shape validado por zod em lib/warroom/forms.ts (DiagnosticoGestor).
+  diagnosticoGestor Json?
+  // Decisões documentadas pela CS na War Room de quinta; shape DecisoesCs.
+  // Cada ação vira Task de automação (idempotente por hash da ação).
+  decisoesCs        Json?
+
   client      Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
   responsible User?  @relation("WarRoomResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
 

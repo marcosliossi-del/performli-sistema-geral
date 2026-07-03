@@ -8,7 +8,10 @@ import { ClientIdentity } from '@/components/clients/ClientIdentity'
 import { ChurnRiskChart } from '@/components/anti-churn/ChurnRiskChart'
 import { ProtocolCard } from '@/components/anti-churn/ProtocolCard'
 import { WarRoomPlanPanel } from '@/components/anti-churn/WarRoomPlanPanel'
+import { WarRoomDocsPanel } from '@/components/anti-churn/WarRoomDocsPanel'
 import { AntiChurnQueue } from '@/components/anti-churn/AntiChurnQueue'
+import { buildDiagnosticoPrefill } from '@/lib/warroom/prefill'
+import { parseDiagnosticoGestor, parseDecisoesCs } from '@/lib/warroom/forms'
 import { normalizeRole, can } from '@/lib/rbac'
 
 export default async function AntiChurnPage() {
@@ -84,10 +87,35 @@ export default async function AntiChurnPage() {
       lastReviewedAt: p.lastReviewedAt,
       exitMetAt: p.exitMetAt,
     },
+    clientId: p.clientId,
+    activatedAtRaw: p.activatedAt,
+    savedDiagnostico: parseDiagnosticoGestor(p.diagnosticoGestor),
+    savedDecisoes: parseDecisoesCs(p.decisoesCs),
   }))
 
   const activeProtocols   = protocols.filter((p) => p.status !== 'ENCERRADO')
   const closedProtocols   = protocols.filter((p) => p.status === 'ENCERRADO')
+
+  // WAR-14/15: pré-preenchimento do diagnóstico (números + últimas entregas) por
+  // protocolo ativo, para o gestor só completar hipótese/teste (menos cliques).
+  const prefillMap = new Map(
+    await Promise.all(
+      activeProtocols.map(async (p) => [
+        p.id,
+        await buildDiagnosticoPrefill({ clientId: p.clientId, activatedAt: p.activatedAtRaw }),
+      ] as const),
+    ),
+  )
+
+  // Nome do usuário atual (assina os docs) + recorte de edição por papel.
+  const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } })
+  const currentUserName = currentUser?.name ?? 'Usuário'
+  const nrole = normalizeRole(role)
+  // Diagnóstico é do gestor/tráfego/admin (CS não diagnostica). Posse é validada
+  // na action; aqui é só UX.
+  const canEditDiagnostico = ['ADMIN', 'SUPERVISOR_TRAFEGO', 'GESTOR_TRAFEGO', 'ANALISTA_TRAFEGO'].includes(nrole)
+  // Decisões são processo da CS (mais admin/tráfego).
+  const canEditDecisoes = canEditDiagnostico || nrole === 'CS'
 
   // WAR-14: plano da War Room (critério de saída, responsável, prazo)
   const responsibleOptions = await getWarRoomResponsibleOptions()
@@ -153,6 +181,18 @@ export default async function AntiChurnPage() {
                   plan={p.plan}
                   responsibleOptions={responsibleOptions}
                   canEdit={canEditWarRoom}
+                />
+                <WarRoomDocsPanel
+                  protocolId={p.id}
+                  clientName={p.client.name}
+                  exitCriteria={p.plan.exitCriteria}
+                  responsibleOptions={responsibleOptions}
+                  currentUserName={currentUserName}
+                  savedDiagnostico={p.savedDiagnostico}
+                  savedDecisoes={p.savedDecisoes}
+                  prefill={prefillMap.get(p.id) ?? { situacao: '', desdeQuando: '', oQueJaFoiFeito: '' }}
+                  canEditDiagnostico={canEditDiagnostico}
+                  canEditDecisoes={canEditDecisoes}
                 />
               </div>
             ))}

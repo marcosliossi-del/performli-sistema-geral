@@ -12,10 +12,19 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 import { AlertType, MetricType } from '@prisma/client'
 
 const REVIEW_INTERVAL_DAYS = 7
 const ALERT_DEDUP_DAYS = 6
+const DIAGNOSTICO_CHASE_DAYS = 2 // aberto há >= 2 dias sem diagnóstico → cobra o gestor
+
+/** Próxima quarta-feira (>= hoje) ao meio-dia UTC — prazo "até quarta". */
+function nextWednesday(now: Date): Date {
+  const base = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0))
+  const delta = (3 - base.getUTCDay() + 7) % 7 // 3 = quarta
+  return new Date(base.getTime() + delta * 86_400_000)
+}
 
 // Métricas em que MENOR é melhor (critério atingido quando valor <= alvo).
 const LOWER_IS_BETTER: ReadonlySet<MetricType> = new Set<MetricType>([
@@ -39,6 +48,7 @@ export async function monitorWarRooms(): Promise<{
   reviewAlerts: number
   exitMetAlerts: number
   regressionAlerts: number
+  diagnosticoChaseTasks: number
 }> {
   const protocols = await prisma.criticalProtocol.findMany({
     where: { status: { not: 'ENCERRADO' } },
@@ -50,18 +60,60 @@ export async function monitorWarRooms(): Promise<{
       exitMetric: true,
       exitTarget: true,
       exitMetAt: true,
-      client: { select: { name: true } },
+      responsibleId: true,
+      diagnosticoGestor: true,
+      client: {
+        select: {
+          name: true,
+          assignments: { where: { isPrimary: true }, select: { userId: true }, take: 1 },
+        },
+      },
     },
   })
 
   let reviewAlerts = 0
   let exitMetAlerts = 0
   let regressionAlerts = 0
+  let diagnosticoChaseTasks = 0
   const now = Date.now()
   const reviewCutoff = now - REVIEW_INTERVAL_DAYS * 86_400_000
+  const chaseCutoff = now - DIAGNOSTICO_CHASE_DAYS * 86_400_000
 
   for (const p of protocols) {
     try {
+      // ── 0. Cobrança do diagnóstico do gestor (substitui a cobrança manual) ─
+      // Protocolo aberto há >= 2 dias e ainda sem diagnóstico preenchido → cria
+      // UMA task para o responsável (dedupe por protocolo). O form é a evidência.
+      if (p.diagnosticoGestor == null && new Date(p.activatedAt).getTime() <= chaseCutoff) {
+        const assignee = p.responsibleId ?? p.client.assignments[0]?.userId ?? null
+        if (assignee) {
+          const idempotencyKey = `auto:warroom-diagnostico:${p.id}`
+          const exists = await prisma.task.findUnique({ where: { idempotencyKey }, select: { id: true } })
+          if (!exists) {
+            await prisma.task.create({
+              data: {
+                title: `Preencher diagnóstico da War Room até quarta — ${p.client.name}`,
+                description: 'A War Room deste cliente ainda não tem diagnóstico do gestor. Preencha o diagnóstico (situação, hipótese e teste) até quarta para a call de quinta.',
+                type: 'WAR_ROOM',
+                priority: 'ALTA',
+                status: 'A_FAZER',
+                statusId: statusIdFor('A_FAZER'),
+                origin: 'AUTOMACAO',
+                clientId: p.clientId,
+                assignedTo: assignee,
+                areaId: 'area_war',
+                popId: 'pop_war_14',
+                requestedAt: new Date(),
+                dueDate: nextWednesday(new Date()),
+                requiresEvidence: false,
+                idempotencyKey,
+                activities: { create: { actorId: null, action: 'created' } },
+              },
+            })
+            diagnosticoChaseTasks++
+          }
+        }
+      }
       // ── 1. Revisão semanal em atraso ──────────────────────────────────────
       const lastReview = p.lastReviewedAt ? new Date(p.lastReviewedAt).getTime() : null
       const reference = lastReview ?? new Date(p.activatedAt).getTime()
@@ -140,5 +192,6 @@ export async function monitorWarRooms(): Promise<{
     reviewAlerts,
     exitMetAlerts,
     regressionAlerts,
+    diagnosticoChaseTasks,
   }
 }
