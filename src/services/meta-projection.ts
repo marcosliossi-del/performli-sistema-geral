@@ -127,7 +127,11 @@ export async function projetarMetasDoMes(): Promise<{
   for (const c of clients) {
     processados++
     try {
-      const isLocal = c.businessType === 'LOCAL'
+      // B2B mede como NEGÓCIO LOCAL (decisão do dono, 2026-07: "b2b se mede como
+      // local, os nossos buscam leads"). Logo: métrica-resultado não-taxa medida
+      // na plataforma de ANÚNCIO, crescimento +20% e SEM gravar
+      // faturamentoEsperado/roasMinimo. Só ECOMMERCE segue faturamento GA4.
+      const isLocal = c.businessType === 'LOCAL' || c.businessType === 'B2B'
 
       // ── Métrica-resultado do cliente ─────────────────────────────────────
       let metricaResultado: MetricType

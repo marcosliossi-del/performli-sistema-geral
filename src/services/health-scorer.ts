@@ -98,14 +98,19 @@ export function aggregateSnapshots(
   const totalSpend    = ads.reduce((s, x) => s + toNum(x.spend), 0)
   const adImpressions = ads.reduce((s, x) => s + toNum(x.impressions), 0)
 
-  // Source selection per business type
-  const revenue   = businessType === 'LOCAL' ? metaRevenue  : ga4Revenue
-  const purchases = businessType === 'LOCAL' ? metaConv     : ga4Purchases
+  // Source selection per business type.
+  // B2B mede como NEGÓCIO LOCAL (decisão do dono, 2026-07: "b2b se mede como
+  // local, os nossos buscam leads"): fonte = plataforma de ANÚNCIO, não GA4.
+  // `isLocalLike` cobre LOCAL e B2B; ECOMMERCE segue GA4. A lógica ECOMMERCE/
+  // LOCAL abaixo é preservada — só o roteamento do B2B muda (antes caía em GA4).
+  const isLocalLike = businessType !== 'ECOMMERCE'
+  const revenue   = isLocalLike ? metaRevenue  : ga4Revenue
+  const purchases = isLocalLike ? metaConv     : ga4Purchases
 
   // ── Derived metrics ───────────────────────────────────────────────────────
 
   if (metric === 'ROAS') {
-    const spend = businessType === 'LOCAL' ? metaSpend : totalSpend
+    const spend = isLocalLike ? metaSpend : totalSpend
     return spend > 0 && revenue > 0 ? revenue / spend : null
   }
 
@@ -118,7 +123,7 @@ export function aggregateSnapshots(
   }
 
   if (metric === 'MENSAGENS') {
-    if (businessType === 'LOCAL') {
+    if (isLocalLike) {
       return metaMensagens > 0 ? metaMensagens : null
     }
     return null
@@ -127,7 +132,7 @@ export function aggregateSnapshots(
   if (metric === 'LEADS') {
     // Lead form campaigns → conversions field; WhatsApp campaigns → mensagens field
     if (metaConv > 0) return metaConv
-    if (businessType === 'LOCAL' && metaMensagens > 0) return metaMensagens
+    if (isLocalLike && metaMensagens > 0) return metaMensagens
     return null
   }
 
@@ -151,12 +156,12 @@ export function aggregateSnapshots(
     // For LOCAL WhatsApp campaigns, mensagens serve as the conversion denominator
     const denom = purchases > 0
       ? purchases
-      : (businessType === 'LOCAL' && metaMensagens > 0 ? metaMensagens : 0)
+      : (isLocalLike && metaMensagens > 0 ? metaMensagens : 0)
     return totalSpend > 0 && denom > 0 ? totalSpend / denom : null
   }
 
   if (metric === 'VISITAS_PERFIL' || metric === 'LIGACOES' || metric === 'AGENDAMENTOS') {
-    if (businessType === 'LOCAL') {
+    if (isLocalLike) {
       if (metric === 'VISITAS_PERFIL') return metaLandViews > 0 ? metaLandViews : null
       return metaConv > 0 ? metaConv : null
     }

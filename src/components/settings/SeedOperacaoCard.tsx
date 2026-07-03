@@ -183,6 +183,18 @@ export function SeedOperacaoCard() {
     }
   }
 
+  async function runLimparMetasZeradas() {
+    setLoading(true)
+    try {
+      const res = await post('?phase=limpar-metas-zeradas')
+      toast(`Metas zeradas removidas: ${res?.removidas ?? 0}.`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível limpar as metas zeradas.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function runReconciliarAsaas() {
     setLoading(true)
     setReconcile(null)
@@ -444,6 +456,15 @@ export function SeedOperacaoCard() {
           >
             {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
             Criar metas de faturamento (dos ROAS)
+          </button>
+          <button
+            type="button"
+            onClick={runLimparMetasZeradas}
+            disabled={loading}
+            className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+            Limpar metas zeradas (bug antigo)
           </button>
         </div>
 
