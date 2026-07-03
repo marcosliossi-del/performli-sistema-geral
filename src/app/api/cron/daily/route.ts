@@ -386,6 +386,7 @@ async function runDailySync() {
       reviewAlerts: monitorResult.reviewAlerts,
       exitMetAlerts: monitorResult.exitMetAlerts,
       regressionAlerts: monitorResult.regressionAlerts,
+      diagnosticoChaseTasks: monitorResult.diagnosticoChaseTasks,
     }
   } catch (err) {
     summary.warRoomMonitor = {
