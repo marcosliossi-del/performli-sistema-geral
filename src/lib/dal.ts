@@ -4,7 +4,7 @@ import { unstable_cache } from 'next/cache'
 import { prisma } from './prisma'
 import { getSession } from './session'
 import { redirect } from 'next/navigation'
-import { HealthStatus, GoalPeriod, Prisma } from '@prisma/client'
+import { HealthStatus, GoalPeriod, Prisma, AlertType } from '@prisma/client'
 import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
 import { normalizeRole, stripSensitive, scopeClients, isRevenueMetric } from './rbac'
 import { readCronHeartbeat, CRON_STALE_HOURS } from './cron-heartbeat'
@@ -12,6 +12,7 @@ import { getRealizadoForMetrics } from './metas/realizado'
 import { RATE_METRICS } from '@/services/weekly-goals-sync'
 import { LOWER_IS_BETTER } from '@/services/health-scorer'
 import { deriveOverallStatus, selectCanonicalScores } from './health-derive'
+import { ALERT_GOVERNANCE, GOVERNANCE_ROLE_LABELS, ALERT_TYPE_LABELS as ALERT_HEALTH_LABELS } from './alerts/governance-config'
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 
@@ -3817,3 +3818,76 @@ export async function getCronHealth(role: string): Promise<CronHealth> {
     return { lastRunAt: null, horasAtras: null, stale: true }
   }
 }
+
+// ─── Governança de alertas — dashboard de saúde (Fase 2, ADMIN only) ──────────
+
+export type AlertGovernanceHealthRow = {
+  type: AlertType
+  label: string
+  ownerLabel: string
+  severity: 'ALTA' | 'MEDIA' | 'BAIXA'
+  criados: number
+  reconhecidos: number
+  /** % de reconhecimento (0–100). null quando não houve nenhum criado. */
+  taxaReconhecimento: number | null
+  /** Tempo médio criado→reconhecido em horas (dos reconhecidos). null se nenhum. */
+  tempoMedioHoras: number | null
+  /** true = taxa < 50% com >= 5 criados → o alerta está MAL DESENHADO. */
+  malDesenhado: boolean
+}
+
+/**
+ * Saúde da governança de alertas nos últimos 14 dias, por tipo. Guard de papel:
+ * dado operacional interno restrito a ADMIN (os demais recebem lista vazia — a
+ * seção some da tela sem vazar métrica de processo). Exclui TASK_AUTOMATION
+ * (canal das próprias escalações/meta-alertas — não é "alerta de negócio").
+ */
+export const getAlertGovernanceHealth = cache(async (
+  role: string,
+): Promise<AlertGovernanceHealthRow[]> => {
+  if (normalizeRole(role) !== 'ADMIN') return []
+
+  const since = new Date(Date.now() - 14 * 86_400_000)
+  const rows = await prisma.alert.findMany({
+    where: { createdAt: { gte: since }, type: { not: 'TASK_AUTOMATION' } },
+    select: { type: true, createdAt: true, acknowledgedAt: true },
+  })
+
+  const SEV_RANK: Record<'ALTA' | 'MEDIA' | 'BAIXA', number> = { ALTA: 0, MEDIA: 1, BAIXA: 2 }
+
+  const byType = new Map<AlertType, { criados: number; reconhecidos: number; somaHoras: number }>()
+  for (const r of rows) {
+    const acc = byType.get(r.type) ?? { criados: 0, reconhecidos: 0, somaHoras: 0 }
+    acc.criados++
+    if (r.acknowledgedAt) {
+      acc.reconhecidos++
+      acc.somaHoras += (new Date(r.acknowledgedAt).getTime() - new Date(r.createdAt).getTime()) / 3_600_000
+    }
+    byType.set(r.type, acc)
+  }
+
+  const result: AlertGovernanceHealthRow[] = []
+  for (const [type, acc] of byType) {
+    const gov = ALERT_GOVERNANCE[type]
+    const taxa = acc.criados > 0 ? Math.round((acc.reconhecidos / acc.criados) * 100) : null
+    result.push({
+      type,
+      label: ALERT_HEALTH_LABELS[type] ?? type,
+      ownerLabel: GOVERNANCE_ROLE_LABELS[gov.ownerRole],
+      severity: gov.severity,
+      criados: acc.criados,
+      reconhecidos: acc.reconhecidos,
+      taxaReconhecimento: taxa,
+      tempoMedioHoras: acc.reconhecidos > 0 ? Math.round((acc.somaHoras / acc.reconhecidos) * 10) / 10 : null,
+      malDesenhado: taxa !== null && taxa < 50 && acc.criados >= 5,
+    })
+  }
+
+  // Ordena: mal desenhados primeiro, depois por severidade, depois por volume.
+  return result.sort((a, b) => {
+    if (a.malDesenhado !== b.malDesenhado) return a.malDesenhado ? -1 : 1
+    const s = SEV_RANK[a.severity] - SEV_RANK[b.severity]
+    if (s !== 0) return s
+    return b.criados - a.criados
+  })
+})

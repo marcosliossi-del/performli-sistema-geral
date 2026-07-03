@@ -20,6 +20,7 @@ import { checkLeadFollowups } from '@/services/lead-followup-checker'
 import { escalateOverdueTasks, markOverdueTasks } from '@/services/task-escalation'
 import { detectSilentAtRiskClients } from '@/services/antichurn-monitor'
 import { runRetentionWatchdog } from '@/services/retention-watchdog'
+import { runAlertSlaWatchdog } from '@/services/alert-sla-watchdog'
 import { runReportDeliveryTracker } from '@/services/report-delivery-tracker'
 import { checkCheckins } from '@/services/checkin-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/services/weekly-goals-sync'
@@ -62,6 +63,7 @@ async function runDailySync() {
     churnRisk: { ok: false },
     antiChurnSilent: { ok: false },
     retentionWatchdog: { ok: false },
+    alertSlaWatchdog: { ok: false },
     reportDelivery: { ok: false },
     checkins: { ok: false },
     budgetWarnings: { ok: false },
@@ -219,6 +221,19 @@ async function runDailySync() {
     summary.retentionWatchdog = { ok: true, ...watchdogResult }
   } catch (err) {
     summary.retentionWatchdog = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // ── Step 5a2b: Governança de alertas — SLA com dente + circuit breaker.
+  //             Escala alertas não reconhecidos que estouraram o SLA e denuncia
+  //             tipos de alerta "gritando demais" (ruído sem sinal). ───────────
+  try {
+    const slaResult = await runAlertSlaWatchdog()
+    summary.alertSlaWatchdog = { ok: true, ...slaResult }
+  } catch (err) {
+    summary.alertSlaWatchdog = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     }
