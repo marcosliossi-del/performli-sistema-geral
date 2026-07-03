@@ -2,9 +2,10 @@ import { requireSession } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { Card } from '@/components/ui/card'
 import { Repeat, Pause, CircleCheck } from 'lucide-react'
-import { timeAgo } from '@/lib/utils'
+import { timeAgo, formatSaoPauloDateTime, saoPauloDateString } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ToggleRecurrenceButton } from '@/components/recorrencias/ToggleRecurrenceButton'
+import { shouldRunToday } from '@/services/recurrence-engine'
 import { redirect } from 'next/navigation'
 import type { RecurrenceFrequency } from '@prisma/client'
 
@@ -66,11 +67,54 @@ function scheduleLabel(rule: {
   }
 }
 
+// T-17: rótulos alinhados aos papéis que o MOTOR realmente resolve no fan-out
+// (GESTOR/MANAGER/CS/CRM/SUPERVISOR/HEAD). ADMIN/ANALYST não geram tarefas —
+// deixamos isso explícito para o admin não configurar uma regra que nunca roda.
 const ROLE_LABEL: Record<string, string> = {
-  ADMIN: 'Administrador',
-  CS: 'Sucesso do Cliente',
+  GESTOR: 'Gestor',
   MANAGER: 'Gestor',
-  ANALYST: 'Analista',
+  CS: 'Sucesso do Cliente',
+  CRM: 'CRM / Comercial',
+  SUPERVISOR: 'Supervisor',
+  HEAD: 'Head',
+  ADMIN: 'Administrador (não gera tarefas)',
+  ANALYST: 'Analista (não gera tarefas)',
+}
+
+// Papéis que o motor de recorrência sabe distribuir por cliente ativo.
+const FANOUT_ROLES = new Set(['GESTOR', 'MANAGER', 'CS', 'CRM', 'SUPERVISOR', 'HEAD'])
+
+type NextRunRule = {
+  frequency: RecurrenceFrequency
+  dayOfWeek: number | null
+  dayOfMonth: number | null
+  hour: number | null
+  minute: number | null
+  anchorDate: Date | null
+}
+
+/**
+ * T-30: próxima data concreta em que a regra vai disparar, calculada na parede
+ * de America/Sao_Paulo reusando a MESMA régua do cron (shouldRunToday). Varre os
+ * próximos ~370 dias procurando o primeiro que dispara com horário no futuro.
+ * Retorna null para frequências event-driven (POR_*) — não têm data agendada.
+ */
+function computeNextRun(rule: NextRunRule, now: Date = new Date()): Date | null {
+  if (String(rule.frequency).startsWith('POR_')) return null
+  const todayStr = saoPauloDateString(now)
+  const anchorNoon = new Date(`${todayStr}T12:00:00Z`)
+  const hh = rule.hour ?? 9
+  const mm = rule.minute ?? 0
+  for (let i = 0; i <= 370; i++) {
+    const dayStr = new Date(anchorNoon.getTime() + i * 86_400_000).toISOString().slice(0, 10)
+    const candidateNoon = new Date(`${dayStr}T12:00:00Z`)
+    if (!shouldRunToday(rule.frequency, rule.dayOfWeek, rule.dayOfMonth, rule.anchorDate, candidateNoon)) {
+      continue
+    }
+    const run = new Date(`${dayStr}T${pad(hh)}:${pad(mm)}:00-03:00`)
+    if (run.getTime() > now.getTime()) return run
+  }
+  return null
 }
 
 export default async function RecorrenciasPage() {
@@ -134,9 +178,22 @@ export default async function RecorrenciasPage() {
         <div className="space-y-3">
           {rules.map((rule) => {
             const generated = countMap.get(rule.id) ?? 0
-            const responsavel = rule.template?.defaultAssigneeRole
-              ? ROLE_LABEL[rule.template.defaultAssigneeRole] ?? rule.template.defaultAssigneeRole
+            const role = rule.template?.defaultAssigneeRole ?? null
+            const responsavel = role
+              ? ROLE_LABEL[role] ?? role
               : 'A definir na criação'
+            // T-17: papel que o motor não distribui → a regra não gera nada.
+            const roleGeraTarefas = role != null && FANOUT_ROLES.has(role)
+
+            // T-30: data real da próxima execução (SP), não mais texto fixo.
+            const nextRun = rule.active ? computeNextRun(rule) : null
+            const nextRunLabel = !rule.active
+              ? 'Pausada — não vai gerar'
+              : !roleGeraTarefas
+                ? 'Papel não gera tarefas — corrigir a regra'
+                : nextRun
+                  ? formatSaoPauloDateTime(nextRun)
+                  : 'Sob demanda (disparada por evento)'
 
             return (
               <Card
@@ -169,10 +226,7 @@ export default async function RecorrenciasPage() {
                         label="Última execução"
                         value={rule.lastRunAt ? timeAgo(new Date(rule.lastRunAt)) : 'Nunca rodou ainda'}
                       />
-                      <Field
-                        label="Próxima execução"
-                        value={rule.active ? 'No próximo ciclo agendado' : 'Pausada — não vai gerar'}
-                      />
+                      <Field label="Próxima execução" value={nextRunLabel} />
                       <Field
                         label="Tarefas geradas"
                         value={`${generated} tarefa${generated !== 1 ? 's' : ''}`}

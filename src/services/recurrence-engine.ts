@@ -16,7 +16,8 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import { getWeekRange } from '@/lib/utils'
+import { getWeekRange, saoPauloDateString, startOfTodaySaoPaulo } from '@/lib/utils'
+import { parseDateInput } from '@/lib/tasks/dateInput'
 import { statusIdFor } from '@/lib/tasks/statusMap'
 import type { TaskType, TaskPriority, TaskStatus } from '@prisma/client'
 
@@ -27,15 +28,41 @@ function quarterOfMonth(month0: number): number {
   return Math.floor(month0 / 3) + 1 // month0: 0-11 → Q1..Q4
 }
 
-function shouldRunToday(
+// T-18: agendamento calculado no fuso da operação (America/Sao_Paulo), NÃO no
+// fuso do servidor. Extrai a data-parede SP e deriva dia-da-semana/dia-do-mês
+// via meio-dia UTC do MESMO dia-calendário (imune a off-by-one).
+type SpParts = { year: number; month0: number; dom: number; dow: number; lastDay: number }
+
+function saoPauloParts(instant: Date): SpParts {
+  const ds = saoPauloDateString(instant) // 'YYYY-MM-DD' na parede de SP
+  const [y, m, d] = ds.split('-').map(Number)
+  const noon = new Date(`${ds}T12:00:00Z`)
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate() // último dia do mês
+  return { year: y, month0: m - 1, dom: d, dow: noon.getUTCDay(), lastDay }
+}
+
+// T-18: prazo (dueDate) ancorado na data-parede SP + n dias corridos, meio-dia
+// UTC (padrão spDatePlus/parseDateInput do resto do sistema). Evita o clone
+// nascer com prazo de ontem por diferença de fuso.
+function spDatePlus(days: number, now: Date): Date {
+  const anchor = new Date(`${saoPauloDateString(now)}T12:00:00Z`)
+  const target = new Date(anchor.getTime() + days * 86_400_000)
+  return parseDateInput(target.toISOString().slice(0, 10))
+}
+
+/**
+ * Verdadeiro se a regra dispara na data-parede SP de `now`. Exportado para a
+ * tela /recorrencias calcular a "próxima execução" real reusando EXATAMENTE a
+ * mesma régua do cron (T-30) — sem duplicar a lógica de agendamento.
+ */
+export function shouldRunToday(
   frequency: string,
   dayOfWeek: number | null,
   dayOfMonth: number | null,
   anchorDate: Date | null,
   now: Date,
 ): boolean {
-  const day = now.getDay() // 0=Dom..6=Sáb
-  const dom = now.getDate()
+  const { year, month0, dom, dow: day, lastDay } = saoPauloParts(now)
   switch (frequency) {
     case 'DIARIA': return true
     case 'DIA_UTIL': return day >= 1 && day <= 5
@@ -43,23 +70,47 @@ function shouldRunToday(
     case 'QUINZENAL':
     case 'DIA_DA_SEMANA': return day === (dayOfWeek ?? 1)
     case 'MENSAL':
-    case 'DIA_DO_MES': return dom === (dayOfMonth ?? 1)
+    case 'DIA_DO_MES': {
+      // T-18: clamp ao último dia do mês — dia 29/30/31 dispara no último dia de
+      // meses curtos (fev, abr, …) em vez de ser pulado silenciosamente.
+      const target = Math.min(dayOfMonth ?? 1, lastDay)
+      return dom === target
+    }
     case 'TRIMESTRAL': {
       // Dispara no dia-âncora do ciclo de 90 dias. Se houver anchorDate, dispara
       // quando o dia-do-mês bate com o da âncora E estamos num mês de início de
       // trimestre relativo à âncora. Sem âncora: trata como MENSAL no dia 1, mas
       // só nos meses que abrem trimestre (jan/abr/jul/out → month0 % 3 === 0).
       if (anchorDate) {
-        const anchorDom = anchorDate.getDate()
+        const ap = saoPauloParts(anchorDate)
+        const anchorDom = Math.min(ap.dom, lastDay) // clamp igual ao mensal
         if (dom !== anchorDom) return false
-        const monthsDiff =
-          (now.getFullYear() - anchorDate.getFullYear()) * 12 +
-          (now.getMonth() - anchorDate.getMonth())
+        const monthsDiff = (year - ap.year) * 12 + (month0 - ap.month0)
         return monthsDiff >= 0 && monthsDiff % 3 === 0
       }
-      return dom === (dayOfMonth ?? 1) && now.getMonth() % 3 === 0
+      const target = Math.min(dayOfMonth ?? 1, lastDay)
+      return dom === target && month0 % 3 === 0
     }
     default: return false // POR_* são event-driven (BLOCO 6)
+  }
+}
+
+/**
+ * T-16/T-17: registra UMA falha por regra por dia (dedupe determinístico por
+ * recurrenceId + reason + janela do dia SP). Evita floodar o AutomationLog a
+ * cada rodada do cron, mas garante que a série parada aparece no radar. NÃO lança.
+ */
+async function logRuleFailureDaily(recurrenceId: string, reason: string, now: Date): Promise<void> {
+  try {
+    const dayStart = startOfTodaySaoPaulo(now)
+    const existing = await prisma.automationLog.findFirst({
+      where: { recurrenceId, status: 'FALHA', reason, createdAt: { gte: dayStart } },
+      select: { id: true },
+    })
+    if (existing) return
+    await prisma.automationLog.create({ data: { recurrenceId, status: 'FALHA', reason } })
+  } catch {
+    // best-effort: o log de falha nunca pode derrubar o motor.
   }
 }
 
@@ -183,9 +234,8 @@ async function createTaskForClientRule(
       return 'skipped'
     }
 
-    const due = tpl.relativeDueDays != null
-      ? new Date(now.getTime() + tpl.relativeDueDays * 86_400_000)
-      : null
+    // T-18: prazo ancorado na parede SP (meio-dia UTC), não no fuso do servidor.
+    const due = tpl.relativeDueDays != null ? spDatePlus(tpl.relativeDueDays, now) : null
 
     const task = await prisma.task.create({
       data: {
@@ -251,7 +301,18 @@ export async function runTaskRecurrences(opts: { force?: boolean } = {}): Promis
     // derrubar o processamento das demais recorrências.
     try {
       const tpl = rule.template
-      if (!tpl || !tpl.active) continue
+      const ruleLabel = tpl?.name ?? 'sem modelo'
+      // T-16: regra ativa apontando para modelo desativado/inexistente para de
+      // gerar tarefas em silêncio. Registra 1x/dia e NÃO avança lastRunAt (a
+      // série fica "parada" no radar de rotinas).
+      if (!tpl || !tpl.active) {
+        await logRuleFailureDaily(
+          rule.id,
+          `Regra "${ruleLabel}" aponta para modelo de tarefa ${tpl ? 'desativado' : 'inexistente'} — série parada, nenhuma tarefa será criada`,
+          now,
+        )
+        continue
+      }
       if (
         !opts.force &&
         !shouldRunToday(rule.frequency, rule.dayOfWeek, rule.dayOfMonth, rule.anchorDate ?? null, now)
@@ -260,33 +321,57 @@ export async function runTaskRecurrences(opts: { force?: boolean } = {}): Promis
       }
 
       const role = tpl.defaultAssigneeRole
-      // Fan-out por cliente ativo para QUALQUER papel suportado.
-      if (role && CLIENT_FANOUT_ROLES.has(role)) {
-        if (!fallbacks) fallbacks = await loadRoleFallbacks()
-
-        const clients = await prisma.client.findMany({
-          where: { status: 'ACTIVE' },
-          select: {
-            id: true,
-            name: true,
-            gestorId: true,
-            csId: true,
-            supervisorId: true,
-            headId: true,
-            crmId: true,
-            assignments: { where: { isPrimary: true }, select: { userId: true }, take: 1 },
-          },
-        })
-
-        for (const c of clients) {
-          const outcome = await createTaskForClientRule(rule, tpl, c, fallbacks, now)
-          if (outcome === 'created') created++
-          else if (outcome === 'skipped') skipped++
-          else failed++
-        }
+      // T-17: papel que o fan-out não sabe resolver (ADMIN/ANALYST/nulo) gera
+      // ZERO tarefas silenciosamente. Registra 1x/dia e NÃO avança lastRunAt.
+      if (!role || !CLIENT_FANOUT_ROLES.has(role)) {
+        await logRuleFailureDaily(
+          rule.id,
+          `Papel "${role ?? 'não definido'}" não gera tarefas por cliente — corrigir a regra "${ruleLabel}"`,
+          now,
+        )
+        continue
       }
 
-      await prisma.taskRecurrenceRule.update({ where: { id: rule.id }, data: { lastRunAt: now } })
+      // Fan-out por cliente ativo. Contadores POR REGRA para o lastRunAt honesto.
+      if (!fallbacks) fallbacks = await loadRoleFallbacks()
+
+      const clients = await prisma.client.findMany({
+        where: { status: 'ACTIVE' },
+        select: {
+          id: true,
+          name: true,
+          gestorId: true,
+          csId: true,
+          supervisorId: true,
+          headId: true,
+          crmId: true,
+          assignments: { where: { isPrimary: true }, select: { userId: true }, take: 1 },
+        },
+      })
+
+      let ruleCreated = 0
+      let ruleFailed = 0
+      for (const c of clients) {
+        const outcome = await createTaskForClientRule(rule, tpl, c, fallbacks, now)
+        if (outcome === 'created') { created++; ruleCreated++ }
+        else if (outcome === 'skipped') { skipped++ }
+        else { failed++; ruleFailed++ }
+      }
+
+      // T-10: lastRunAt HONESTO. Só marca "rodou" se a regra criou ≥1 tarefa OU
+      // rodou sem NENHUMA falha (idempotência já resolvida / zero clientes = nada
+      // a fazer, e isso é sucesso). Se todas as tentativas falharam (0 criadas,
+      // ≥1 falha), a série pode estar morta: NÃO avança lastRunAt — o sinal
+      // "rotina parada" (dal) passa a refletir a realidade — e registra a falha.
+      if (ruleCreated >= 1 || ruleFailed === 0) {
+        await prisma.taskRecurrenceRule.update({ where: { id: rule.id }, data: { lastRunAt: now } })
+      } else {
+        await logRuleFailureDaily(
+          rule.id,
+          `Regra "${ruleLabel}": ${ruleFailed} falha(s), 0 tarefa(s) criada(s) — série pode estar morta`,
+          now,
+        )
+      }
     } catch (err) {
       failed++
       console.error(

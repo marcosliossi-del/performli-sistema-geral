@@ -81,6 +81,14 @@ export default async function SuportePage() {
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
   })
 
+  // T-12: contador honesto — quantas demandas estão em status FORA das 6 colunas
+  // padrão do board. Com a coluna catch-all "Outros" elas continuam visíveis, e
+  // o header explicita quantas exigem atenção fora do fluxo normal.
+  const BOARD_COLUMN_STATUSES = new Set<string>([
+    'A_FAZER', 'EM_ANDAMENTO', 'EM_VALIDACAO', 'AGUARDANDO_CLIENTE', 'AJUSTES_SOLICITADOS', 'CONCLUIDO',
+  ])
+  const otherStatusCount = cards.filter((c) => !BOARD_COLUMN_STATUSES.has(c.status)).length
+
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-start justify-between mb-6 flex-shrink-0 gap-4">
@@ -94,7 +102,9 @@ export default async function SuportePage() {
               As tarefas de suporte diário da agência: responsável, prazo, prioridade e cliente em uma lista.
             </p>
             <p className="text-[11px] text-[#87919E]/70 mt-1">
-              {cards.length} demanda{cards.length !== 1 ? 's' : ''} em aberto · última movimentação em {stamp}
+              {cards.length} demanda{cards.length !== 1 ? 's' : ''} em aberto
+              {otherStatusCount > 0 && ` · ${otherStatusCount} em outros status`}
+              {' · '}última movimentação em {stamp}
             </p>
           </div>
         </div>

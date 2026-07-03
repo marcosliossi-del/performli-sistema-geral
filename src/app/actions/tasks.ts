@@ -268,6 +268,19 @@ export async function updateTaskStatus(
         })
       } catch (err) {
         console.error('[recur:onComplete] falha ao regenerar tarefa recorrente:', err)
+        // T-11: clone on-complete que falha não pode ser invisível — sem isto a
+        // série de recorrência "some" silenciosamente (só sobrava console.error).
+        await prisma.automationLog
+          .create({
+            data: {
+              clientId: current.clientId ?? null,
+              status: 'FALHA',
+              reason: `Recorrência ao concluir não regenerou a próxima tarefa (origem ${taskId}): ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            },
+          })
+          .catch(() => {})
       }
     }
   }

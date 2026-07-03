@@ -30,6 +30,22 @@ const COLUMNS: { key: TaskStatus; label: string; color: string }[] = [
   { key: 'CONCLUIDO',          label: 'Concluído',          color: '#22C55E' },
 ]
 
+const COLUMN_KEYS = new Set<TaskStatus>(COLUMNS.map((c) => c.key))
+
+// T-12: rótulos operacionais dos status que NÃO têm coluna própria mas podem
+// aparecer numa demanda de suporte. Sem esta coluna catch-all eles somem do
+// board (demanda engolida). Card fica arrastável para uma das colunas normais.
+const OTHER_STATUS_LABEL: Partial<Record<TaskStatus, string>> = {
+  AGUARDANDO_CS: 'Aguardando CS',
+  AGUARDANDO_GESTOR: 'Aguardando gestor',
+  BLOQUEADO: 'Bloqueado',
+  ATRASADO: 'Atrasado',
+}
+
+function otherStatusLabel(status: TaskStatus): string {
+  return OTHER_STATUS_LABEL[status] ?? status
+}
+
 const DAY_MS = 86_400_000
 
 // SLA leve: aguardando cliente cobra em 3 dias; demais colunas alertam em 5.
@@ -112,6 +128,8 @@ export function SupportBoard({ initialCards }: Props) {
   }
 
   const byStatus = (status: TaskStatus) => cards.filter((c) => c.status === status)
+  // T-12: tudo que não cai numa das 6 colunas vai para "Outros" (catch-all).
+  const otherCards = cards.filter((c) => !COLUMN_KEYS.has(c.status))
 
   return (
     <div className="flex gap-4 overflow-x-auto pb-4 flex-1 min-h-0">
@@ -163,6 +181,37 @@ export function SupportBoard({ initialCards }: Props) {
           </div>
         )
       })}
+
+      {/* T-12: coluna catch-all "Outros" — só renderiza quando há demanda em
+          status sem coluna própria. Não aceita drop (não é um estado único);
+          serve para tornar a demanda VISÍVEL e permitir arrastá-la de volta para
+          uma coluna operacional. */}
+      {otherCards.length > 0 && (
+        <div className="flex flex-col flex-shrink-0 w-72 rounded-xl border border-dashed border-[#F59E0B]/40 bg-[#1B2B3A]/40">
+          <div className="px-4 py-3 border-b border-[#38435C] flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#F59E0B' }} />
+              <span className="text-sm font-semibold text-[#F59E0B]">Outros status</span>
+            </div>
+            <span className="text-xs text-[#87919E] bg-[#38435C]/60 px-2 py-0.5 rounded-full">
+              {otherCards.length}
+            </span>
+          </div>
+          <div className="flex flex-col gap-2 p-3 overflow-y-auto flex-1">
+            <p className="text-[10px] text-[#87919E]/80 mb-1">
+              Fora do fluxo padrão de suporte. Arraste para a coluna certa para retomar.
+            </p>
+            {otherCards.map((card) => (
+              <SupportCard
+                key={card.id}
+                card={card}
+                onDragStart={() => handleDragStart(card.id)}
+                statusLabel={otherStatusLabel(card.status)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -170,9 +219,11 @@ export function SupportBoard({ initialCards }: Props) {
 function SupportCard({
   card,
   onDragStart,
+  statusLabel,
 }: {
   card: SupportCardData
   onDragStart: () => void
+  statusLabel?: string
 }) {
   const warning = slaWarning(card.status, card.updatedAt)
   const isClientToUs = card.supportDirection === 'CLIENTE_PARA_NOS'
@@ -185,6 +236,11 @@ function SupportCard({
         warning ? 'border-[#F59E0B]/50' : 'border-[#38435C]'
       }`}
     >
+      {statusLabel && (
+        <span className="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full mb-2 bg-[#F59E0B]/12 text-[#F59E0B]">
+          {statusLabel}
+        </span>
+      )}
       <div className="flex items-start justify-between gap-2 mb-2">
         <p className="text-sm font-semibold text-[#EBEBEB] line-clamp-2 flex-1">
           {card.title}
