@@ -61,21 +61,45 @@ export function shouldRunToday(
   dayOfMonth: number | null,
   anchorDate: Date | null,
   now: Date,
+  // Migração ClickUp: múltiplos dias da semana (ex.: [2,5]) e prorrogação p/ dia
+  // útil. Opcionais → chamadores legados mantêm o comportamento anterior.
+  daysOfWeek: number[] = [],
+  rollToBusinessDay = false,
 ): boolean {
   const { year, month0, dom, dow: day, lastDay } = saoPauloParts(now)
+
+  // Dia-do-mês alvo com clamp ao último dia do mês e, se rollToBusinessDay,
+  // prorrogação p/ o próximo dia útil quando o alvo cai em sáb/dom (regra 4.7).
+  // Com dayOfMonth=1 + roll => "primeiro dia útil do mês".
+  const monthTarget = (base: number): number => {
+    let d = Math.min(base, lastDay)
+    if (!rollToBusinessDay) return d
+    const wd = (day: number): number => new Date(Date.UTC(year, month0, day, 12)).getUTCDay()
+    // Avança p/ o próximo dia útil (sáb/dom → seg). Se ultrapassar o fim do mês
+    // (ex.: último dia cai no sábado), recua p/ o último dia útil — nunca perde
+    // o disparo do mês.
+    while (d <= lastDay && (wd(d) === 0 || wd(d) === 6)) d++
+    if (d > lastDay) {
+      d = lastDay
+      while (d >= 1 && (wd(d) === 0 || wd(d) === 6)) d--
+    }
+    return d
+  }
+
   switch (frequency) {
     case 'DIARIA': return true
     case 'DIA_UTIL': return day >= 1 && day <= 5
     case 'SEMANAL':
     case 'QUINZENAL':
-    case 'DIA_DA_SEMANA': return day === (dayOfWeek ?? 1)
+    case 'DIA_DA_SEMANA':
+      // daysOfWeek tem precedência: permite 2x/semana (terça+sexta) numa só regra.
+      if (daysOfWeek.length > 0) return daysOfWeek.includes(day)
+      return day === (dayOfWeek ?? 1)
     case 'MENSAL':
-    case 'DIA_DO_MES': {
+    case 'DIA_DO_MES':
       // T-18: clamp ao último dia do mês — dia 29/30/31 dispara no último dia de
       // meses curtos (fev, abr, …) em vez de ser pulado silenciosamente.
-      const target = Math.min(dayOfMonth ?? 1, lastDay)
-      return dom === target
-    }
+      return dom === monthTarget(dayOfMonth ?? 1)
     case 'TRIMESTRAL': {
       // Dispara no dia-âncora do ciclo de 90 dias. Se houver anchorDate, dispara
       // quando o dia-do-mês bate com o da âncora E estamos num mês de início de
@@ -83,13 +107,11 @@ export function shouldRunToday(
       // só nos meses que abrem trimestre (jan/abr/jul/out → month0 % 3 === 0).
       if (anchorDate) {
         const ap = saoPauloParts(anchorDate)
-        const anchorDom = Math.min(ap.dom, lastDay) // clamp igual ao mensal
-        if (dom !== anchorDom) return false
+        if (dom !== monthTarget(ap.dom)) return false
         const monthsDiff = (year - ap.year) * 12 + (month0 - ap.month0)
         return monthsDiff >= 0 && monthsDiff % 3 === 0
       }
-      const target = Math.min(dayOfMonth ?? 1, lastDay)
-      return dom === target && month0 % 3 === 0
+      return dom === monthTarget(dayOfMonth ?? 1) && month0 % 3 === 0
     }
     default: return false // POR_* são event-driven (BLOCO 6)
   }
@@ -114,8 +136,11 @@ async function logRuleFailureDaily(recurrenceId: string, reason: string, now: Da
   }
 }
 
-function windowKey(frequency: string, now: Date): string {
+function windowKey(frequency: string, now: Date, daysOfWeek: number[] = []): string {
   if (frequency === 'SEMANAL' || frequency === 'QUINZENAL' || frequency === 'DIA_DA_SEMANA') {
+    // Multi-dia (ex.: terça+sexta): a janela é POR DIA, senão a 2ª ocorrência da
+    // semana colidiria na mesma idempotencyKey e seria descartada como duplicada.
+    if (daysOfWeek.length > 0) return saoPauloDateString(now)
     return getWeekRange(now).start.toISOString().slice(0, 10)
   }
   if (frequency === 'MENSAL' || frequency === 'DIA_DO_MES') {
@@ -179,6 +204,7 @@ function resolveAssignee(role: string, c: FanoutClient, fb: RoleFallbacks): stri
 type RuleRef = {
   id: string
   frequency: string
+  daysOfWeek: number[]
 }
 
 type TemplateWithSteps = {
@@ -193,6 +219,8 @@ type TemplateWithSteps = {
   slaHours: number | null
   areaId: string | null
   popId: string | null
+  enforceChecklist: boolean
+  tags: string[]
   steps: { label: string; required: boolean; order: number }[]
 }
 
@@ -224,7 +252,7 @@ async function createTaskForClientRule(
       return 'failed'
     }
 
-    const wkey = windowKey(rule.frequency, now)
+    const wkey = windowKey(rule.frequency, now, rule.daysOfWeek)
     const idempotencyKey = `${tpl.id}:${client.id}:${wkey}`
     const existing = await prisma.task.findUnique({ where: { idempotencyKey }, select: { id: true } })
     if (existing) {
@@ -255,6 +283,9 @@ async function createTaskForClientRule(
         dueDate: due,
         requestedAt: now,
         idempotencyKey,
+        // Migração ClickUp: checklist bloqueante (regra 4.5) + etiquetas do template.
+        enforceChecklist: tpl.enforceChecklist,
+        tags: tpl.tags,
         ...(tpl.steps.length
           ? { checklist: { create: tpl.steps.map((s) => ({ label: s.label, required: s.required, order: s.order })) } }
           : {}),
@@ -316,7 +347,10 @@ export async function runTaskRecurrences(opts: { force?: boolean } = {}): Promis
       }
       if (
         !opts.force &&
-        !shouldRunToday(rule.frequency, rule.dayOfWeek, rule.dayOfMonth, rule.anchorDate ?? null, now)
+        !shouldRunToday(
+          rule.frequency, rule.dayOfWeek, rule.dayOfMonth, rule.anchorDate ?? null, now,
+          rule.daysOfWeek, rule.rollToBusinessDay,
+        )
       ) {
         continue
       }
@@ -337,7 +371,9 @@ export async function runTaskRecurrences(opts: { force?: boolean } = {}): Promis
       if (!fallbacks) fallbacks = await loadRoleFallbacks()
 
       const clients = await prisma.client.findMany({
-        where: { status: 'ACTIVE' },
+        // Escopo por segmento (migração ECOMMERCE): regra com businessType só faz
+        // fan-out p/ clientes daquele segmento; NULL = todos (comportamento legado).
+        where: { status: 'ACTIVE', ...(rule.businessType ? { businessType: rule.businessType } : {}) },
         select: {
           id: true,
           name: true,
@@ -412,6 +448,7 @@ export async function materializeRecurringTasksForClient(
       id: true,
       name: true,
       status: true,
+      businessType: true,
       gestorId: true,
       csId: true,
       supervisorId: true,
@@ -457,12 +494,77 @@ export async function materializeRecurringTasksForClient(
     const role = tpl.defaultAssigneeRole
     if (!role || !CLIENT_FANOUT_ROLES.has(role)) continue
 
+    // Escopo por segmento: regra ECOMMERCE não materializa em cliente LOCAL/B2B.
+    if (rule.businessType && rule.businessType !== client.businessType) continue
+
     if (
       opts.onlyDueToday &&
-      !shouldRunToday(rule.frequency, rule.dayOfWeek, rule.dayOfMonth, rule.anchorDate ?? null, now)
+      !shouldRunToday(
+        rule.frequency, rule.dayOfWeek, rule.dayOfMonth, rule.anchorDate ?? null, now,
+        rule.daysOfWeek, rule.rollToBusinessDay,
+      )
     ) {
       continue
     }
+
+    const outcome = await createTaskForClientRule(rule, tpl, client, fallbacks, now)
+    if (outcome === 'created') created++
+    else if (outcome === 'skipped') skipped++
+    else failed++
+  }
+
+  return { created, skipped, failed }
+}
+
+/**
+ * Materializa AGORA, FORÇADO (ignora shouldRunToday), um conjunto específico de
+ * regras — inclusive INATIVAS — para UM cliente. Usado no rollout gated da
+ * migração ClickUp: cria as 16 recorrentes ECOMMERCE só na Lalluzi para a
+ * auditoria humana (GATE 1), antes de ativar a série para toda a carteira.
+ *
+ * Respeita o escopo por segmento (regra ECOMMERCE só materializa em cliente
+ * ECOMMERCE) e a idempotência por janela (rodar 2x não duplica). NÃO lança.
+ */
+export async function materializeRulesForClient(
+  clientId: string,
+  ruleIds: string[],
+): Promise<{ created: number; skipped: number; failed: number }> {
+  const now = new Date()
+  if (ruleIds.length === 0) return { created: 0, skipped: 0, failed: 0 }
+
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      businessType: true,
+      gestorId: true,
+      csId: true,
+      supervisorId: true,
+      headId: true,
+      crmId: true,
+      assignments: { where: { isPrimary: true }, select: { userId: true }, take: 1 },
+    },
+  })
+  if (!client || client.status !== 'ACTIVE') return { created: 0, skipped: 0, failed: 0 }
+
+  const rules = await prisma.taskRecurrenceRule.findMany({
+    where: { id: { in: ruleIds }, archivedAt: null },
+    include: { template: { include: { steps: true } } },
+  })
+
+  const fallbacks = await loadRoleFallbacks()
+  let created = 0
+  let skipped = 0
+  let failed = 0
+
+  for (const rule of rules) {
+    const tpl = rule.template
+    if (!tpl || !tpl.active) continue
+    const role = tpl.defaultAssigneeRole
+    if (!role || !CLIENT_FANOUT_ROLES.has(role)) continue
+    if (rule.businessType && rule.businessType !== client.businessType) continue
 
     const outcome = await createTaskForClientRule(rule, tpl, client, fallbacks, now)
     if (outcome === 'created') created++

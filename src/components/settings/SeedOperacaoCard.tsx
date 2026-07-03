@@ -312,6 +312,45 @@ export function SeedOperacaoCard() {
     }
   }
 
+  const [ecomLalluzi, setEcomLalluzi] = useState<{ cliente: string; created: number; skipped: number; failed: number } | null>(null)
+  const [ecomAtivar, setEcomAtivar] = useState<{ regrasAtivadas: number; clientsProcessed: number; created: number; skipped: number; failed: number } | null>(null)
+  const [confirmAtivarEcom, setConfirmAtivarEcom] = useState(false)
+
+  async function runMaterializarLalluzi() {
+    setLoading(true)
+    setEcomLalluzi(null)
+    try {
+      const res = await post('?phase=materializar-lalluzi-ecom')
+      setEcomLalluzi({ cliente: res.cliente, created: res.created ?? 0, skipped: res.skipped ?? 0, failed: res.failed ?? 0 })
+      toast(`16 recorrentes materializadas na ${res.cliente}: ${res.created ?? 0} criada(s), ${res.skipped ?? 0} já existiam.`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível materializar na Lalluzi.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function runAtivarEcom() {
+    setLoading(true)
+    setEcomAtivar(null)
+    try {
+      const res = await post('?phase=ativar-ecom-recorrencias')
+      setEcomAtivar({
+        regrasAtivadas: res.regrasAtivadas ?? 0,
+        clientsProcessed: res.clientsProcessed ?? 0,
+        created: res.created ?? 0,
+        skipped: res.skipped ?? 0,
+        failed: res.failed ?? 0,
+      })
+      setConfirmAtivarEcom(false)
+      toast(`Recorrências ECOMMERCE ativadas (${res.regrasAtivadas ?? 0}) em ${res.clientsProcessed ?? 0} cliente(s): ${res.created ?? 0} tarefa(s) criada(s).`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível ativar as recorrências ECOMMERCE.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function runWipeAllTasks() {
     setLoading(true)
     setWipeResult(null)
@@ -385,7 +424,7 @@ export function SeedOperacaoCard() {
   return (
     <div>
       <p className="text-xs text-[#87919E] mb-4">
-        Cria (sem duplicar) o time real, os 15 templates de tarefas recorrentes e suas
+        Cria (sem duplicar) o time real, os templates de tarefas recorrentes e suas
         recorrências. O <strong>backfill</strong> gera as 15 tarefas fixas para cada cliente
         ativo de hoje, com o responsável certo (gestor, CS, CRM). Processa em lotes — pode
         levar alguns segundos. Pode rodar mais de uma vez sem duplicar.
@@ -776,6 +815,79 @@ export function SeedOperacaoCard() {
                 {JSON.stringify(backtest, null, 2)}
               </pre>
             </details>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 border-t border-[#38435C] pt-4">
+        <p className="text-xs font-semibold text-[#EBEBEB] mb-1">Migração ClickUp · 16 recorrentes de e-commerce</p>
+        <p className="text-xs text-[#87919E] mb-3">
+          Réplica fiel das 16 rotinas recorrentes (NPS, check-ins, otimização, relatórios, CRM…).
+          As regras já existem <strong>inativas</strong>. Passo 1: materialize só na <strong>Lalluzi</strong> e
+          audite. Passo 2 (após sua conferência): ative e replique para <strong>todos os clientes ECOMMERCE</strong>.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={runMaterializarLalluzi}
+            disabled={loading}
+            className="flex items-center gap-2 text-xs font-semibold text-[#0A1E2C] bg-[#95BBE2] rounded-lg px-3 py-2 transition-colors hover:bg-[#95BBE2]/90 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+            1 · Materializar 16 na Lalluzi (auditoria)
+          </button>
+          {confirmAtivarEcom ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={runAtivarEcom}
+                disabled={loading}
+                className="flex items-center gap-2 text-xs font-semibold text-white bg-[#34c97a] rounded-lg px-3 py-2 transition-colors hover:bg-[#34c97a]/90 disabled:opacity-50"
+              >
+                {loading ? <Loader2 size={13} className="animate-spin" /> : null}
+                Confirmar: ativar p/ todos ECOMMERCE
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmAtivarEcom(false)}
+                disabled={loading}
+                className="text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+              >
+                Voltar
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmAtivarEcom(true)}
+              disabled={loading}
+              className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+            >
+              {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+              2 · Ativar + replicar p/ todos ECOMMERCE
+            </button>
+          )}
+        </div>
+
+        {ecomLalluzi && (
+          <div className="mt-3 text-xs text-[#87919E] border-t border-[#38435C]/60 pt-2">
+            <p>
+              {ecomLalluzi.cliente}: <span className="text-[#EBEBEB]">{ecomLalluzi.created}</span> tarefa(s) criada(s)
+              {' · '}já existiam: <span className="text-[#EBEBEB]">{ecomLalluzi.skipped}</span>
+              {ecomLalluzi.failed > 0 && <> · falhas: <span className="text-[#EF4444]">{ecomLalluzi.failed}</span></>}
+              {'. '}Confira em <a href="/operacional" className="text-[#95BBE2]">Operacional</a> filtrando por Lalluzi.
+            </p>
+          </div>
+        )}
+        {ecomAtivar && (
+          <div className="mt-3 text-xs text-[#87919E] border-t border-[#38435C]/60 pt-2">
+            <p>
+              Regras ativadas: <span className="text-[#EBEBEB]">{ecomAtivar.regrasAtivadas}</span>
+              {' · '}clientes: <span className="text-[#EBEBEB]">{ecomAtivar.clientsProcessed}</span>
+              {' · '}tarefas criadas: <span className="text-[#EBEBEB]">{ecomAtivar.created}</span>
+              {' · '}já existiam: <span className="text-[#EBEBEB]">{ecomAtivar.skipped}</span>
+              {ecomAtivar.failed > 0 && <> · falhas: <span className="text-[#EF4444]">{ecomAtivar.failed}</span></>}
+            </p>
           </div>
         )}
       </div>
