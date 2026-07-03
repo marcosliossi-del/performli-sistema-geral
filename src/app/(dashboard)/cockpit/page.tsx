@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { requireSession, getCockpitData, getCheckinStats, getCronHealth, getDashboardData } from '@/lib/dal'
+import { requireSession, getCockpitData, getCheckinStats, getCronHealth, getDashboardData, getCockpitChurnExposure } from '@/lib/dal'
+import { ChurnExposureSection } from '@/components/cockpit/ChurnExposureSection'
 import { LastUpdatedBadge } from '@/components/cockpit/LastUpdatedBadge'
 import { CronHealthBanner } from '@/components/cockpit/CronHealthBanner'
 import { OperationalCard } from '@/components/cockpit/OperationalCard'
@@ -64,11 +65,12 @@ function SectionHeader({ title, hint }: { title: string; hint?: string }) {
 export default async function CockpitPage() {
   const { userId, role } = await requireSession()
   // Tudo em UM Promise.all — nenhum N+1, loaders já existentes.
-  const [data, checkins, cronHealth, dashboard] = await Promise.all([
+  const [data, checkins, cronHealth, dashboard, churnExposure] = await Promise.all([
     getCockpitData(userId, role),
     getCheckinStats(userId, role),
     getCronHealth(role),
     getDashboardData(userId, role),
+    getCockpitChurnExposure(role),
   ])
 
   const { clients, alerts, oscillationAlerts, lastSyncAt } = dashboard
@@ -254,6 +256,10 @@ export default async function CockpitPage() {
           <ClientHealthGrid clients={clients} />
         </div>
       </section>
+
+      {/* ─── 2b. EXPOSIÇÃO A CHURN (PROVISÓRIO — informativo) ─────────────── */}
+      {/* Gate = papéis de visão ampla (loader retorna null → seção some). */}
+      {churnExposure && <ChurnExposureSection data={churnExposure} />}
 
       {/* ─── 3. MINHA OPERAÇÃO ───────────────────────────────────────────── */}
       <section className="space-y-3">

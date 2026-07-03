@@ -6,6 +6,7 @@ import { syncAllNuvemshopAccounts } from '@/services/nuvemshop/sync'
 import { recalculateAllClientsHealth } from '@/services/health-scorer'
 import { detectOscillationsForAll } from '@/services/oscillation-detector'
 import { scoreAllClientsChurnRisk } from '@/services/churn-scorer'
+import { scoreAllClientsChurnRiskV2, ensureBacktestRerunTask } from '@/services/churn-scorer-v2'
 import { checkBudgetWarnings } from '@/services/budget-monitor'
 import { generateAllWeeklyReports } from '@/services/weekly-report-generator'
 import { generateAllWeeklyChecklists } from '@/services/weekly-checklist-generator'
@@ -188,10 +189,29 @@ async function runDailySync() {
   // ── Step 5: Churn risk scoring ─────────────────────────────────────────────
   try {
     const churnResult = await scoreAllClientsChurnRisk()
+    // v2 INFORMATIVO logo após o v1, no MESMO step: enriquece factors.v2 sem
+    // tocar no score v1 nem disparar automação (FASE 1.4-PROVISÓRIA). Isolado
+    // para que uma falha do v2 não invalide o resultado do v1.
+    let churnV2: { enriched: number; failed: number } | { error: string }
+    try {
+      const v2Result = await scoreAllClientsChurnRiskV2()
+      churnV2 = { enriched: v2Result.enriched, failed: v2Result.failed }
+    } catch (errV2) {
+      churnV2 = { error: errV2 instanceof Error ? errV2.message : String(errV2) }
+    }
+    // Mecanismo idempotente de reexecução do backtest (~out/2026).
+    let backtestRerunTask: { created: boolean; reason: string } | { error: string }
+    try {
+      backtestRerunTask = await ensureBacktestRerunTask()
+    } catch (errTask) {
+      backtestRerunTask = { error: errTask instanceof Error ? errTask.message : String(errTask) }
+    }
     summary.churnRisk = {
       ok: true,
       clientsProcessed: churnResult.clientsProcessed,
       avgScore: churnResult.avgScore,
+      v2: churnV2,
+      backtestRerunTask,
     }
   } catch (err) {
     summary.churnRisk = {
