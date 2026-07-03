@@ -82,6 +82,31 @@ async function runDailySync() {
     contractExpiry:   { ok: false },
   }
 
+  // ── Step 0: Asaas financeiro PRIMEIRO ──────────────────────────────────────
+  // A DRE depende deste sync diário. Roda ANTES da cadeia pesada (syncs de
+  // marketing + radares de churn): a função tem teto de 300s e, no fim da fila,
+  // o Asaas era morto pelo timeout antes de rodar (última sync ficava dias
+  // atrás). Financeiro é leve e independente — rodando primeiro, completa sempre.
+  try {
+    const asaasResult = await syncAsaasData()
+    summary.asaas = { ok: true, ...asaasResult }
+    await recordCronHeartbeat('ASAAS') // marca a última sincronização financeira bem-sucedida
+  } catch (err) {
+    summary.asaas = { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+  try {
+    const reconcileResult = await reconcileAsaasTasks()
+    summary.asaasReconcile = { ok: true, ...reconcileResult }
+  } catch (err) {
+    summary.asaasReconcile = { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+  try {
+    const inadResult = await checkInadimplencia()
+    summary.inadimplencia = { ok: true, ...inadResult }
+  } catch (err) {
+    summary.inadimplencia = { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+
   // ── Step 1: Sync Meta Ads ──────────────────────────────────────────────────
   try {
     const metaResults = await syncAllMetaAccounts()
@@ -322,29 +347,8 @@ async function runDailySync() {
     }
   }
 
-  // ── Step 5b: Sync Asaas financial data ────────────────────────────────────
-  try {
-    const asaasResult = await syncAsaasData()
-    summary.asaas = { ok: true, ...asaasResult }
-  } catch (err) {
-    summary.asaas = { ok: false, error: err instanceof Error ? err.message : String(err) }
-  }
-
-  // ── Step 5b.1: Asaas — concilia faturas ↔ tasks de cobrança (após o sync) ──
-  try {
-    const reconcileResult = await reconcileAsaasTasks()
-    summary.asaasReconcile = { ok: true, ...reconcileResult }
-  } catch (err) {
-    summary.asaasReconcile = { ok: false, error: err instanceof Error ? err.message : String(err) }
-  }
-
-  // ── Step 5c: Inadimplência — régua de cobrança + cliente sem cobrança ─────
-  try {
-    const inadResult = await checkInadimplencia()
-    summary.inadimplencia = { ok: true, ...inadResult }
-  } catch (err) {
-    summary.inadimplencia = { ok: false, error: err instanceof Error ? err.message : String(err) }
-  }
+  // (Asaas sync + conciliação + inadimplência foram movidos para o Step 0, no
+  //  topo — antes eram mortos pelo timeout no fim da fila.)
 
   // ── Step 5d: CAP-01 — follow-up comercial de leads quentes sem contato ─────
   try {
