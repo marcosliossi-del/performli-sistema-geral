@@ -24,6 +24,7 @@ import { syncWeeklyGoalsFromMonthly } from '@/services/weekly-goals-sync'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
 import { renewExpiredContracts } from '@/services/contract-renewal'
 import { projetarMetasDoMes } from '@/services/meta-projection'
+import { runTuesdayNpsRitual, runMondayFeedbackReset, runFridayFeedbackSweep } from '@/services/client-feedback-rituais'
 import { isCronAuthorized } from '@/lib/cron-auth'
 import { recordCronHeartbeat } from '@/lib/cron-heartbeat'
 
@@ -44,6 +45,8 @@ async function runDailySync() {
   const day           = new Date().getDay()
   const isSunday       = day === 0
   const isMonday       = day === 1
+  const isTuesday      = day === 2
+  const isFriday       = day === 5
   const isFirstOfMonth = new Date().getDate() === 1
 
   const summary: Record<string, unknown> = {
@@ -358,6 +361,39 @@ async function runDailySync() {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
       }
+    }
+  }
+
+  // ── Step 7a1: SEGUNDA — zeragem semanal do feedback negativo (C.2) ────────
+  // ANTES de zerar, registra quem fechou a semana em risco (Alert +
+  // Client.fechouSemanaEmRisco). Dedupe por dia. Roda cedo o suficiente na
+  // segunda; independe do resultado-engine.
+  if (isMonday) {
+    try {
+      const resetResult = await runMondayFeedbackReset()
+      summary.feedbackReset = { ok: true, ...resetResult }
+    } catch (err) {
+      summary.feedbackReset = { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  // ── Step 7a2: TERÇA — ritual de preenchimento de NPS pela CS ──────────────
+  if (isTuesday) {
+    try {
+      const npsRitual = await runTuesdayNpsRitual()
+      summary.npsRitualTerca = { ok: true, ...npsRitual }
+    } catch (err) {
+      summary.npsRitualTerca = { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  // ── Step 7a3: SEXTA — varredura consolidada dos feedbacks da semana (C.3) ─
+  if (isFriday) {
+    try {
+      const sweep = await runFridayFeedbackSweep()
+      summary.feedbackSweepSexta = { ok: true, ...sweep }
+    } catch (err) {
+      summary.feedbackSweepSexta = { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   }
 

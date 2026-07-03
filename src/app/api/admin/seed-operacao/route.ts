@@ -11,6 +11,7 @@ import { vincularAsaasClientes } from '@/services/seed-vincular-asaas'
 import { migrarMetasRoasParaFaturamento } from '@/services/migrar-metas-faturamento'
 import { limparMetasZeradas } from '@/services/limpar-metas-zeradas'
 import { reconciliarBusinessTypeB2B } from '@/services/reconciliar-business-type'
+import { backfillEtapaFromResultado } from '@/services/client-etapa-backfill'
 import { writeAuditLog } from '@/lib/audit'
 
 // Backfill pode processar vários clientes — dá folga ao tempo de execução.
@@ -133,6 +134,13 @@ export async function POST(req: NextRequest) {
         actorId: session.userId,
         actorRole: session.role,
       })
+      return NextResponse.json({ ok: true, phase, ...result })
+    }
+
+    if (phase === 'backfill-etapa') {
+      // Recalcula Client.etapa a partir do Client.resultado atual (retroativo —
+      // ponto cego do ClickUp). Idempotente; o serviço grava o AuditLog.
+      const result = await backfillEtapaFromResultado({ actorId: session.userId, actorRole: session.role })
       return NextResponse.json({ ok: true, phase, ...result })
     }
 

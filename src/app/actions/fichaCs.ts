@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { writeAuditLog, assertClientMutationAccess } from '@/lib/audit'
+import { onFichaCsUpdated } from '@/services/client-lifecycle-automations'
 import type { ClientNps, ClientRelacionamento, ClientCurva } from '@prisma/client'
 
 type ActionResult = { ok: true } | { error: string }
@@ -13,6 +14,9 @@ export type FichaCsInput = {
   relacionamento: ClientRelacionamento | null
   curva: ClientCurva | null
   feedbackNegativo: number
+  // D — War Room manual pela CS (opcional; ausência = não altera). false→true
+  // abre o pacote A2; true→false encerra o protocolo crítico (saída limpa).
+  salaDeGuerra?: boolean
 }
 
 /**
@@ -30,7 +34,21 @@ export async function updateFichaCs(clientId: string, input: FichaCsInput): Prom
     return { error: err instanceof Error ? err.message : 'Seu papel não permite editar a ficha de CS.' }
   }
 
-  const fb = Number.isFinite(input.feedbackNegativo) ? Math.max(0, Math.min(99, Math.trunc(input.feedbackNegativo))) : 0
+  let fb = Number.isFinite(input.feedbackNegativo) ? Math.max(0, Math.min(99, Math.trunc(input.feedbackNegativo))) : 0
+
+  // Snapshot ANTES do update para os hooks de ciclo de vida (transições NPS/feedback).
+  const anterior = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { nps: true, feedbackNegativo: true, salaDeGuerra: true },
+  })
+
+  // ── Automação B: NPS ruim (DETRATOR) conta como 1º feedback negativo ───────
+  // Quando o NPS PASSA a DETRATOR, o Performli soma automaticamente 1 feedback
+  // (feedbackNegativo = max(1, atual)) — a CS não precisa mais somar de cabeça.
+  // Feito ANTES do update para valer numa única atualização; o valor final
+  // alimenta os hooks, então A1/A3 disparam em cascata pelo mesmo evento.
+  const virouDetrator = input.nps === 'DETRATOR' && anterior?.nps !== 'DETRATOR'
+  if (virouDetrator) fb = Math.max(1, fb)
 
   await prisma.client.update({
     where: { id: clientId },
@@ -39,6 +57,7 @@ export async function updateFichaCs(clientId: string, input: FichaCsInput): Prom
       relacionamento: input.relacionamento,
       curva: input.curva,
       feedbackNegativo: fb,
+      ...(input.salaDeGuerra !== undefined ? { salaDeGuerra: input.salaDeGuerra } : {}),
       fichaCsUpdatedAt: new Date(),
     },
   })
@@ -50,8 +69,23 @@ export async function updateFichaCs(clientId: string, input: FichaCsInput): Prom
     entityType: 'Client',
     entityId: clientId,
     clientId,
-    metadata: { nps: input.nps, relacionamento: input.relacionamento, curva: input.curva, feedbackNegativo: fb },
+    metadata: { nps: input.nps, relacionamento: input.relacionamento, curva: input.curva, feedbackNegativo: fb, npsContouFeedback: virouDetrator },
   })
+
+  // Hooks de ciclo de vida (possível churn, 1º feedback, War Room) — best-effort:
+  // nunca quebram o salvamento da ficha. Cada regra tem seu try/catch interno.
+  try {
+    await onFichaCsUpdated(clientId, {
+      npsAnterior: anterior?.nps ?? null,
+      npsNovo: input.nps,
+      feedbackNegativoAnterior: anterior?.feedbackNegativo ?? 0,
+      feedbackNegativoNovo: fb,
+      salaDeGuerraAnterior: anterior?.salaDeGuerra ?? undefined,
+      salaDeGuerraNovo: input.salaDeGuerra,
+    })
+  } catch {
+    /* best-effort: automação não interrompe a ficha de CS */
+  }
 
   revalidatePath(`/clients`)
   return { ok: true }
