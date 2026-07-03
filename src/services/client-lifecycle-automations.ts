@@ -435,6 +435,22 @@ async function enterWarRoom(
       client.id, await resolveHead(),
       `🔴 CLIENTE EM WAR ROOM 🔴 — ${resLabel ? `resultado da semana caiu para ${resLabel}.` : 'marcado manualmente pela CS.'} Tarefas de plano de ação criadas. A conta entra em ACOMPANHAMENTO DIÁRIO até sair do crítico.`,
     )
+
+    // #15: War Room precisa ser VISÍVEL ao cliente. Internamente mobilizamos a
+    // força-tarefa, mas se ninguém comunicar o cliente, ele só sente o silêncio
+    // e o churn continua correndo por fora. Task ao CS para comunicar o plano de
+    // recuperação e registrar a comunicação no chat.
+    const csComunicaId = await resolveCs(client.csId, client)
+    if (csComunicaId) {
+      await createAutoTask({
+        rule: 'warroom-comunicar-cliente', clientId: client.id, assignedTo: csComunicaId,
+        title: `Comunicar ao cliente o plano de recuperação — ${client.name}`,
+        description: 'Cliente entrou em War Room. Comunicar ao cliente que a agência mobilizou uma força-tarefa para virar a conta: explicar o que será feito e quando, alinhar expectativas e registrar essa comunicação no chat do cliente. Sem comunicação, o cliente só percebe o silêncio.',
+        requiresEvidence: true,
+        priority: 'CRITICA', dueDate: spDatePlus(1, now), weekKey,
+        isSupport: true, supportCategory: 'SUCESSO_DO_CLIENTE', popId: 'pop_war_14',
+      })
+    }
   }
 
   await createAlertOncePerWeek(
