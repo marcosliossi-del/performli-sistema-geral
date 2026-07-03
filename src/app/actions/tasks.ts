@@ -126,9 +126,17 @@ export async function createTask(formData: FormData) {
 // action em produção é redigido pelo Next ("Server Components render... digest")
 // e o usuário perde o motivo operacional. Mesmo contrato de decideTaskValidation.
 // ─────────────────────────────────────────────────────────────────────────────
+/** Sanitiza texto livre de conclusão: trim + limite duro de 2000 caracteres. */
+function sanitizeCompletionText(v: string | undefined): string | undefined {
+  if (typeof v !== 'string') return undefined
+  const t = v.trim().slice(0, 2000)
+  return t.length > 0 ? t : undefined
+}
+
 export async function updateTaskStatus(
   taskId: string,
   status: TaskStatus,
+  opts?: { completionNotes?: string; evidence?: string },
 ): Promise<{ ok: true } | { error: string }> {
   const session = await requireSession()
   const { userId } = session
@@ -164,6 +172,20 @@ export async function updateTaskStatus(
 
   const isConcluir = status === 'CONCLUIDO'
   const concluindoAgora = isConcluir && current.status !== 'CONCLUIDO'
+
+  // T-01/T-02 — "O que foi feito" (completionNotes) e evidência preenchidos na UI
+  // de conclusão são gravados ANTES do guard, no mesmo fluxo, para que o guard
+  // enxergue o que o usuário acabou de registrar (nada mais é perdido no clique).
+  if (concluindoAgora) {
+    const notes = sanitizeCompletionText(opts?.completionNotes)
+    const ev = sanitizeCompletionText(opts?.evidence)
+    const preData: { completionNotes?: string; evidence?: string } = {}
+    if (notes !== undefined) preData.completionNotes = notes
+    if (ev !== undefined) preData.evidence = ev
+    if (Object.keys(preData).length > 0) {
+      await prisma.task.update({ where: { id: taskId }, data: preData })
+    }
+  }
 
   // FASE 5 — TaskCompletionGuard: só bloqueia tarefas críticas flag-gated (roda ANTES).
   if (concluindoAgora) {

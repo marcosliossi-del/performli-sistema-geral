@@ -37,6 +37,7 @@ export function TaskDrawer({
   const [loading, setLoading] = useState(false)
   const [comment, setComment] = useState('')
   const [evidence, setEvidence] = useState('')
+  const [completionNotes, setCompletionNotes] = useState('')
   const [rejectNote, setRejectNote] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('comentarios')
@@ -48,10 +49,16 @@ export function TaskDrawer({
     if (!task) { setDetail(null); return }
     setLoading(true)
     setEvidence('')
+    setCompletionNotes('')
     setRejectNote('')
     setActionError(null)
     setTab('comentarios')
-    loadTaskDetail(task.id).then((d) => { setDetail(d); setEvidence(d?.evidence ?? ''); setLoading(false) })
+    loadTaskDetail(task.id).then((d) => {
+      setDetail(d)
+      setEvidence(d?.evidence ?? '')
+      setCompletionNotes(d?.completionNotes ?? '')
+      setLoading(false)
+    })
   }, [task])
 
   if (!task) return null
@@ -61,9 +68,11 @@ export function TaskDrawer({
     setDetail(d)
   }
   function handleStatus(status: string) {
-    if (status === 'CONCLUIDO' && requiredOpen > 0) {
-      toast('Conclua os itens obrigatórios do checklist antes de concluir a tarefa', 'err')
+    if (status === 'CONCLUIDO') {
+      // Concluir passa pelo mesmo fluxo do botão (envia "o que foi feito" +
+      // evidência e valida os obrigatórios) — nunca vira dead-end.
       setStatusResetKey((k) => k + 1) // devolve o select ao valor atual
+      handleComplete()
       return
     }
     startTransition(async () => {
@@ -83,15 +92,25 @@ export function TaskDrawer({
   }
   function handleComment() {
     if (!comment.trim()) return
-    startTransition(async () => { await addTaskComment(task!.id, comment); setComment(''); await reload(); toast('Comentário adicionado') })
+    startTransition(async () => {
+      const r = await addTaskComment(task!.id, comment)
+      if ('error' in r) { toast(r.error, 'err'); return }
+      setComment('')
+      await reload()
+      toast('Comentário adicionado')
+    })
   }
   function handleToggle(itemId: string, done: boolean) {
-    startTransition(async () => { await toggleChecklistItem(itemId, done); await reload() })
+    startTransition(async () => {
+      const r = await toggleChecklistItem(itemId, done)
+      if ('error' in r) { toast(r.error, 'err'); return }
+      await reload()
+    })
   }
   function handleSubmitValidation() {
     setActionError(null)
     startTransition(async () => {
-      const r = await submitTaskForValidation(task!.id, evidence)
+      const r = await submitTaskForValidation(task!.id, evidence, completionNotes)
       if ('error' in r) { setActionError(r.error); toast(r.error, 'err'); return }
       await reload()
       toast('Enviado para validação da CS')
@@ -108,10 +127,26 @@ export function TaskDrawer({
     })
   }
   function handleComplete() {
+    if (requiredOpen > 0) {
+      toast('Conclua os itens obrigatórios do checklist antes de concluir a tarefa', 'err')
+      return
+    }
+    const notes = completionNotes.trim()
+    // Tarefa crítica exige "o que foi feito" — avisa exatamente onde preencher
+    // (o guard do servidor também barra; aqui é feedback imediato).
+    if (detail?.critical && notes.length === 0) {
+      setActionError("Preencha 'O que foi feito' antes de concluir.")
+      toast("Preencha 'O que foi feito' antes de concluir.", 'err')
+      return
+    }
+    setActionError(null)
     startTransition(async () => {
       try {
-        const r = await updateTaskStatus(task!.id, 'CONCLUIDO' as TaskStatus)
-        if ('error' in r) { toast(r.error, 'err'); return }
+        const r = await updateTaskStatus(task!.id, 'CONCLUIDO' as TaskStatus, {
+          completionNotes: notes,
+          evidence: evidence.trim(),
+        })
+        if ('error' in r) { setActionError(r.error); toast(r.error, 'err'); return }
         await reload()
         toast('Tarefa concluída')
       } catch (e) {
@@ -209,6 +244,20 @@ export function TaskDrawer({
               </>
             )}
 
+            {/* O que foi feito (completionNotes) — obrigatório em tarefas críticas */}
+            {detail?.canSubmit && (
+              <>
+                <Sec>O que foi feito{detail?.critical ? ' (obrigatório)' : ''}</Sec>
+                <textarea
+                  value={completionNotes}
+                  onChange={(e) => setCompletionNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Resuma o que foi entregue nesta tarefa. Obrigatório para tarefas críticas."
+                  className="w-full bg-[#0A1E2C] border border-dashed border-[#38435C] rounded-lg px-3 py-2.5 text-[12px] text-[#EBEBEB] placeholder:text-[#87919E]/60 focus:outline-none focus:border-[#95BBE2]/50"
+                />
+              </>
+            )}
+
             {/* Evidência de conclusão */}
             <Sec>Evidência de conclusão</Sec>
             {detail?.canSubmit ? (
@@ -223,6 +272,14 @@ export function TaskDrawer({
               <div className="bg-[#0A1E2C] border border-dashed border-[#38435C] rounded-lg px-3 py-2.5 text-[11.5px] text-[#9fb0c0] whitespace-pre-wrap">
                 {detail?.evidence || 'Sem evidência registrada.'}
               </div>
+            )}
+            {!detail?.canSubmit && detail?.completionNotes && (
+              <>
+                <Sec>O que foi feito</Sec>
+                <div className="bg-[#0A1E2C] border border-dashed border-[#38435C] rounded-lg px-3 py-2.5 text-[11.5px] text-[#9fb0c0] whitespace-pre-wrap">
+                  {detail.completionNotes}
+                </div>
+              </>
             )}
 
             {/* Histórico de decisões da CS */}

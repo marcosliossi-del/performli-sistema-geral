@@ -71,7 +71,7 @@ export async function checkTaskCompletion(
 
   // 3) Registro de conclusão (o que foi feito).
   if (task.completionNotes == null || task.completionNotes.trim().length === 0) {
-    reasons.push('Registro de conclusão (o que foi feito) é obrigatório')
+    reasons.push("Preencha 'O que foi feito' antes de concluir")
   }
 
   // 4) Revisão aprovada. Se o próprio ato em curso é a aprovação da revisão

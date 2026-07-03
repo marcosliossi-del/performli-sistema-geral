@@ -13,7 +13,9 @@ import { useModalA11y } from '@/lib/useModalA11y'
 import {
   updateTaskFields, updateTaskStatus, assignTask, unassignTask, toggleWatcher, addTaskDependency,
 } from '@/app/actions/tasks'
-import { addTaskComment, toggleChecklistItem } from '@/app/actions/operacional'
+import {
+  addTaskComment, toggleChecklistItem, submitTaskForValidation, decideTaskValidation,
+} from '@/app/actions/operacional'
 import type { TaskPanelResult, PanelComment, PanelDependency, PanelUser } from '@/lib/tasks/panel'
 import { StatusBadge, type StatusValue } from './StatusBadge'
 import { PriorityFlag } from './PriorityFlag'
@@ -215,6 +217,7 @@ function PanelSections({
   onRequestClose: () => void
 }) {
   const { data, users, candidates, currentUser, canEdit, canEditStatusOnly } = result
+  const router = useRouter()
   // GESTOR_TRAFEGO move de coluna (status), mas não edita campos/atribui.
   const canChangeStatus = canEdit || canEditStatusOnly
 
@@ -238,6 +241,14 @@ function PanelSections({
   const [blockedBy, setBlockedBy] = useState<PanelDependency[]>(data.blockedBy)
   const [blocking] = useState<PanelDependency[]>(data.blocking)
   const [tab, setTab] = useState<'comentarios' | 'atividade'>('comentarios')
+
+  // T-03 — Conclusão e validação (mesmas actions do drawer).
+  const [evidence, setEvidence] = useState(data.evidence ?? '')
+  const [completionNotes, setCompletionNotes] = useState(data.completionNotes ?? '')
+  const [rejectNote, setRejectNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const isValidating = data.canValidate && (status === 'AGUARDANDO_CS' || status === 'EM_VALIDACAO')
+  const showConclude = canChangeStatus && !CLOSED_STATUS.has(status)
 
   const overdue = !!dueDate && !CLOSED_STATUS.has(status) && new Date(dueDate).getTime() < Date.now()
 
@@ -270,9 +281,73 @@ function PanelSections({
   // capturar e mostrar o motivo operacional).
   async function saveStatus(next: StatusValue) {
     if (next.kind !== 'legacy') return
+    if (next.status === 'CONCLUIDO') {
+      // Concluir tarefa crítica pelo dropdown usa os campos da seção "Conclusão
+      // e validação" — nunca vira dead-end (guard também barra no servidor).
+      if (data.critical && completionNotes.trim().length === 0) {
+        throw new Error("Preencha 'O que foi feito' na seção Conclusão antes de concluir.")
+      }
+      const r = await updateTaskStatus(data.id, 'CONCLUIDO', {
+        completionNotes: completionNotes.trim(),
+        evidence: evidence.trim(),
+      })
+      if ('error' in r) throw new Error(r.error)
+      setStatus('CONCLUIDO')
+      return
+    }
     const r = await updateTaskStatus(data.id, next.status)
     if ('error' in r) throw new Error(r.error)
     setStatus(next.status)
+  }
+
+  // Concluir direto (botão da seção Conclusão).
+  async function handleConclude() {
+    if (data.critical && completionNotes.trim().length === 0) {
+      toast("Preencha 'O que foi feito' antes de concluir.", 'err')
+      return
+    }
+    setBusy(true)
+    try {
+      const r = await updateTaskStatus(data.id, 'CONCLUIDO', {
+        completionNotes: completionNotes.trim(),
+        evidence: evidence.trim(),
+      })
+      if ('error' in r) { toast(r.error, 'err'); return }
+      setStatus('CONCLUIDO')
+      toast('Tarefa concluída')
+      router.refresh()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível concluir a tarefa.', 'err')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleSubmitValidation() {
+    setBusy(true)
+    try {
+      const r = await submitTaskForValidation(data.id, evidence, completionNotes)
+      if ('error' in r) { toast(r.error, 'err'); return }
+      setStatus('AGUARDANDO_CS')
+      toast('Enviado para validação da CS')
+      router.refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDecide(approved: boolean) {
+    setBusy(true)
+    try {
+      const r = await decideTaskValidation(data.id, approved, approved ? undefined : rejectNote)
+      if ('error' in r) { toast(r.error, 'err'); return }
+      setRejectNote('')
+      setStatus(approved ? 'CONCLUIDO' : 'AJUSTES_SOLICITADOS')
+      toast(approved ? 'Validação aprovada' : 'Ajustes solicitados', approved ? 'ok' : 'info')
+      router.refresh()
+    } finally {
+      setBusy(false)
+    }
   }
 
   // Prioridade (allowClear=false → next nunca é null).
@@ -544,6 +619,125 @@ function PanelSections({
               onToggle={canEdit ? toggleChecklist : async () => { throw new Error('Sem permissão para alterar.') }}
               title="Checklist"
             />
+          </section>
+        )}
+
+        {/* Conclusão e validação (T-03) */}
+        {(showConclude || isValidating || data.completionNotes || data.evidence) && (
+          <section className="space-y-2.5">
+            <SectionTitle>Conclusão e validação</SectionTitle>
+            {data.critical && showConclude && (
+              <p className="text-[12px] text-warning">
+                Tarefa crítica: registre o que foi feito antes de concluir ou enviar para a CS.
+              </p>
+            )}
+
+            {showConclude ? (
+              <>
+                <div>
+                  <label className="mb-1 block text-[11px] text-text-mid">
+                    O que foi feito{data.critical ? ' (obrigatório)' : ''}
+                  </label>
+                  <textarea
+                    value={completionNotes}
+                    onChange={(e) => setCompletionNotes(e.target.value)}
+                    rows={2}
+                    placeholder="Resuma o que foi entregue nesta tarefa."
+                    className="w-full resize-none rounded-lg border border-[var(--ak-hair)] bg-surface px-3 py-2 text-[13px] leading-relaxed text-text-hi outline-none placeholder:text-text-low focus:border-[var(--ak-brand)]"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] text-text-mid">Evidência</label>
+                  <textarea
+                    value={evidence}
+                    onChange={(e) => setEvidence(e.target.value)}
+                    rows={2}
+                    placeholder="Cole o print/link do dashboard ou o resumo do check-in."
+                    className="w-full resize-none rounded-lg border border-[var(--ak-hair)] bg-surface px-3 py-2 text-[13px] leading-relaxed text-text-hi outline-none placeholder:text-text-low focus:border-[var(--ak-brand)]"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {data.canSubmit && (
+                    <button
+                      type="button"
+                      onClick={handleSubmitValidation}
+                      disabled={busy}
+                      className="rounded-lg border border-[var(--ak-brand)]/40 px-3 py-1.5 text-[12px] text-info hover:bg-surface-raised disabled:opacity-50"
+                    >
+                      Enviar para validação da CS
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleConclude}
+                    disabled={busy}
+                    className="rounded-lg bg-success/90 px-3 py-1.5 text-[12px] font-semibold text-[#021015] hover:bg-success disabled:opacity-50"
+                  >
+                    Concluir
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {data.completionNotes && (
+                  <div>
+                    <span className="text-[11px] text-text-mid">O que foi feito</span>
+                    <p className="whitespace-pre-wrap text-[13px] text-text-hi">{data.completionNotes}</p>
+                  </div>
+                )}
+                {data.evidence && (
+                  <div>
+                    <span className="text-[11px] text-text-mid">Evidência</span>
+                    <p className="whitespace-pre-wrap text-[13px] text-text-hi">{data.evidence}</p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Validação da CS/ADMIN */}
+            {isValidating && (
+              <div className="space-y-2 rounded-lg border border-[var(--ak-hair)] bg-surface p-2.5">
+                <p className="text-[12px] text-text-mid">Validação da CS</p>
+                <input
+                  value={rejectNote}
+                  onChange={(e) => setRejectNote(e.target.value)}
+                  placeholder="Motivo, se solicitar ajustes"
+                  className="w-full rounded-lg border border-[var(--ak-hair)] bg-surface-raised px-2.5 py-1.5 text-[12px] text-text-hi outline-none placeholder:text-text-low focus:border-[var(--ak-brand)]"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDecide(false)}
+                    disabled={busy}
+                    className="rounded-lg border border-warning/40 px-3 py-1.5 text-[12px] text-warning hover:bg-surface-raised disabled:opacity-50"
+                  >
+                    Solicitar ajustes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDecide(true)}
+                    disabled={busy}
+                    className="rounded-lg bg-success/90 px-3 py-1.5 text-[12px] font-semibold text-[#021015] hover:bg-success disabled:opacity-50"
+                  >
+                    Aprovar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Histórico de decisões da CS */}
+            {data.approvals.filter((a) => a.decidedAt).length > 0 && (
+              <div className="space-y-1">
+                {data.approvals.filter((a) => a.decidedAt).map((a) => (
+                  <p key={a.id} className="text-[11px] text-text-low">
+                    {a.approved
+                      ? <span className="text-success">Aprovado</span>
+                      : <span className="text-warning">Ajustes solicitados</span>}
+                    {' '}por {a.approverName}{a.note ? ` · ${a.note}` : ''}
+                  </p>
+                ))}
+              </div>
+            )}
           </section>
         )}
 
