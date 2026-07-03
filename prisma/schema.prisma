@@ -1159,6 +1159,7 @@ model TaskRecurrenceRule {
   minute     Int?                @default(0)
   anchorDate DateTime?           // âncora obrigatória p/ QUINZENAL (dia-base do ciclo)
   active     Boolean             @default(true)
+  archivedAt DateTime?           // arquivada: some da lista padrão e NUNCA roda no motor (T-19)
   lastRunAt  DateTime?
   createdAt  DateTime            @default(now())
   updatedAt  DateTime            @updatedAt
