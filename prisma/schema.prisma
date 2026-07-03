@@ -1337,6 +1337,15 @@ model WeeklyReport {
   content     String    // formatted text report
   generatedAt DateTime  @default(now())
 
+  // ── FASE 1.2: instrumentação do funil de prestação de contas ──────────────
+  // Antes o sistema só sabia que o relatório foi GERADO — nunca se o cliente o
+  // RECEBEU (falha silenciosa do Bloco 5 da auditoria de churn). Estes campos
+  // fecham o funil gerado → enviado → entregue → respondido.
+  sentAt       DateTime? // quando alguém marcou o relatório como enviado ao cliente
+  sentBy       String?   // userId do Performli que marcou o envio (não é relação — evita back-relation em User)
+  deliveredAt  DateTime? // confirmação de ENTREGA (webhook de status Z-API). TODO: sem callback de status configurado ainda — campo pronto, preenchimento aguarda spec da Z-API.
+  firstReplyAt DateTime? // primeira resposta do cliente após o envio (rastreamento automático quando houver fonte de mensagem recebida)
+
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@unique([clientId, weekStart])

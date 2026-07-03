@@ -2383,6 +2383,69 @@ export const getClientWeeklyReport = cache(async (clientId: string) => {
   return report
 })
 
+/**
+ * FASE 1.2 — Funil de prestação de contas das últimas 8 semanas de um cliente.
+ * Cada linha: gerado → enviado (por quem) → entregue → respondido.
+ *
+ * Posse (RBAC v2): GESTOR só lê cliente da carteira (scopeClients). Fora do
+ * escopo → [] (não vaza dados de cliente de outra carteira).
+ *
+ * `fonteRespostaAusente` sinaliza à tela que firstReplyAt ainda não é rastreado
+ * automaticamente (não há fonte de inbound do cliente no banco) — a tela mostra
+ * "—" em "Respondido" com tooltip explicativo em vez de um falso "não respondeu".
+ */
+export const getWeeklyReportFunnel = cache(async (
+  clientId: string,
+  viewer: { userId: string; role: string },
+) => {
+  const role5 = normalizeRole(viewer.role)
+  const client = await prisma.client.findFirst({
+    where: { id: clientId, ...scopeClients(role5, viewer.userId) },
+    select: { id: true },
+  })
+  if (!client) return { rows: [], fonteRespostaAusente: true as const }
+
+  const reports = await prisma.weeklyReport.findMany({
+    where: { clientId },
+    orderBy: { weekStart: 'desc' },
+    take: 8,
+    select: {
+      id: true,
+      weekStart: true,
+      generatedAt: true,
+      sentAt: true,
+      sentBy: true,
+      deliveredAt: true,
+      firstReplyAt: true,
+    },
+  })
+
+  // Resolve o nome de quem marcou o envio (sentBy é userId puro, sem relação).
+  const senderIds = Array.from(
+    new Set(reports.map((r) => r.sentBy).filter((v): v is string => !!v)),
+  )
+  const senders = senderIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: senderIds } },
+        select: { id: true, name: true },
+      })
+    : []
+  const senderName = new Map(senders.map((u) => [u.id, u.name]))
+
+  const rows = reports.map((r) => ({
+    id: r.id,
+    weekStart: r.weekStart,
+    generatedAt: r.generatedAt,
+    sentAt: r.sentAt,
+    sentByName: r.sentBy ? senderName.get(r.sentBy) ?? 'usuário removido' : null,
+    deliveredAt: r.deliveredAt,
+    firstReplyAt: r.firstReplyAt,
+  }))
+
+  // Hoje sempre true — ver report-delivery-tracker (chat interno não é do cliente).
+  return { rows, fonteRespostaAusente: true as const }
+})
+
 export const getClientMonthlyReport = cache(async (clientId: string) => {
   return prisma.monthlyReport.findFirst({
     where: { clientId },

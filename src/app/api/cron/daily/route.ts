@@ -20,6 +20,7 @@ import { checkLeadFollowups } from '@/services/lead-followup-checker'
 import { escalateOverdueTasks, markOverdueTasks } from '@/services/task-escalation'
 import { detectSilentAtRiskClients } from '@/services/antichurn-monitor'
 import { runRetentionWatchdog } from '@/services/retention-watchdog'
+import { runReportDeliveryTracker } from '@/services/report-delivery-tracker'
 import { checkCheckins } from '@/services/checkin-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/services/weekly-goals-sync'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
@@ -61,6 +62,7 @@ async function runDailySync() {
     churnRisk: { ok: false },
     antiChurnSilent: { ok: false },
     retentionWatchdog: { ok: false },
+    reportDelivery: { ok: false },
     checkins: { ok: false },
     budgetWarnings: { ok: false },
     criticalAccounts: { ok: false },
@@ -217,6 +219,19 @@ async function runDailySync() {
     summary.retentionWatchdog = { ok: true, ...watchdogResult }
   } catch (err) {
     summary.retentionWatchdog = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // ── Step 5a3: Entrega do relatório semanal — funil gerado→enviado→respondido
+  //             (A) firstReplyAt automático (quando houver fonte de inbound do
+  //             cliente) + (B) terça: relatório gerado e NÃO enviado ao cliente. ─
+  try {
+    const deliveryResult = await runReportDeliveryTracker({ isTuesday })
+    summary.reportDelivery = { ok: true, ...deliveryResult }
+  } catch (err) {
+    summary.reportDelivery = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     }
