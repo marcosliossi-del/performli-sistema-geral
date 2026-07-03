@@ -79,3 +79,10 @@
   Os valores legados **MANAGER e ANALYST permanecem no enum** como legado até uma limpeza futura (migration própria, quando nenhum código/dado os referenciar). Código NOVO usa exclusivamente os nomes novos.
 - **Descartado:** (1) renomear os valores do enum in-place — Postgres `ALTER TYPE RENAME VALUE` existe mas quebraria todo o código TS que compara literais `'MANAGER'`/`'ANALYST'` de uma vez (big-bang, viola "não quebrar produção"); (2) drop/recreate do enum — destrutivo.
 - **Consequência:** durante a convivência, o BANCO não terá mais linhas MANAGER/ANALYST após (b), mas o CÓDIGO ainda compara esses literais — o Agente 3 varre e adapta (lista completa no HANDOFF_AGENTE_1). Seeds que ainda gravam papéis legados (`seed-operacao.ts`, `prisma/seed.ts`, `api/seed/route.ts`) devem ser atualizados para os nomes novos para não reintroduzir legado. A remoção final dos valores legados do enum é uma decisão/ADR futura.
+
+## D-012 — Semântica de metas: SPEND, B2B e valor zero (decisões do dono, 2026-07-02)
+
+- **SPEND (meta de investimento) = "menor é melhor" — MANTIDO.** Contexto: o cliente libera um teto de verba (ex.: 10k); investir menos e entregar o faturamento é segurança para a empresa. Investir 7k de 10k é PONTO POSITIVO. O health-scorer trata SPEND como LOWER_IS_BETTER e o budget-monitor alerta ao APROXIMAR do teto (90%), nunca por gastar menos. Finding S2-023 da auditoria de metas encerrado como comportamento intencional.
+- **B2B mede como NEGÓCIO LOCAL.** Os B2B da Arkza buscam leads: métrica-resultado na plataforma de anúncio, crescimento +20% na projeção do dia 1, saúde medida pelas plataformas de anúncio (não GA4), sem faturamentoEsperado/roasMinimo. Só ECOMMERCE segue faturamento GA4 (+15%).
+- **Meta com valor ≤ 0 = "sem meta".** Não grava; zeradas antigas (bug de cálculo) removíveis pelo botão "Limpar metas zeradas" em Configurações (AuditLog goals.limpezaZeradas).
+- **Consequência:** relatórios/digest de B2B ainda usam template e-commerce (exibição, não cálculo) — fatia futura se o dono quiser o relatório no formato local.
