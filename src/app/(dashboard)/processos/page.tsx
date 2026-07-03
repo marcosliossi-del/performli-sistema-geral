@@ -1,10 +1,10 @@
-import { requireSession } from '@/lib/dal'
+import { requireSession, getProcessosHealth, type ProcessoHealth, type ProcessoHealthStatus } from '@/lib/dal'
 import { Card } from '@/components/ui/card'
 import Link from 'next/link'
 import {
   POPS_CATALOG, POP_AREAS, type Pop, type ImplementacaoStatus,
 } from '@/lib/pops-catalog'
-import { Workflow, Bot, UserCog, AlertTriangle, ArrowRight } from 'lucide-react'
+import { Workflow, Bot, UserCog, AlertTriangle, ArrowRight, HeartPulse } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,20 +14,71 @@ const STATUS_META: Record<ImplementacaoStatus, { label: string; cls: string }> =
   MANUAL:       { label: 'Manual',       cls: 'text-[#EF4444] bg-[#EF4444]/10 border-[#EF4444]/20' },
 }
 
-function PopRow({ pop }: { pop: Pop }) {
+// Estado vivo do processo — linguagem operacional (o que está errado agora).
+const HEALTH_META: Record<ProcessoHealthStatus, { dot: string; label: string; cls: string }> = {
+  SAUDAVEL:           { dot: '🟢', label: 'Saudável',           cls: 'text-[#22C55E] bg-[#22C55E]/10 border-[#22C55E]/20' },
+  ATENCAO:            { dot: '🟡', label: 'Em atenção',         cls: 'text-[#EAB308] bg-[#EAB308]/10 border-[#EAB308]/20' },
+  CRITICO:            { dot: '🔴', label: 'Crítico',            cls: 'text-[#EF4444] bg-[#EF4444]/10 border-[#EF4444]/20' },
+  SEM_INSTRUMENTACAO: { dot: '⚪', label: 'Sem instrumentação', cls: 'text-[#87919E] bg-[#38435C]/30 border-[#38435C]/50' },
+}
+
+function fmtDateTime(d: Date): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo',
+  }).format(d)
+}
+
+function fmtDate(d: Date): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo',
+  }).format(d)
+}
+
+function PopRow({ pop, health }: { pop: Pop; health: ProcessoHealth | undefined }) {
   const meta = STATUS_META[pop.implementacao]
+  const hStatus: ProcessoHealthStatus = health?.status ?? 'SEM_INSTRUMENTACAO'
+  const hMeta = HEALTH_META[hStatus]
   return (
     <div id={`pop-${pop.codigo}`} className="scroll-mt-20 flex items-start justify-between gap-3 py-2.5 px-3 rounded-lg bg-[#0A1E2C]/40 border border-[#38435C]/50">
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[10px] font-mono text-[#87919E]">{pop.codigo}</span>
           <span className="text-xs font-medium text-[#EBEBEB]">{pop.nome}</span>
+          <span className={`text-[9px] rounded px-1.5 py-0.5 border ${hMeta.cls}`}>{hMeta.dot} {hMeta.label}</span>
           <span className={`text-[9px] rounded px-1.5 py-0.5 border ${meta.cls}`}>{meta.label}</span>
         </div>
         <p className="text-[10px] text-[#87919E] mt-0.5">
           {pop.responsavelPadrao} · {pop.frequencia} · SLA: {pop.sla}
         </p>
-        <p className="text-[10px] text-[#87919E]/70 mt-0.5">Se falhar: {pop.riscoSeFalhar}</p>
+
+        {health ? (
+          <div className="mt-1 space-y-0.5">
+            {health.temTasks && (
+              <div className="flex items-center gap-2 flex-wrap text-[10px]">
+                <span className="text-[#87919E]">
+                  Abertas <span className="text-[#EBEBEB] font-semibold">{health.abertas}</span>
+                </span>
+                <span className={health.atrasadas > 0 ? 'text-[#EF4444]' : 'text-[#87919E]'}>
+                  Atrasadas <span className="font-semibold">{health.atrasadas}</span>
+                </span>
+                <span className="text-[#87919E]">
+                  Concluídas (30d) <span className="text-[#EBEBEB] font-semibold">{health.concluidas30d}</span>
+                </span>
+                <span className="text-[#87919E]/70">
+                  Última atividade: {health.ultimaAtividade ? fmtDate(health.ultimaAtividade) : 'sem registro'}
+                </span>
+              </div>
+            )}
+            {health.detalhes.map((d, i) => (
+              <p key={i} className="text-[10px] text-[#95BBE2]">• {d}</p>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] text-[#87919E]/70 mt-1">
+            Sem instrumentação — dado ainda não coletado. Se falhar: {pop.riscoSeFalhar}
+          </p>
+        )}
       </div>
       <div className="flex flex-col items-end gap-1 flex-shrink-0">
         <span className="text-[10px] text-[#87919E]">score <span className="text-[#EBEBEB] font-semibold">{pop.score.toFixed(2)}</span></span>
@@ -47,53 +98,55 @@ function PopRow({ pop }: { pop: Pop }) {
 
 export default async function ProcessosPage() {
   await requireSession()
+  const health = await getProcessosHealth()
 
   const total = POPS_CATALOG.length
-  const automatizados = POPS_CATALOG.filter((p) => p.implementacao === 'AUTOMATIZADO').length
-  const parciais = POPS_CATALOG.filter((p) => p.implementacao === 'PARCIAL').length
-  const manuais = POPS_CATALOG.filter((p) => p.implementacao === 'MANUAL').length
-  const automacaoMedia = Math.round(
-    POPS_CATALOG.reduce((s, p) => s + p.nivelAutomacao, 0) / total,
-  )
-
-  // Onde o Marcos ainda é gargalo: manual + score alto
-  const gargalos = POPS_CATALOG
-    .filter((p) => p.implementacao === 'MANUAL' && p.score >= 4)
-    .sort((a, b) => b.score - a.score)
+  const instrumentados = Object.keys(health.porCodigo).length
+  const semInstrumentacao = total - instrumentados
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-[#EBEBEB]">Processos (POPs)</h1>
-        <p className="text-[#87919E] text-sm mt-0.5">
-          Catálogo vivo dos 21 POPs — o que já roda no sistema e o que ainda depende de pessoas.
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-[#EBEBEB]">Processos (POPs)</h1>
+          <p className="text-[#87919E] text-sm mt-0.5">
+            Painel de saúde real dos 21 POPs — o que está atrasado, qual rotina não rodou e quem precisa agir.
+          </p>
+        </div>
+        <p className="text-[10px] text-[#87919E]/70 mt-1">
+          Consulta em {fmtDateTime(health.consultadoEm)}
         </p>
       </div>
 
-      {/* Resumo */}
+      {/* Resumo do estado vivo */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Summary icon={Bot}     label="Automatizados" value={automatizados} cls="text-[#22C55E]" />
-        <Summary icon={Workflow} label="Parciais"     value={parciais}     cls="text-[#EAB308]" />
-        <Summary icon={UserCog} label="Manuais"       value={manuais}      cls="text-[#EF4444]" />
-        <Summary icon={Workflow} label="Automação média" value={`${automacaoMedia}%`} cls="text-[#95BBE2]" />
+        <Summary icon={HeartPulse} label="Saudáveis"           value={health.saudaveis}   cls="text-[#22C55E]" />
+        <Summary icon={Workflow}   label="Em atenção"          value={health.atencao}     cls="text-[#EAB308]" />
+        <Summary icon={AlertTriangle} label="Críticos"         value={health.criticos}    cls="text-[#EF4444]" />
+        <Summary icon={UserCog}    label="Sem instrumentação"  value={semInstrumentacao}  cls="text-[#87919E]" />
       </div>
 
-      {/* Gargalos do Marcos */}
-      {gargalos.length > 0 && (
+      {/* Processos críticos — agir agora */}
+      {health.criticos > 0 && (
         <Card className="p-4 border-l-4 border-l-[#EF4444]">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle size={15} className="text-[#EF4444]" />
-            <h2 className="text-sm font-semibold text-[#EBEBEB]">Onde o Marcos ainda é o gargalo</h2>
+            <h2 className="text-sm font-semibold text-[#EBEBEB]">Processos críticos — agir agora</h2>
           </div>
-          <p className="text-[11px] text-[#87919E] mb-3">
-            Processos de alto impacto (score ≥ 4) que ainda rodam no manual — prioridade de sistematização.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {gargalos.map((p) => (
-              <span key={p.codigo} className="text-[11px] text-[#EF4444] bg-[#EF4444]/10 border border-[#EF4444]/20 rounded px-2.5 py-1">
-                <span className="font-mono">{p.codigo}</span> {p.nome} · {p.score.toFixed(2)}
-              </span>
-            ))}
+          <div className="space-y-1.5">
+            {POPS_CATALOG.filter((p) => health.porCodigo[p.codigo]?.status === 'CRITICO')
+              .sort((a, b) => b.score - a.score)
+              .map((p) => {
+                const h = health.porCodigo[p.codigo]
+                return (
+                  <div key={p.codigo} className="text-[11px] text-[#EF4444]">
+                    <span className="font-mono">{p.codigo}</span> {p.nome} · {p.responsavelPadrao}
+                    {h && h.detalhes.length > 0 && (
+                      <span className="text-[#EF4444]/80"> — {h.detalhes[0]}</span>
+                    )}
+                  </div>
+                )
+              })}
           </div>
         </Card>
       )}
@@ -111,7 +164,9 @@ export default async function ProcessosPage() {
               <h2 className="text-sm font-semibold text-[#EBEBEB]">{area.nome}</h2>
             </div>
             <div className="space-y-1.5">
-              {pops.map((p) => <PopRow key={p.codigo} pop={p} />)}
+              {pops.map((p) => (
+                <PopRow key={p.codigo} pop={p} health={health.porCodigo[p.codigo]} />
+              ))}
             </div>
           </div>
         )

@@ -4,7 +4,7 @@ import { unstable_cache } from 'next/cache'
 import { prisma } from './prisma'
 import { getSession } from './session'
 import { redirect } from 'next/navigation'
-import { HealthStatus, GoalPeriod, Prisma, AlertType } from '@prisma/client'
+import { HealthStatus, GoalPeriod, Prisma, AlertType, TaskStatus } from '@prisma/client'
 import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
 import { normalizeRole, stripSensitive, scopeClients, isRevenueMetric } from './rbac'
 import { readCronHeartbeat, CRON_STALE_HOURS } from './cron-heartbeat'
@@ -3987,4 +3987,302 @@ export const getAlertGovernanceHealth = cache(async (
     if (s !== 0) return s
     return b.criados - a.criados
   })
+})
+
+// ─── T-24 · Painel de saúde real dos 21 POPs (/processos) ───────────────────────
+//
+// Enriquece o catálogo estático (lib/pops-catalog) com o ESTADO VIVO de cada POP
+// que já tem instrumentação no Performli. Responde, por processo: o que está
+// atrasado, qual rotina não rodou, quem precisa agir. POPs sem instrumentação
+// são marcados honestamente — não inventamos número.
+//
+// Só agrega processos cujo popId é MATERIALIZADO no sistema (tasks com popId)
+// ou que têm sinal específico (check-in semanal, prestação de contas, War Room).
+// Toda agregação em groupBy/count por processo — sem N+1.
+
+/** Estado vivo de um processo. SEM_INSTRUMENTACAO = dado ainda não coletado. */
+export type ProcessoHealthStatus = 'SAUDAVEL' | 'ATENCAO' | 'CRITICO' | 'SEM_INSTRUMENTACAO'
+
+export type ProcessoHealth = {
+  codigo: string
+  instrumentado: boolean
+  status: ProcessoHealthStatus
+  /** true = o POP tem popId materializado em Task → exibir bloco de contadores. */
+  temTasks: boolean
+  abertas: number
+  atrasadas: number
+  concluidas30d: number
+  ultimaAtividade: Date | null
+  /** Linhas operacionais extras (check-ins, relatórios, War Rooms). */
+  detalhes: string[]
+}
+
+export type ProcessosHealth = {
+  consultadoEm: Date
+  saudaveis: number
+  atencao: number
+  criticos: number
+  semInstrumentacao: number
+  porCodigo: Record<string, ProcessoHealth>
+}
+
+/**
+ * Instrumentação viva de cada POP. POPs ausentes deste mapa → 'sem
+ * instrumentação' na tela.
+ *
+ * `kind` define de onde vem o sinal e como o status é derivado:
+ * - TASK: Task.popId (grep dos serviços/actions).
+ * - CHECKIN: OPE-06 — ClientWeeklyCheckin da semana corrente.
+ * - REPORT: OPE-07 — WeeklyReport gerado vs enviado na ÚLTIMA semana fechada
+ *   (mesma âncora do gerador: getWeekRange(hoje-7d)).
+ * - WAR14: CriticalProtocol ativos (pop_war_14 tem tasks materializadas).
+ * - WAR15: CriticalProtocol ativos SEM revisão >7d.
+ * - WAR16: CriticalProtocol com critério de saída atingido, ainda não encerrado.
+ *
+ * `cadencia` evita falso-CRÍTICO por inatividade:
+ * - ROTINA: espera-se atividade recorrente → "rotina parada" é alarme legítimo.
+ * - EVENTO: a task/ocorrência nasce de um gatilho (cliente novo, sinal de churn,
+ *   auditoria) → ausência de atividade é NORMAL (verde-quando-vazio, como o WAR).
+ *   Atraso (dueDate vencido) continua sendo 🟡/🔴 em qualquer cadência.
+ */
+type PopKind = 'TASK' | 'CHECKIN' | 'REPORT' | 'WAR14' | 'WAR15' | 'WAR16'
+type PopCadencia = 'ROTINA' | 'EVENTO'
+
+const POP_INSTRUMENTACAO: Record<string, { kind: PopKind; cadencia: PopCadencia }> = {
+  'CAP-01': { kind: 'TASK', cadencia: 'EVENTO' },    // task nasce por lead (lead-followup-checker)
+  'ONB-04': { kind: 'TASK', cadencia: 'EVENTO' },    // por cliente novo
+  'ONB-05': { kind: 'TASK', cadencia: 'EVENTO' },    // por cliente novo (janela de 30d)
+  'OPE-06': { kind: 'CHECKIN', cadencia: 'ROTINA' }, // semanal recorrente
+  'OPE-07': { kind: 'REPORT', cadencia: 'ROTINA' },  // semanal recorrente
+  'OPE-08': { kind: 'TASK', cadencia: 'EVENTO' },    // auditoria disparada por resultado
+  'CSX-12': { kind: 'TASK', cadencia: 'EVENTO' },    // por sinal de radar/churn
+  'CSX-13': { kind: 'TASK', cadencia: 'EVENTO' },    // por sinal anti-churn
+  'WAR-14': { kind: 'WAR14', cadencia: 'EVENTO' },   // por evento crítico (tem pop_war_14)
+  'WAR-15': { kind: 'WAR15', cadencia: 'EVENTO' },   // sem popId próprio — só sinal de protocolo
+  'WAR-16': { kind: 'WAR16', cadencia: 'EVENTO' },   // sem popId próprio — só sinal de protocolo
+}
+
+/** Kinds cujo popId é materializado em Task → têm contadores de task próprios. */
+const POP_KINDS_COM_TASKS: PopKind[] = ['TASK', 'CHECKIN', 'WAR14']
+
+/** codigo 'OPE-06' → popId 'pop_ope_06' (convenção do seed central_operacional). */
+function codigoToPopId(codigo: string): string {
+  return `pop_${codigo.toLowerCase().replace('-', '_')}`
+}
+
+const TASK_TERMINAIS: TaskStatus[] = [TaskStatus.CONCLUIDO, TaskStatus.CANCELADO]
+
+function ageDays(d: Date, now: number): number {
+  return Math.floor((now - d.getTime()) / 86_400_000)
+}
+
+/**
+ * getProcessosHealth — guard idêntico ao da página /processos (qualquer sessão
+ * autenticada; a página só chama requireSession). 100% leitura, sem mutação.
+ */
+export const getProcessosHealth = cache(async (): Promise<ProcessosHealth> => {
+  await requireSession()
+
+  const now = Date.now()
+  const nowDate = new Date(now)
+  const cutoff30d = new Date(now - 30 * 86_400_000)
+  const { start: weekStart } = getWeekRange()
+  // OPE-07: relatórios são gravados com o weekStart da ÚLTIMA semana fechada
+  // (gerador e report-delivery-tracker usam getWeekRange(hoje-7d)).
+  const { start: lastWeekStart } = getWeekRange(new Date(now - 7 * 86_400_000))
+
+  const codigos = Object.keys(POP_INSTRUMENTACAO)
+  const taskPopIds = codigos
+    .filter((c) => POP_KINDS_COM_TASKS.includes(POP_INSTRUMENTACAO[c].kind))
+    .map(codigoToPopId)
+
+  const [
+    abertasByPop,
+    atrasadasByPop,
+    concluidasByPop,
+    ultimaByPop,
+    checkinsSemana,
+    protocolos,
+    relatoriosSemana,
+  ] = await Promise.all([
+    prisma.task.groupBy({
+      by: ['popId'],
+      where: { popId: { in: taskPopIds }, status: { notIn: TASK_TERMINAIS } },
+      _count: { _all: true },
+    }),
+    prisma.task.groupBy({
+      by: ['popId'],
+      where: {
+        popId: { in: taskPopIds },
+        status: { notIn: TASK_TERMINAIS },
+        dueDate: { lt: nowDate },
+      },
+      _count: { _all: true },
+    }),
+    prisma.task.groupBy({
+      by: ['popId'],
+      where: {
+        popId: { in: taskPopIds },
+        status: TaskStatus.CONCLUIDO,
+        completedAt: { gte: cutoff30d },
+      },
+      _count: { _all: true },
+    }),
+    prisma.task.groupBy({
+      by: ['popId'],
+      where: { popId: { in: taskPopIds } },
+      _max: { createdAt: true },
+    }),
+    prisma.clientWeeklyCheckin.groupBy({
+      by: ['status'],
+      where: { weekStart, client: { status: 'ACTIVE' } },
+      _count: { _all: true },
+    }),
+    prisma.criticalProtocol.findMany({
+      where: { status: { not: 'ENCERRADO' } },
+      select: { lastReviewedAt: true, activatedAt: true, exitMetAt: true },
+    }),
+    prisma.weeklyReport.findMany({
+      where: { weekStart: lastWeekStart, client: { status: 'ACTIVE' } },
+      select: { sentAt: true },
+    }),
+  ])
+
+  const abertasMap = new Map<string, number>()
+  for (const r of abertasByPop) if (r.popId) abertasMap.set(r.popId, r._count._all)
+  const atrasadasMap = new Map<string, number>()
+  for (const r of atrasadasByPop) if (r.popId) atrasadasMap.set(r.popId, r._count._all)
+  const concluidasMap = new Map<string, number>()
+  for (const r of concluidasByPop) if (r.popId) concluidasMap.set(r.popId, r._count._all)
+  const ultimaMap = new Map<string, Date | null>()
+  for (const r of ultimaByPop) if (r.popId) ultimaMap.set(r.popId, r._max.createdAt)
+
+  // ── Sinal OPE-06: check-ins da semana ─────────────────────────────────────
+  let entregues = 0
+  let pendentes = 0
+  let reprovados = 0
+  for (const g of checkinsSemana) {
+    const n = g._count._all
+    if (g.status === 'PENDENTE') pendentes += n
+    else if (g.status === 'REPROVADO') { reprovados += n; entregues += n }
+    else entregues += n // PREENCHIDO / APROVADO
+  }
+  const totalCheckins = entregues + pendentes
+
+  // ── Sinais de War Room (CriticalProtocol ativos) — sinais distintos por POP ─
+  const warAtivas = protocolos.length
+  const warSemRevisao = protocolos.filter((p) => {
+    const ref = p.lastReviewedAt ?? p.activatedAt // fallback: nunca revisada
+    return ageDays(ref, now) > 7
+  }).length
+  const warCriterioAtingido = protocolos.filter((p) => p.exitMetAt !== null).length
+
+  // ── Sinal OPE-07: relatórios gerados vs enviados na última semana fechada ──
+  const relatoriosGerados = relatoriosSemana.length
+  const relatoriosEnviados = relatoriosSemana.filter((r) => r.sentAt !== null).length
+
+  const porCodigo: Record<string, ProcessoHealth> = {}
+  let saudaveis = 0
+  let atencao = 0
+  let criticos = 0
+
+  for (const codigo of codigos) {
+    const { kind, cadencia } = POP_INSTRUMENTACAO[codigo]
+    const temTasks = POP_KINDS_COM_TASKS.includes(kind)
+    const popId = codigoToPopId(codigo)
+    const abertas = abertasMap.get(popId) ?? 0
+    const atrasadas = atrasadasMap.get(popId) ?? 0
+    const concluidas30d = concluidasMap.get(popId) ?? 0
+    const ultimaAtividade = ultimaMap.get(popId) ?? null
+
+    const detalhes: string[] = []
+    let status: ProcessoHealthStatus = 'SAUDAVEL'
+
+    // Regra transversal de ATRASO — honesta em qualquer cadência (evento ou rotina).
+    if (atrasadas >= 3) status = 'CRITICO'
+    else if (atrasadas > 0) status = 'ATENCAO'
+    if (atrasadas > 0) detalhes.push(`${atrasadas} tarefa(s) atrasada(s) sem conclusão`)
+
+    if (kind === 'TASK') {
+      const semAtividadeRecente = ultimaAtividade === null || ageDays(ultimaAtividade, now) > 14
+      if (cadencia === 'ROTINA') {
+        // Rotina recorrente parada é alarme legítimo.
+        if (ultimaAtividade === null) {
+          status = 'CRITICO'
+          detalhes.push('Nenhuma tarefa registrada — a rotina pode não estar rodando')
+        } else if (ageDays(ultimaAtividade, now) > 14) {
+          status = 'CRITICO'
+          detalhes.push(`Sem nova tarefa há ${ageDays(ultimaAtividade, now)} dias — rotina parada`)
+        }
+      } else if (semAtividadeRecente) {
+        // Cadência por EVENTO: ausência de ocorrência é NORMAL, não alarme.
+        detalhes.push('Disparado por evento — sem ocorrência recente')
+      }
+    } else if (kind === 'CHECKIN') {
+      detalhes.push(`${entregues} de ${totalCheckins} check-ins da semana entregues`)
+      if (reprovados > 0) detalhes.push(`${reprovados} check-in(s) reprovado(s) aguardando correção`)
+      if (pendentes > 0) {
+        detalhes.push(`${pendentes} cliente(s) sem check-in nesta semana`)
+        if (status !== 'CRITICO') status = 'ATENCAO'
+      }
+      if (reprovados > 0 && status !== 'CRITICO') status = 'ATENCAO'
+    } else if (kind === 'REPORT') {
+      detalhes.push(`${relatoriosGerados} relatório(s) gerado(s), ${relatoriosEnviados} enviado(s) na última semana fechada`)
+      if (relatoriosGerados === 0) {
+        detalhes.push('Nenhum relatório gerado na última semana fechada')
+        if (status === 'SAUDAVEL') status = 'ATENCAO'
+      } else if (relatoriosEnviados < relatoriosGerados) {
+        detalhes.push(`${relatoriosGerados - relatoriosEnviados} relatório(s) gerado(s) mas ainda não enviado(s) ao cliente`)
+        if (status === 'SAUDAVEL') status = 'ATENCAO'
+      }
+    } else if (kind === 'WAR14') {
+      // Abertura de War Room — quantas contas críticas estão em protocolo ativo.
+      detalhes.push(`${warAtivas} War Room(s) ativa(s)`)
+    } else if (kind === 'WAR15') {
+      // Documentação/condução — War Rooms sem revisão viram esquecimento.
+      if (warSemRevisao > 0) {
+        detalhes.push(`${warSemRevisao} War Room(s) sem revisão há mais de 7 dias`)
+        status = 'CRITICO'
+      } else {
+        detalhes.push('Todas as War Rooms ativas foram revisadas nos últimos 7 dias')
+      }
+    } else {
+      // WAR16 — acompanhamento até a saída do crítico.
+      if (warCriterioAtingido > 0) {
+        detalhes.push(`${warCriterioAtingido} War Room(s) com critério de saída atingido — avaliar encerramento`)
+        if (status === 'SAUDAVEL') status = 'ATENCAO'
+      } else {
+        detalhes.push('Nenhuma War Room aguardando encerramento')
+      }
+    }
+
+    porCodigo[codigo] = {
+      codigo,
+      instrumentado: true,
+      status,
+      temTasks,
+      abertas,
+      atrasadas,
+      concluidas30d,
+      ultimaAtividade,
+      detalhes,
+    }
+
+    if (status === 'CRITICO') criticos++
+    else if (status === 'ATENCAO') atencao++
+    else saudaveis++
+  }
+
+  // 'semInstrumentacao' = catálogo total − instrumentados. O loader não conhece
+  // o catálogo estático (lib/pops-catalog), então a página faz a subtração final.
+  // Aqui expomos apenas os instrumentados que faltam para o total ser resolvido
+  // na tela; mantemos 0 para não duplicar a fonte da verdade do catálogo.
+  return {
+    consultadoEm: nowDate,
+    saudaveis,
+    atencao,
+    criticos,
+    semInstrumentacao: 0,
+    porCodigo,
+  }
 })
