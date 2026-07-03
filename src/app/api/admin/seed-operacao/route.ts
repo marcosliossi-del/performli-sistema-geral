@@ -15,6 +15,7 @@ import { backfillEtapaFromResultado } from '@/services/client-etapa-backfill'
 import { runChurnBacktest } from '@/services/churn-backtest'
 import { generateAllWeeklyChecklists } from '@/services/weekly-checklist-generator'
 import { runClientOnboarding } from '@/services/client-onboarding'
+import { wipeAllTasks } from '@/services/wipe-all-tasks'
 import { writeAuditLog } from '@/lib/audit'
 
 // Backfill pode processar vários clientes — dá folga ao tempo de execução.
@@ -224,6 +225,21 @@ export async function POST(req: NextRequest) {
         select: { name: true, slug: true },
       })
       return NextResponse.json({ ok: true, phase, semGestor: clients })
+    }
+
+    if (phase === 'wipe-all-tasks') {
+      // RECOMEÇO TOTAL — zera Task + TaskRecurrenceRule + TaskTemplate para
+      // reescrever a operação do zero (mantém AuditLog/AutomationLog). Exige
+      // dupla confirmação: query ?confirm=RECOMECAR (o botão exige digitar).
+      const confirm = req.nextUrl.searchParams.get('confirm')
+      if (confirm !== 'RECOMECAR') {
+        return NextResponse.json(
+          { error: 'Confirmação inválida. Esta ação apaga TODAS as tarefas e é irreversível.' },
+          { status: 400 },
+        )
+      }
+      const wipe = await wipeAllTasks({ actorId: session.userId, actorRole: session.role })
+      return NextResponse.json({ ok: true, phase, wipe })
     }
 
     // phase === 'seed'

@@ -68,6 +68,9 @@ export function SeedOperacaoCard() {
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [backtest, setBacktest] = useState<BacktestReport | null>(null)
   const [onboardingRerun, setOnboardingRerun] = useState<{ checked: number; rerun: number; tasksCreated: number; failed: number } | null>(null)
+  const [wipeOpen, setWipeOpen] = useState(false)
+  const [wipeConfirmText, setWipeConfirmText] = useState('')
+  const [wipeResult, setWipeResult] = useState<{ tasksDeleted: number; recurrenceRulesDeleted: number; templatesDeleted: number } | null>(null)
 
   async function post(qs: string) {
     const res = await fetch(`/api/admin/seed-operacao${qs}`, { method: 'POST' })
@@ -304,6 +307,26 @@ export function SeedOperacaoCard() {
       toast(`Asaas conciliado: ${r?.geradas ?? 0} gerada(s), ${r?.conciliadas ?? 0} concluída(s), ${r?.reabertas ?? 0} reaberta(s).`, 'ok')
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Não foi possível conciliar o Asaas.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function runWipeAllTasks() {
+    setLoading(true)
+    setWipeResult(null)
+    try {
+      const res = await post('?phase=wipe-all-tasks&confirm=RECOMECAR')
+      setWipeResult(res.wipe ?? null)
+      setWipeOpen(false)
+      setWipeConfirmText('')
+      const w = res.wipe
+      toast(
+        `Operação zerada: ${w?.tasksDeleted ?? 0} tarefa(s), ${w?.recurrenceRulesDeleted ?? 0} recorrência(s), ${w?.templatesDeleted ?? 0} template(s) apagados.`,
+        'ok',
+      )
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível zerar a operação.', 'err')
     } finally {
       setLoading(false)
     }
@@ -754,6 +777,64 @@ export function SeedOperacaoCard() {
               </pre>
             </details>
           </div>
+        )}
+      </div>
+
+      <div className="mt-6 border-t border-[#EF4444]/30 pt-4">
+        <p className="text-xs font-semibold text-[#EF4444] mb-1">Zona de risco · Recomeço total</p>
+        <p className="text-xs text-[#87919E] mb-3">
+          Apaga <strong>TODAS</strong> as tarefas (incluindo o hub de Suporte), todas as
+          recorrências e todos os templates — para reescrever a operação do zero. O histórico
+          (auditoria e logs de automação) é preservado. <strong>Ação irreversível.</strong>
+        </p>
+        {wipeResult && (
+          <div className="mb-3 text-xs text-[#34c97a] border border-[#34c97a]/30 bg-[#34c97a]/5 rounded-lg p-3">
+            Operação zerada: {wipeResult.tasksDeleted} tarefa(s), {wipeResult.recurrenceRulesDeleted} recorrência(s)
+            e {wipeResult.templatesDeleted} template(s) apagados. Pronto para reescrever.
+          </div>
+        )}
+        {wipeOpen ? (
+          <div className="flex flex-col gap-2 border border-[#EF4444]/40 bg-[#EF4444]/5 rounded-lg p-3">
+            <p className="text-xs font-semibold text-[#EF4444]">
+              Para confirmar, digite <span className="font-mono">RECOMECAR</span> abaixo. Isso apaga tudo e não tem volta.
+            </p>
+            <input
+              type="text"
+              value={wipeConfirmText}
+              onChange={(e) => setWipeConfirmText(e.target.value)}
+              placeholder="RECOMECAR"
+              disabled={loading}
+              className="text-xs text-[#EBEBEB] bg-[#0A1E2C] border border-[#38435C] rounded-lg px-3 py-2 outline-none focus:border-[#EF4444] disabled:opacity-50"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={runWipeAllTasks}
+                disabled={loading || wipeConfirmText !== 'RECOMECAR'}
+                className="flex items-center gap-2 text-xs font-semibold text-white bg-[#EF4444] rounded-lg px-3 py-2 transition-colors hover:bg-[#EF4444]/90 disabled:opacity-40"
+              >
+                {loading ? <Loader2 size={13} className="animate-spin" /> : null}
+                Apagar tudo e recomeçar
+              </button>
+              <button
+                type="button"
+                onClick={() => { setWipeOpen(false); setWipeConfirmText('') }}
+                disabled={loading}
+                className="flex items-center gap-2 text-xs font-semibold text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setWipeOpen(true)}
+            disabled={loading}
+            className="flex items-center gap-2 text-xs font-semibold text-[#EF4444] border border-[#EF4444]/50 rounded-lg px-3 py-2 transition-colors hover:bg-[#EF4444]/10 disabled:opacity-50"
+          >
+            Zerar todas as tarefas (recomeço total)
+          </button>
         )}
       </div>
 
