@@ -253,6 +253,113 @@ export async function updateClientProdutos(
   return { success: true, slug: updated.slug }
 }
 
+/**
+ * PAUSA um cliente (T-23): status PAUSED + pausedAt=now + pauseReason.
+ *
+ * Semântica de produto: PAUSED = cliente temporariamente SEM operação ativa
+ * (pausou mídia, negociação, sazonalidade). Enquanto pausado, os crons
+ * operacionais (check-in, saúde, churn, War Room, relatório semanal) deixam de
+ * cobrá-lo INTENCIONALMENTE — mas contrato/financeiro seguem intactos e ele
+ * continua visível nas listas com selo + motivo + desde quando.
+ *
+ * Autorização (CLAUDE.md #2): requireSession + assertClientMutationAccess
+ * (ADMIN todos; staff amplo; GESTOR_TRAFEGO só clientes atribuídos).
+ * Não é possível pausar cliente CHURNED (já saiu — não faz sentido).
+ */
+export async function pauseClient(
+  clientId: string,
+  reason: string,
+): Promise<UpdateClientState> {
+  const session = await requireSession()
+
+  const motivo = (reason ?? '').trim().slice(0, 300)
+  if (!motivo) return { error: 'Informe o motivo da pausa (ex.: cliente pausou a mídia por sazonalidade).' }
+
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { slug: true, status: true },
+  })
+  if (!client) return { error: 'Cliente não encontrado.' }
+
+  // Posse ANTES de revelar o estado do cliente (não vaza status a quem não tem acesso).
+  try {
+    await assertClientMutationAccess(session, clientId)
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
+
+  if (client.status === 'CHURNED') {
+    return { error: 'Este cliente já foi cancelado — não é possível pausá-lo. Reative-o antes de pausar.' }
+  }
+  if (client.status === 'PAUSED') {
+    return { error: 'Este cliente já está pausado.' }
+  }
+
+  const updated = await prisma.client.update({
+    where: { id: clientId },
+    data: { status: 'PAUSED', pausedAt: new Date(), pauseReason: motivo },
+    select: { slug: true },
+  })
+
+  await writeAuditLog({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: 'client.paused',
+    entityType: 'Client',
+    entityId: clientId,
+    clientId,
+    metadata: { reason: motivo },
+  })
+
+  revalidatePath(`/clients/${updated.slug}`)
+  revalidatePath('/clients')
+  return { success: true, slug: updated.slug }
+}
+
+/**
+ * RETOMA um cliente pausado (T-23): status ACTIVE + pausedAt=null + pauseReason=null.
+ * Volta a ser cobrado normalmente pelos crons operacionais.
+ * Autorização idêntica a pauseClient.
+ */
+export async function resumeClient(clientId: string): Promise<UpdateClientState> {
+  const session = await requireSession()
+
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { slug: true, status: true, pauseReason: true },
+  })
+  if (!client) return { error: 'Cliente não encontrado.' }
+  if (client.status !== 'PAUSED') {
+    return { error: 'Este cliente não está pausado.' }
+  }
+
+  try {
+    await assertClientMutationAccess(session, clientId)
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
+
+  const updated = await prisma.client.update({
+    where: { id: clientId },
+    data: { status: 'ACTIVE', pausedAt: null, pauseReason: null },
+    select: { slug: true },
+  })
+
+  await writeAuditLog({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: 'client.resumed',
+    entityType: 'Client',
+    entityId: clientId,
+    clientId,
+    metadata: { previousReason: client.pauseReason },
+  })
+
+  revalidatePath(`/clients/${updated.slug}`)
+  revalidatePath('/clients')
+  return { success: true, slug: updated.slug }
+}
+
 export async function bulkSetBusinessType(
   clientIds: string[],
   businessType: BusinessType

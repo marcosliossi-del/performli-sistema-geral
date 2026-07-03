@@ -22,6 +22,7 @@ import { escalateOverdueTasks, markOverdueTasks, checkValidationSla, alertOrphan
 import { prisma } from '@/lib/prisma'
 import { detectSilentAtRiskClients } from '@/services/antichurn-monitor'
 import { runRetentionWatchdog } from '@/services/retention-watchdog'
+import { runPausedStaleMonitor } from '@/services/paused-stale-monitor'
 import { runAlertSlaWatchdog } from '@/services/alert-sla-watchdog'
 import { runChurnRadars } from '@/services/churn-radars'
 import { runReportDeliveryTracker } from '@/services/report-delivery-tracker'
@@ -245,6 +246,19 @@ async function runDailySync() {
     summary.retentionWatchdog = { ok: true, ...watchdogResult }
   } catch (err) {
     summary.retentionWatchdog = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // ── Step 5a2a: Monitor anti-esquecimento de clientes PAUSED (T-23) — pausa
+  //             longa demais (>45d) vira limbo/churn não assumido. Dedupe
+  //             semanal por cliente. try/catch isola falha do step. ────────────
+  try {
+    const pausedStaleResult = await runPausedStaleMonitor()
+    summary.pausedStaleMonitor = { ok: true, ...pausedStaleResult }
+  } catch (err) {
+    summary.pausedStaleMonitor = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     }
