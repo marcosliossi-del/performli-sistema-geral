@@ -16,6 +16,7 @@ import { prisma } from '@/lib/prisma'
 import { getWeekRange } from '@/lib/utils'
 import { statusIdFor } from '@/lib/tasks/statusMap'
 import { resolveClientOwner } from './owner-resolver'
+import { onResultadoChanged } from './client-lifecycle-automations'
 import { writeAuditLog } from '@/lib/audit'
 import type { ClientResultado, ClientEtapa } from '@prisma/client'
 
@@ -57,6 +58,7 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
     select: {
       id: true,
       name: true,
+      resultado: true, // valor ANTERIOR (para os hooks de ciclo de vida)
       resultadoWeek: true,
       roasMinimo: true, // fallback de alvo quando não há Goal(ROAS) — item 7
       gestorId: true, // dono canônico (precedência S2-016)
@@ -151,6 +153,7 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
       }
 
       const { resultado, etapa } = classify(roas, target)
+      const resultadoAnterior = c.resultado // snapshot antes de gravar (hooks R2/R4/R5/R6)
 
       await prisma.client.update({
         where: { id: c.id },
@@ -260,6 +263,16 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
             }
           }
         }
+      }
+
+      // Hooks de ciclo de vida do cliente (War Room, escala, chat) — best-effort:
+      // NUNCA quebram o motor de resultado. Cada regra já tem seu try/catch interno.
+      try {
+        await onResultadoChanged(c.id, resultadoAnterior, resultado)
+      } catch (hookErr) {
+        await prisma.automationLog
+          .create({ data: { clientId: c.id, status: 'FALHA', reason: `lifecycle.onResultadoChanged — ${hookErr instanceof Error ? hookErr.message : String(hookErr)}` } })
+          .catch(() => {})
       }
 
       await prisma.automationLog.create({

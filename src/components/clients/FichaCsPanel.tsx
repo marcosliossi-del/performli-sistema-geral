@@ -21,21 +21,27 @@ export function FichaCsPanel({
 }: {
   clientId: string
   canEdit: boolean
-  initial: { nps: string | null; relacionamento: string | null; curva: string | null; feedbackNegativo: number; atualizadoEm: string | null }
+  initial: { nps: string | null; relacionamento: string | null; curva: string | null; feedbackNegativo: number; salaDeGuerra?: boolean; atualizadoEm: string | null }
 }) {
   const [nps, setNps] = useState<string>(initial.nps ?? '')
   const [rel, setRel] = useState<string>(initial.relacionamento ?? '')
   const [curva, setCurva] = useState<string>(initial.curva ?? '')
   const [fb, setFb] = useState<number>(initial.feedbackNegativo)
+  const [war, setWar] = useState<boolean>(initial.salaDeGuerra ?? false)
   const [isPending, startTransition] = useTransition()
 
   function save() {
     startTransition(async () => {
+      // salaDeGuerra só é enviada quando a CS mexeu no checkbox NESTA tela.
+      // Evita que um save de outro campo com página desatualizada rebaixe uma
+      // War Room aberta pela automação depois do carregamento.
+      const initialWar = initial.salaDeGuerra ?? false
       const r = await updateFichaCs(clientId, {
         nps: (nps || null) as Nps | null,
         relacionamento: (rel || null) as Rel | null,
         curva: (curva || null) as Curva | null,
         feedbackNegativo: fb,
+        ...(war !== initialWar ? { salaDeGuerra: war } : {}),
       })
       if ('error' in r) { toast(r.error, 'err'); return }
       toast('Ficha de CS atualizada')
@@ -79,6 +85,21 @@ export function FichaCsPanel({
           </select>
         </Field>
       </div>
+
+      <label className="mt-3 flex items-center gap-2 text-xs text-[#EBEBEB] cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={war}
+          onChange={(e) => setWar(e.target.checked)}
+          disabled={!canEdit}
+          className="accent-[#EF4444] disabled:opacity-60"
+        />
+        <span>
+          {(initial.salaDeGuerra ?? false)
+            ? <>Cliente em <strong>War Room</strong> — desmarcar encerra o protocolo crítico agora (sem fechar as tarefas abertas)</>
+            : <>Abrir <strong>War Room</strong> agora (cria tarefas de plano de ação e acompanhamento diário)</>}
+        </span>
+      </label>
 
       {canEdit && (
         <button

@@ -165,7 +165,7 @@ export default async function ClientDetailPage({
       where: { id: client.id },
       select: {
         resultado: true, etapa: true, resultadoRoas: true, resultadoUpdatedAt: true,
-        nps: true, relacionamento: true, curva: true, feedbackNegativo: true, fichaCsUpdatedAt: true,
+        nps: true, relacionamento: true, curva: true, feedbackNegativo: true, salaDeGuerra: true, fichaCsUpdatedAt: true,
       },
     }),
     prisma.clientWeeklyCheckin.findFirst({
@@ -344,6 +344,7 @@ export default async function ClientDetailPage({
           relacionamento: resultadoInfo?.relacionamento ?? null,
           curva: resultadoInfo?.curva ?? null,
           feedbackNegativo: resultadoInfo?.feedbackNegativo ?? 0,
+          salaDeGuerra: resultadoInfo?.salaDeGuerra ?? false,
           atualizadoEm: resultadoInfo?.fichaCsUpdatedAt ? resultadoInfo.fichaCsUpdatedAt.toISOString() : null,
         }}
       />

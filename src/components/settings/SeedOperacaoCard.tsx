@@ -183,6 +183,18 @@ export function SeedOperacaoCard() {
     }
   }
 
+  async function runBackfillEtapa() {
+    setLoading(true)
+    try {
+      const res = await post('?phase=backfill-etapa')
+      toast(`Etapas recalculadas: ${res?.atualizados ?? 0} atualizada(s) de ${res?.processados ?? 0} cliente(s) (${res?.semResultado ?? 0} sem resultado).`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível recalcular as etapas.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function runReconciliarB2B() {
     setLoading(true)
     try {
@@ -490,6 +502,15 @@ export function SeedOperacaoCard() {
           >
             {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
             Marcar atacados como B2B
+          </button>
+          <button
+            type="button"
+            onClick={runBackfillEtapa}
+            disabled={loading}
+            className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+            Recalcular etapas (dos resultados)
           </button>
         </div>
 

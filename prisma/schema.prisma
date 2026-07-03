@@ -182,6 +182,10 @@ model Client {
   feedbackNegativo Int      @default(0)  // reclamações registradas na semana
   possivelChurn    Boolean  @default(false)
   salaDeGuerra     Boolean  @default(false)
+  // Marcador de reincidência da régua de feedback (C.2): true quando o cliente
+  // fechou a semana anterior com >= 1 feedback negativo. Usado nos hooks para
+  // tratar o 1º sinal da nova semana como escalação direta ("margem menor").
+  fechouSemanaEmRisco Boolean @default(false)
   healthStatus     ClientHealthStatus?
   fichaCsUpdatedAt DateTime?
 
