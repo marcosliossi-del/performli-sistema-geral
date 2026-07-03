@@ -191,12 +191,12 @@ export default async function AntiChurnPage() {
           <Card className="border-l-4 border-l-[#EF4444]">
             <p className="text-xs text-[#87919E] uppercase tracking-wider mb-1">Risco Alto</p>
             <p className="text-3xl font-bold text-[#EF4444]">{alto}</p>
-            <p className="text-xs text-[#87919E] mt-1">3+ semanas em Ruim · score ≥70</p>
+            <p className="text-xs text-[#87919E] mt-1">3+ semanas em Crítico · score ≥70</p>
           </Card>
           <Card className="border-l-4 border-l-[#EAB308]">
             <p className="text-xs text-[#87919E] uppercase tracking-wider mb-1">Risco Médio</p>
             <p className="text-3xl font-bold text-[#EAB308]">{medio}</p>
-            <p className="text-xs text-[#87919E] mt-1">1–2 semanas em Ruim · score 40–69</p>
+            <p className="text-xs text-[#87919E] mt-1">1–2 semanas em Crítico · score 40–69</p>
           </Card>
           <Card className="border-l-4 border-l-[#22C55E]">
             <p className="text-xs text-[#87919E] uppercase tracking-wider mb-1">Em Risco Total</p>
@@ -252,7 +252,7 @@ export default async function AntiChurnPage() {
                               <TrendingDown size={12} className={iconColor} />
                               <span>
                                 <span className={`font-semibold ${iconColor}`}>{client.consecutiveRuimWeeks}</span>{' '}
-                                semana{client.consecutiveRuimWeeks !== 1 ? 's' : ''} consecutiva{client.consecutiveRuimWeeks !== 1 ? 's' : ''} em Ruim
+                                semana{client.consecutiveRuimWeeks !== 1 ? 's' : ''} consecutiva{client.consecutiveRuimWeeks !== 1 ? 's' : ''} em Crítico
                               </span>
                               {client.worstMetric && (
                                 <>

@@ -68,9 +68,9 @@ export default async function AgencyPage() {
         <h2 className="text-sm font-semibold text-[#EBEBEB] mb-4">Distribuição de Saúde</h2>
         <div className="grid grid-cols-3 gap-3 mb-4">
           {([
-            { key: 'otimo',   label: 'Ótimo',   count: data.health.otimo,   color: '#22C55E', bar: 'bg-[#22C55E]' },
-            { key: 'regular', label: 'Regular', count: data.health.regular, color: '#EAB308', bar: 'bg-[#EAB308]' },
-            { key: 'ruim',    label: 'Ruim',    count: data.health.ruim,    color: '#EF4444', bar: 'bg-[#EF4444]' },
+            { key: 'otimo',   label: 'Saudável', count: data.health.otimo,   color: '#22C55E', bar: 'bg-[#22C55E]' },
+            { key: 'regular', label: 'Atenção',  count: data.health.regular, color: '#EAB308', bar: 'bg-[#EAB308]' },
+            { key: 'ruim',    label: 'Crítico',  count: data.health.ruim,    color: '#EF4444', bar: 'bg-[#EF4444]' },
           ] as const).map((s) => (
             <div key={s.key} className="text-center">
               <p className="text-3xl font-bold" style={{ color: s.color }}>{s.count}</p>
@@ -165,7 +165,7 @@ export default async function AgencyPage() {
             Clientes em Risco ({data.atRiskClients.length})
           </h2>
           {data.atRiskClients.length === 0 ? (
-            <p className="text-sm text-[#22C55E]">Nenhum cliente em status Ruim esta semana.</p>
+            <p className="text-sm text-[#22C55E]">Nenhum cliente em status Crítico esta semana.</p>
           ) : (
             <div className="space-y-2">
               {data.atRiskClients.slice(0, 8).map((c) => (
