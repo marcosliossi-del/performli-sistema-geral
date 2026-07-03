@@ -199,6 +199,25 @@ export async function updateTaskStatus(
     }
   }
 
+  // T-13 — approval órfão: quando o responsável PUXA a tarefa de volta pelo
+  // dropdown (sai de AGUARDANDO_CS/EM_VALIDACAO por caminho que NÃO é a decisão
+  // da CS em decideTaskValidation), a TaskApproval pendente ficaria eternamente
+  // aberta. Fechamos o registro (decidedAt + note), preservando o histórico:
+  // approved segue NULL (não foi aprovada nem reprovada, foi retirada).
+  // O DESTINO também precisa estar FORA da fila de validação: mover de
+  // AGUARDANDO_CS para EM_VALIDACAO (ou vice-versa) mantém a entrega na fila
+  // da CS — fechar o approval aí corromperia o ciclo com "retirada" falsa.
+  const VALIDATION_STATUSES: readonly TaskStatus[] = ['AGUARDANDO_CS', 'EM_VALIDACAO']
+  const leavingValidation =
+    VALIDATION_STATUSES.includes(current.status) && !VALIDATION_STATUSES.includes(status)
+  const pendingApproval = leavingValidation
+    ? await prisma.taskApproval.findFirst({
+        where: { taskId, decidedAt: null },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      })
+    : null
+
   // Update + Activity + espelho statusId na MESMA transação (D-004).
   await prisma.$transaction([
     prisma.task.update({
@@ -214,6 +233,14 @@ export async function updateTaskStatus(
     prisma.taskActivity.create({
       data: { taskId, actorId: userId, action: 'status_changed', fromValue: current.status, toValue: status },
     }),
+    ...(pendingApproval
+      ? [
+          prisma.taskApproval.update({
+            where: { id: pendingApproval.id },
+            data: { decidedAt: new Date(), note: 'Retirada da validação pelo responsável.' },
+          }),
+        ]
+      : []),
   ])
 
   await writeAuditLog({
@@ -383,11 +410,12 @@ export async function updateTaskFields(taskId: string, patch: UpdateTaskFieldsIn
   })
   if (!current) return { error: 'Tarefa não encontrada.' }
 
-  // Valida que o novo responsável existe (evita FK órfã).
+  // Valida que o novo responsável existe E está ATIVO (T-15: paridade com
+  // createTask — não reatribuir tarefa a usuário desativado, que nunca vai agir).
   let newAssigneeName: string | null = null
   if (input.assignedTo !== undefined && input.assignedTo !== current.assignedTo) {
-    const user = await prisma.user.findUnique({ where: { id: input.assignedTo }, select: { name: true } })
-    if (!user) return { error: 'Responsável informado não existe.' }
+    const user = await prisma.user.findFirst({ where: { id: input.assignedTo, active: true }, select: { name: true } })
+    if (!user) return { error: 'Responsável informado não existe ou está inativo.' }
     newAssigneeName = user.name
   }
 

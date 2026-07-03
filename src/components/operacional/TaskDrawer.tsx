@@ -358,6 +358,13 @@ export function TaskDrawer({
                   disabled={isPending}
                   className="w-full bg-[#0A1E2C] border border-[#38435C] rounded-lg px-2 py-1.5 text-[11px] text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
                 >
+                  {/* T-27: se o estado atual não é escolhível (ex.: ATRASADO,
+                      automático), ainda assim precisa aparecer selecionado — como
+                      opção desabilitada — para o select não mostrar valor vazio.
+                      O usuário move para os demais status normalmente. */}
+                  {!STATUS_OPTIONS.includes(status) && (
+                    <option value={status} disabled>{label(STATUS_LABELS, status)} (atual)</option>
+                  )}
                   {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{label(STATUS_LABELS, s)}</option>)}
                 </select>
                 {!canEdit && canEditStatusOnly && (
