@@ -23,12 +23,13 @@ import { useModalA11y } from '@/lib/useModalA11y'
 type Tab = 'comentarios' | 'atividade' | 'anexos'
 
 export function TaskDrawer({
-  task, canEdit, canEditStatusOnly = false, onClose,
+  task, canEdit, canEditStatusOnly = false, currentUser, onClose,
 }: {
   task: OperacionalTask | null
   canEdit: boolean
   /** GESTOR_TRAFEGO: só muda status, sem editar campos. */
   canEditStatusOnly?: boolean
+  currentUser: { id: string; name: string }
   onClose: () => void
 }) {
   // GESTOR_TRAFEGO move de coluna (status), mas não edita campos/checklist.
@@ -91,20 +92,47 @@ export function TaskDrawer({
     })
   }
   function handleComment() {
-    if (!comment.trim()) return
+    const body = comment.trim()
+    if (!body || !detail) return
+    // Append otimista: responde instantâneo e reconcilia o registro real
+    // (id do banco) em background. ROLLBACK remove o otimista no caminho {error}.
+    const tempId = `tmp-${Date.now()}`
+    const optimistic = { id: tempId, body, authorName: currentUser.name, createdAt: new Date() }
+    setDetail((d) => (d ? { ...d, comments: [...d.comments, optimistic] } : d))
+    setComment('')
     startTransition(async () => {
-      const r = await addTaskComment(task!.id, comment)
-      if ('error' in r) { toast(r.error, 'err'); return }
-      setComment('')
-      await reload()
+      const r = await addTaskComment(task!.id, body)
+      if ('error' in r) {
+        setDetail((d) => (d ? { ...d, comments: d.comments.filter((c) => c.id !== tempId) } : d))
+        setComment(body)
+        toast(r.error, 'err')
+        return
+      }
+      setDetail((d) => (d
+        ? {
+            ...d,
+            comments: d.comments.map((c) => (c.id === tempId
+              ? { id: r.comment.id, body: r.comment.body, authorName: r.comment.authorName, createdAt: new Date(r.comment.createdAt) }
+              : c)),
+          }
+        : d))
       toast('Comentário adicionado')
     })
   }
   function handleToggle(itemId: string, done: boolean) {
+    if (!detail) return
+    // Patch local do item + recálculo dos obrigatórios pendentes (resposta
+    // instantânea); confirma em background e ROLLBACK ao estado anterior no erro.
+    const prev = detail
+    setDetail((d) => {
+      if (!d) return d
+      const checklist = d.checklist.map((it) => (it.id === itemId ? { ...it, done } : it))
+      const requiredOpen = checklist.filter((it) => it.required && !it.done).length
+      return { ...d, checklist, requiredOpen }
+    })
     startTransition(async () => {
       const r = await toggleChecklistItem(itemId, done)
-      if ('error' in r) { toast(r.error, 'err'); return }
-      await reload()
+      if ('error' in r) { setDetail(prev); toast(r.error, 'err') }
     })
   }
   function handleSubmitValidation() {

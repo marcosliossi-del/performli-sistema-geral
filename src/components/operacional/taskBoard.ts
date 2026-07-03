@@ -17,6 +17,8 @@ import { STATUS_LABELS, label } from './labels'
 export type BoardHandlers = {
   /** Abre o painel canônico da task (/t/[id], D-009). */
   onOpen: (taskId: string) => void
+  /** Prefetch da rota do painel (hover/focus) para abrir instantâneo. */
+  onPrefetch?: (taskId: string) => void
   onChangeStatus: (task: OperacionalTask, next: string) => Promise<void>
   onChangePriority: (task: OperacionalTask, next: TaskPriority) => Promise<void>
   onChangeDueDate: (task: OperacionalTask, iso: string | null) => Promise<void>

@@ -220,7 +220,6 @@ function PanelSections({
   onRequestClose: () => void
 }) {
   const { data, users, candidates, currentUser, canEdit, canEditStatusOnly } = result
-  const router = useRouter()
   // GESTOR_TRAFEGO move de coluna (status), mas não edita campos/atribui.
   const canChangeStatus = canEdit || canEditStatusOnly
 
@@ -308,9 +307,11 @@ function PanelSections({
         evidence: evidence.trim(),
       })
       if ('error' in r) { toast(r.error, 'err'); return }
+      // Estado local já reflete (setStatus); sem router.refresh() — a rota é
+      // dinâmica e re-renderiza fresca na próxima navegação. Evita o refetch
+      // bloqueante do RSC a cada conclusão.
       setStatus('CONCLUIDO')
       toast('Tarefa concluída')
-      router.refresh()
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Não foi possível concluir a tarefa.', 'err')
     } finally {
@@ -323,9 +324,9 @@ function PanelSections({
     try {
       const r = await submitTaskForValidation(data.id, evidence, completionNotes)
       if ('error' in r) { toast(r.error, 'err'); return }
+      // Estado local já reflete (setStatus); sem router.refresh() bloqueante.
       setStatus('AGUARDANDO_CS')
       toast('Enviado para validação da CS')
-      router.refresh()
     } finally {
       setBusy(false)
     }
@@ -337,9 +338,9 @@ function PanelSections({
       const r = await decideTaskValidation(data.id, approved, approved ? undefined : rejectNote)
       if ('error' in r) { toast(r.error, 'err'); return }
       setRejectNote('')
+      // Estado local já reflete (setStatus); sem router.refresh() bloqueante.
       setStatus(approved ? 'CONCLUIDO' : 'AJUSTES_SOLICITADOS')
       toast(approved ? 'Validação aprovada' : 'Ajustes solicitados', approved ? 'ok' : 'info')
-      router.refresh()
     } finally {
       setBusy(false)
     }

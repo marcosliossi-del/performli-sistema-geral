@@ -360,10 +360,13 @@ export async function updateTaskStatus(
     console.error('[task-automation] hook status_changed falhou:', err)
   }
 
-  revalidatePath('/tasks')
+  // Revalidação cirúrgica (perf): OperacionalBoard e SupportBoard são otimistas
+  // com rollback, então re-renderizar essas rotas a cada clique é trabalho
+  // redundante. /tasks é só redirect e /meu-dia é uma leitura sem mutação inline
+  // — ambas rotas dinâmicas (auth por cookie) que re-renderizam frescas na
+  // próxima navegação de qualquer forma. Mantemos apenas /operacional como
+  // superfície canônica; TaskDrawer/TaskPanel reconciliam o estado localmente.
   revalidatePath('/operacional')
-  revalidatePath('/suporte')
-  revalidatePath('/meu-dia')
   return { ok: true }
 }
 
@@ -486,9 +489,10 @@ export async function updateTaskFields(taskId: string, patch: UpdateTaskFieldsIn
   const result = await mutateTask(taskId, session, data, activities, extraOps)
   if ('error' in result) return result
 
+  // Revalidação cirúrgica (perf): edição de campos reflete otimista nos boards
+  // (patchTask/commit com rollback). Mantemos só /operacional — /suporte e
+  // /meu-dia são rotas dinâmicas que re-renderizam frescas na próxima navegação.
   revalidatePath('/operacional')
-  revalidatePath('/suporte')
-  revalidatePath('/meu-dia')
   return { ok: true }
 }
 
