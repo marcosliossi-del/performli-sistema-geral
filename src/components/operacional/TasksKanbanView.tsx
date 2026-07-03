@@ -130,6 +130,7 @@ export function TasksKanbanView({
                             <TaskCard
                               task={toTaskVM(t)}
                               onOpen={handlers.onOpen}
+                              onPrefetch={handlers.onPrefetch}
                               dragHandleProps={
                                 canDrag && prov.dragHandleProps
                                   // As libs de DnD e a Fase 3 divergem no tipo do handle;

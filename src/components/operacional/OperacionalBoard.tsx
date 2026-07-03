@@ -309,6 +309,9 @@ export function OperacionalBoard({
     canEditStatusOnly,
     users: usersOpts,
     onOpen: (id) => router.push(`/t/${id}`),
+    // Prefetch no hover/focus: aquece o RSC do painel /t/[id] antes do clique,
+    // fazendo a navegação abrir instantânea (percepção de fluidez).
+    onPrefetch: (id) => router.prefetch(`/t/${id}`),
 
     onChangeStatus: async (task, next) => {
       const prevStatus = task.status
@@ -487,7 +490,7 @@ export function OperacionalBoard({
         </div>
       )}
 
-      {selected && <TaskDrawer task={selected} canEdit={canEdit} canEditStatusOnly={canEditStatusOnly} onClose={() => setSelected(null)} />}
+      {selected && <TaskDrawer task={selected} canEdit={canEdit} canEditStatusOnly={canEditStatusOnly} currentUser={currentUser} onClose={() => setSelected(null)} />}
       {novaOpen && <NovaTarefaModal ctx={ctx} onClose={() => setNovaOpen(false)} />}
     </div>
   )

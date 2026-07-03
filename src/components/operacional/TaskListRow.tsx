@@ -51,6 +51,8 @@ export function TaskListRow({ task, handlers }: { task: OperacionalTask; handler
       <button
         type="button"
         onClick={() => handlers.onOpen(task.id)}
+        onMouseEnter={() => handlers.onPrefetch?.(task.id)}
+        onFocus={() => handlers.onPrefetch?.(task.id)}
         className="min-w-0 flex-1 truncate text-left text-[13px] text-[#EBEBEB] hover:text-[#95BBE2]"
       >
         {task.title}

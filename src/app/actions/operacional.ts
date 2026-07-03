@@ -201,9 +201,10 @@ export async function toggleChecklistItem(itemId: string, done: boolean): Promis
     }),
   ])
 
+  // Revalidação cirúrgica (perf): o toggle reflete otimista no TaskDrawer/
+  // TaskPanel. Mantemos só /operacional (mostra contadores do checklist nos
+  // cards) — /suporte e /meu-dia re-renderizam frescas na próxima navegação.
   revalidatePath('/operacional')
-  revalidatePath('/suporte')
-  revalidatePath('/meu-dia')
   return { ok: true }
 }
 

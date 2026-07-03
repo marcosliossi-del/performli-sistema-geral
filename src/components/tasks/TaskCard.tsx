@@ -16,11 +16,13 @@ import type { TaskVM } from './types'
 export function TaskCard({
   task,
   onOpen,
+  onPrefetch,
   dragHandleProps,
   className,
 }: {
   task: TaskVM
   onOpen?: (taskId: string) => void
+  onPrefetch?: (taskId: string) => void
   dragHandleProps?: React.HTMLAttributes<HTMLElement>
   className?: string
 }) {
@@ -46,6 +48,8 @@ export function TaskCard({
         <button
           type="button"
           onClick={() => onOpen?.(task.id)}
+          onMouseEnter={() => onPrefetch?.(task.id)}
+          onFocus={() => onPrefetch?.(task.id)}
           className="min-w-0 flex-1 text-left text-[13px] font-medium leading-snug text-text-hi hover:text-brand-strong"
         >
           {task.title}
