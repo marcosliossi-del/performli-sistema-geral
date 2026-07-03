@@ -179,13 +179,16 @@ export async function updateRecurrenceRule(
   }
 
   // ── Monta before/after só dos campos que realmente mudaram ────────────────
-  const before: Record<string, unknown> = {}
-  const after: Record<string, unknown> = {}
+  // Tipado como valores JSON concretos (não unknown): writeAuditLog exige
+  // Prisma.InputJsonValue e `unknown` não é atribuível a ele no build real.
+  const before: Record<string, string | number | null> = {}
+  const after: Record<string, string | number | null> = {}
   const fields = ['frequency', 'dayOfWeek', 'dayOfMonth', 'hour', 'minute', 'templateId'] as const
   for (const f of fields) {
-    if (ruleData[f] !== undefined && ruleData[f] !== rule[f]) {
+    const novo = ruleData[f]
+    if (novo !== undefined && novo !== rule[f]) {
       before[f] = rule[f]
-      after[f] = ruleData[f]
+      after[f] = novo
     }
   }
   if (roleChange && roleChange.before !== roleChange.after) {
