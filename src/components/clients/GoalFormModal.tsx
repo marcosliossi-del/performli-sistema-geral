@@ -113,7 +113,7 @@ function GoalFormDialog({ clientId, businessType, onClose }: { clientId: string;
 
   if (state.success) onClose()
 
-  const isLocal = businessType === 'LOCAL'
+  const isLocal = businessType === 'LOCAL' || businessType === 'B2B'
   const metrics = period === 'MONTHLY'
     ? (isLocal ? LOCAL_MONTHLY : ECOMMERCE_MONTHLY)
     : (isLocal ? LOCAL_WEEKLY  : ECOMMERCE_WEEKLY)

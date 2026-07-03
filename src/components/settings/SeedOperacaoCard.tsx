@@ -183,6 +183,22 @@ export function SeedOperacaoCard() {
     }
   }
 
+  async function runReconciliarB2B() {
+    setLoading(true)
+    try {
+      const res = await post('?phase=reconciliar-b2b')
+      const nomes: string[] = res?.clientes ?? []
+      toast(
+        `Atacados marcados como B2B: ${res?.atualizados ?? 0}${nomes.length ? ` (${nomes.join(', ')})` : ''}.`,
+        'ok',
+      )
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível marcar os atacados como B2B.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function runLimparMetasZeradas() {
     setLoading(true)
     try {
@@ -465,6 +481,15 @@ export function SeedOperacaoCard() {
           >
             {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
             Limpar metas zeradas (bug antigo)
+          </button>
+          <button
+            type="button"
+            onClick={runReconciliarB2B}
+            disabled={loading}
+            className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+            Marcar atacados como B2B
           </button>
         </div>
 

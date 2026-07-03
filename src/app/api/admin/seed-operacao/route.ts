@@ -10,6 +10,7 @@ import { reconcileAsaasTasks } from '@/services/asaas-task-reconciler'
 import { vincularAsaasClientes } from '@/services/seed-vincular-asaas'
 import { migrarMetasRoasParaFaturamento } from '@/services/migrar-metas-faturamento'
 import { limparMetasZeradas } from '@/services/limpar-metas-zeradas'
+import { reconciliarBusinessTypeB2B } from '@/services/reconciliar-business-type'
 import { writeAuditLog } from '@/lib/audit'
 
 // Backfill pode processar vários clientes — dá folga ao tempo de execução.
@@ -119,6 +120,16 @@ export async function POST(req: NextRequest) {
       // Apaga metas com targetValue <= 0 (bug antigo). Idempotente; o próprio
       // serviço registra o AuditLog 'goals.limpezaZeradas' com a contagem.
       const result = await limparMetasZeradas({
+        actorId: session.userId,
+        actorRole: session.role,
+      })
+      return NextResponse.json({ ok: true, phase, ...result })
+    }
+
+    if (phase === 'reconciliar-b2b') {
+      // Marca os 3 clientes de atacado como B2B (medem como negócio local).
+      // Idempotente; o serviço registra o AuditLog 'client.businessTypeB2B'.
+      const result = await reconciliarBusinessTypeB2B({
         actorId: session.userId,
         actorRole: session.role,
       })
