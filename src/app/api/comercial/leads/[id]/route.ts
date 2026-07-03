@@ -15,6 +15,7 @@ const patchSchema = z.object({
   expectedCloseAt: z.string().optional().nullable(),
   lostReason:      z.string().optional(),
   notes:           z.string().optional(),
+  ownerId:         z.string().nullable().optional(),
 })
 
 /** PATCH /api/comercial/leads/[id] — update lead (including drag-and-drop status change) */
@@ -39,6 +40,12 @@ export async function PATCH(
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const data = parsed.data
+
+  // Valida responsável (quando informado e não-nulo): precisa existir e estar ativo.
+  if (data.ownerId) {
+    const owner = await prisma.user.findFirst({ where: { id: data.ownerId, active: true }, select: { id: true } })
+    if (!owner) return NextResponse.json({ error: 'Responsável informado não existe ou está inativo.' }, { status: 400 })
+  }
   const closedAt =
     data.status === 'FECHADO' || data.status === 'PERDIDO'
       ? new Date()

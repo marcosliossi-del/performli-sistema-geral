@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/session'
 import { z } from 'zod'
+import { BusinessType, MetricType } from '@prisma/client'
 import { runClientOnboarding } from '@/services/client-onboarding'
 
 const schema = z.object({
   // Client fields
   clientName:    z.string().min(1),
+  razaoSocial:   z.string().optional(),
+  businessType:  z.nativeEnum(BusinessType).optional(),
   phone:         z.string().optional(),
   email:         z.string().email().optional().or(z.literal('')),
   industry:      z.string().optional(),
@@ -18,7 +21,7 @@ const schema = z.object({
   managerId:     z.string().optional(),
   // Goal
   monthlyGoal:   z.number().positive().optional(),
-  goalMetric:    z.string().optional(),
+  goalMetric:    z.nativeEnum(MetricType).optional(),
 })
 
 function slugify(text: string): string {
@@ -68,7 +71,9 @@ export async function POST(
   const client = await prisma.client.create({
     data: {
       name:          d.clientName,
+      razaoSocial:   d.razaoSocial?.trim() || null,
       slug,
+      businessType:  d.businessType ?? 'ECOMMERCE',
       email:         d.email || null,
       phone:         d.phone || null,
       industry:      d.industry || null,
@@ -92,7 +97,7 @@ export async function POST(
     await prisma.goal.create({
       data: {
         clientId:    client.id,
-        metric:      (d.goalMetric ?? 'FATURAMENTO') as any,
+        metric:      d.goalMetric ?? 'FATURAMENTO',
         period:      'MONTHLY',
         targetValue: d.monthlyGoal,
         startDate:   start,

@@ -1,4 +1,5 @@
 import { Suspense } from 'react'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Target, TrendingUp, Flame, DollarSign } from 'lucide-react'
 import { requireSession } from '@/lib/dal'
@@ -90,15 +91,15 @@ export default async function ComercialPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-[#EBEBEB]">CRM Comercial</h1>
-          <p className="text-sm text-[#87919E] mt-0.5">Pipeline de vendas da agência</p>
+          <h1 className="text-xl font-bold text-[#EBEBEB]">Funil de Vendas (Leads)</h1>
+          <p className="text-sm text-[#87919E] mt-0.5">Leads em prospecção até o fechamento</p>
         </div>
-        <a
+        <Link
           href="/comercial/dashboard"
           className="text-xs text-[#87919E] hover:text-[#EBEBEB] transition-colors border border-[#38435C] rounded-lg px-3 py-1.5"
         >
           Ver dashboard
-        </a>
+        </Link>
       </div>
 
       {/* KPI row */}

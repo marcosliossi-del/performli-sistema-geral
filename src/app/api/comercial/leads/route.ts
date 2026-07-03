@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/session'
 import { z } from 'zod'
+import { AgencyLeadStatus } from '@prisma/client'
+
+// Etapas iniciais válidas ao criar um lead (kanban aberto — exclui os estados
+// finais FECHADO/PERDIDO, que só são atingidos por conversão/perda).
+const INITIAL_STAGES = [
+  'NOVO',
+  'EM_CONTATO',
+  'REUNIAO_AGENDADA',
+  'PROPOSTA_ENVIADA',
+  'PROPOSTA_ACEITA',
+] as const
 
 const createSchema = z.object({
   name:            z.string().min(1),
@@ -13,6 +24,8 @@ const createSchema = z.object({
   probability:     z.number().min(0).max(100).optional(),
   expectedCloseAt: z.string().optional(),
   notes:           z.string().optional(),
+  status:          z.enum(INITIAL_STAGES).optional(),
+  ownerId:         z.string().optional(),
 })
 
 /** GET /api/comercial/leads — list all active leads */
@@ -46,7 +59,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { name, email, phone, company, source, value, probability, expectedCloseAt, notes } = parsed.data
+  const { name, email, phone, company, source, value, probability, expectedCloseAt, notes, status, ownerId } = parsed.data
+
+  // Valida que o responsável informado existe e está ativo (evita ownerId órfão).
+  let validOwnerId: string | null = null
+  if (ownerId) {
+    const owner = await prisma.user.findFirst({ where: { id: ownerId, active: true }, select: { id: true } })
+    if (!owner) return NextResponse.json({ error: 'Responsável informado não existe ou está inativo.' }, { status: 400 })
+    validOwnerId = owner.id
+  }
 
   const lead = await prisma.agencyLead.create({
     data: {
@@ -59,6 +80,8 @@ export async function POST(request: NextRequest) {
       probability:     probability ?? null,
       expectedCloseAt: expectedCloseAt ? new Date(expectedCloseAt) : null,
       notes:           notes || null,
+      status:          (status as AgencyLeadStatus | undefined) ?? 'NOVO',
+      ownerId:         validOwnerId,
     },
     include: { activities: true },
   })

@@ -16,20 +16,28 @@ export async function checkTaskCompletion(
   taskId: string,
   opts?: { reviewSatisfied?: boolean },
 ): Promise<{ allowed: boolean; reason?: string }> {
-  const task = await prisma.task.findUnique({
-    where: { id: taskId },
-    select: {
-      priority: true,
-      evidence: true,
-      completionNotes: true,
-      requiresEvidence: true,
-      requiresReview: true,
-      riskScore: true,
-      checklist: { select: { required: true, done: true } },
-      approvals: { select: { approved: true } },
-      _count: { select: { attachments: true, comments: true } },
-    },
-  })
+  let task
+  try {
+    task = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: {
+        priority: true,
+        evidence: true,
+        completionNotes: true,
+        requiresEvidence: true,
+        requiresReview: true,
+        riskScore: true,
+        checklist: { select: { required: true, done: true } },
+        approvals: { select: { approved: true } },
+        _count: { select: { attachments: true, comments: true } },
+      },
+    })
+  } catch {
+    // "Nunca lança" (doc): uma falha de LEITURA não pode bloquear nem quebrar a
+    // conclusão. Na dúvida, permite — o pior caso é não barrar uma tarefa
+    // crítica, jamais derrubar a tela.
+    return { allowed: true }
+  }
 
   // Tarefa inexistente: não é papel do guard bloquear isso (o caller trata).
   if (!task) return { allowed: true }

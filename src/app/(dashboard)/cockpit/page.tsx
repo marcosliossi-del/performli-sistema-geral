@@ -161,26 +161,19 @@ export default async function CockpitPage() {
         </div>
       )}
 
-      {/* Blocos por fatia — transparência incremental (não esconder o que falta) */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <Lock size={13} className="text-[#87919E]" />
-          <h2 className="text-sm font-semibold text-[#87919E]">
-            Próximos blocos (entram conforme cada POP é sistematizado)
-          </h2>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {PENDENTES.map((p) => (
-            <div
-              key={p.titulo}
-              className="p-3 rounded-lg border border-dashed border-[#38435C] text-[10px] text-[#87919E]"
-            >
-              <p className="text-[#EBEBEB]/80 font-medium">{p.titulo}</p>
-              <p className="mt-0.5">aguardando {p.pop}</p>
-            </div>
+      {/* Próximos blocos — transparência incremental em uma linha discreta no rodapé */}
+      <p className="flex items-start gap-1.5 text-[10px] text-[#87919E]/70">
+        <Lock size={11} className="text-[#87919E]/70 mt-0.5 flex-shrink-0" />
+        <span>
+          Em breve, conforme cada POP é sistematizado:{' '}
+          {PENDENTES.map((p, i) => (
+            <span key={p.titulo}>
+              {i > 0 && ' · '}
+              <span className="text-[#EBEBEB]/70">{p.titulo}</span> ({p.pop})
+            </span>
           ))}
-        </div>
-      </div>
+        </span>
+      </p>
 
       <p className="flex items-center gap-1.5 text-[10px] text-[#87919E]/60">
         <CheckCircle2 size={11} className="text-[#22C55E]" />

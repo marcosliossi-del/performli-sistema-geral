@@ -379,7 +379,7 @@ export function ClientesTable({ clients }: Props) {
                         <a
                           href={`/clients/${client.slug}`}
                           className="p-1.5 rounded-lg text-[#87919E] hover:text-[#EBEBEB] hover:bg-[#38435C]/40 transition-colors"
-                          title="Editar"
+                          title="Abrir cliente"
                         >
                           <Pencil size={14} />
                         </a>

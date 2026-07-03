@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic'
 
+import Link from 'next/link'
 import { requireSession } from '@/lib/dal'
 import { getDashboardData, getClientsOperationalTable, getManagerStats, getWeeklyChecklist } from '@/lib/dal'
 import { normalizeRole } from '@/lib/rbac'
@@ -125,24 +126,26 @@ export default async function DashboardPage() {
             {oscillationAlerts.map((alert) => {
               const isDrop = alert.type === 'KPI_DROP_24H'
               return (
-                <Card key={alert.id} className={`p-3 border-l-4 ${isDrop ? 'border-l-[#EF4444]' : 'border-l-[#22C55E]'}`}>
-                  <div className="flex items-start gap-2">
-                    {isDrop ? (
-                      <ArrowDownRight size={14} className="text-[#EF4444] mt-0.5 flex-shrink-0" />
-                    ) : (
-                      <ArrowUpRight size={14} className="text-[#22C55E] mt-0.5 flex-shrink-0" />
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-[#EBEBEB] truncate">
-                        {alert.client.name}
-                      </p>
-                      <p className="text-xs text-[#87919E] mt-0.5 line-clamp-2">{alert.title}</p>
-                      <p className="text-[10px] text-[#87919E]/60 mt-1">
-                        {timeAgo(new Date(alert.createdAt))}
-                      </p>
+                <Link key={alert.id} href={`/clients/${alert.client.slug}`} className="block">
+                  <Card className={`p-3 border-l-4 transition-colors hover:bg-white/[0.03] ${isDrop ? 'border-l-[#EF4444]' : 'border-l-[#22C55E]'}`}>
+                    <div className="flex items-start gap-2">
+                      {isDrop ? (
+                        <ArrowDownRight size={14} className="text-[#EF4444] mt-0.5 flex-shrink-0" />
+                      ) : (
+                        <ArrowUpRight size={14} className="text-[#22C55E] mt-0.5 flex-shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-[#EBEBEB] truncate">
+                          {alert.client.name}
+                        </p>
+                        <p className="text-xs text-[#87919E] mt-0.5 line-clamp-2">{alert.title}</p>
+                        <p className="text-[10px] text-[#87919E]/60 mt-1">
+                          {timeAgo(new Date(alert.createdAt))}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </Card>
+                  </Card>
+                </Link>
               )
             })}
           </div>
@@ -181,9 +184,9 @@ export default async function DashboardPage() {
         <div className="col-span-2 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-[#EBEBEB]">Saúde dos Clientes</h2>
-            <a href="/clients" className="text-xs text-[#95BBE2] hover:underline">
+            <Link href="/clients" className="text-xs text-[#95BBE2] hover:underline">
               Ver todos →
-            </a>
+            </Link>
           </div>
           <ClientHealthGrid clients={clients} />
         </div>
@@ -199,9 +202,9 @@ export default async function DashboardPage() {
           <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-[#EBEBEB]">Alertas Recentes</h2>
-            <a href="/alerts" className="text-xs text-[#95BBE2] hover:underline">
+            <Link href="/alerts" className="text-xs text-[#95BBE2] hover:underline">
               Ver todos →
-            </a>
+            </Link>
           </div>
 
           {alerts.length === 0 ? (
@@ -215,20 +218,22 @@ export default async function DashboardPage() {
                 const config = alertIcons[alert.type as AlertType] ?? alertIconFallback
                 const Icon = config.icon
                 return (
-                  <Card key={alert.id} className="p-3">
-                    <div className="flex items-start gap-2">
-                      <Icon size={14} className={`${config.color} mt-0.5 flex-shrink-0`} />
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-[#EBEBEB] truncate">
-                          {alert.client.name}
-                        </p>
-                        <p className="text-xs text-[#87919E] mt-0.5 line-clamp-2">{alert.body}</p>
-                        <p className="text-[10px] text-[#87919E]/60 mt-1">
-                          {timeAgo(new Date(alert.createdAt))}
-                        </p>
+                  <Link key={alert.id} href={`/clients/${alert.client.slug}`} className="block">
+                    <Card className="p-3 transition-colors hover:bg-white/[0.03]">
+                      <div className="flex items-start gap-2">
+                        <Icon size={14} className={`${config.color} mt-0.5 flex-shrink-0`} />
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-[#EBEBEB] truncate">
+                            {alert.client.name}
+                          </p>
+                          <p className="text-xs text-[#87919E] mt-0.5 line-clamp-2">{alert.body}</p>
+                          <p className="text-[10px] text-[#87919E]/60 mt-1">
+                            {timeAgo(new Date(alert.createdAt))}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </Card>
+                    </Card>
+                  </Link>
                 )
               })}
             </div>

@@ -48,6 +48,7 @@ const createSchema = z.object({
   priority:    z.nativeEnum(TaskPriority).default('MEDIA'),
   dueDate:     z.string().optional(),
   clientId:    z.string().optional(),
+  assignedTo:  z.string().optional(),
 })
 
 export async function createTask(formData: FormData) {
@@ -64,6 +65,7 @@ export async function createTask(formData: FormData) {
     priority:    formData.get('priority') ?? 'MEDIA',
     dueDate:     formData.get('dueDate') ?? undefined,
     clientId:    formData.get('clientId') ?? undefined,
+    assignedTo:  formData.get('assignedTo') ?? undefined,
   }
 
   const parsed = createSchema.safeParse(raw)
@@ -71,11 +73,21 @@ export async function createTask(formData: FormData) {
     throw new Error(parsed.error.issues.map((i) => i.message).join(', '))
   }
 
-  const { title, description, priority, dueDate, clientId } = parsed.data
+  const { title, description, priority, dueDate, clientId, assignedTo } = parsed.data
 
   // Posse: tarefa vinculada a cliente exige papel + atribuição (CS acompanha).
   if (clientId) {
     await assertClientMutationAccess(session, clientId, { allowCS: true })
+  }
+
+  // Responsável: usa o informado (validando que existe e está ativo) ou, se
+  // vazio, o próprio criador. Mantém assignedTo (espelho principal, D-005) sempre
+  // válido — nenhuma FK órfã.
+  let assigneeId = userId
+  if (assignedTo && assignedTo !== userId) {
+    const assignee = await prisma.user.findFirst({ where: { id: assignedTo, active: true }, select: { id: true } })
+    if (!assignee) throw new Error('Responsável informado não existe ou está inativo.')
+    assigneeId = assignee.id
   }
 
   const task = await prisma.task.create({
@@ -87,7 +99,7 @@ export async function createTask(formData: FormData) {
       statusId: statusIdFor('A_FAZER'),
       dueDate: dueDate ? parseDateInput(dueDate) : null,
       clientId: clientId || null,
-      assignedTo: userId,
+      assignedTo: assigneeId,
       requesterId: userId,
       requestedAt: new Date(), // data do pedido
       activities: { create: { actorId: userId, action: 'created' } },

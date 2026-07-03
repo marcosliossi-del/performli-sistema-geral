@@ -7,6 +7,7 @@ import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { MetricType } from '@prisma/client'
 import { getMonthRange } from '@/lib/utils'
 import { parseDateInput } from '@/lib/tasks/dateInput'
+import { LOCAL_RESULT_METRICS } from '@/lib/metas/metricOptions'
 import {
   upsertWeeklyGoalForMonth,
   syncWeeklyGoalsFromMonthly as syncWeeklyGoalsFromMonthlyService,
@@ -115,9 +116,20 @@ export type MonthlyGoalsRow = {
   FATURAMENTO: number | null
   ROAS:        number | null
   SPEND:       number | null
-  LEADS:       number | null
   CPL:         number | null
+  CPA:         number | null
+  /**
+   * Métrica-resultado PRINCIPAL do cliente local/B2B no mês (a Goal não-taxa que
+   * já existe): CONVERSIONS ('Compras (Meta Ads)'), LEADS, MENSAGENS,
+   * AGENDAMENTOS, LIGACOES, SEGUIDORES ou VISITAS_PERFIL. `null` quando o cliente
+   * ainda não tem meta-resultado no mês → a grade cai no default LEADS.
+   */
+  localMetric: MetricType | null
+  localValue:  number | null
 }
+
+// Métricas-resultado locais que podem ser a "métrica principal" da linha.
+const LOCAL_RESULT_METRIC_TYPES = LOCAL_RESULT_METRICS.map((m) => m.value)
 
 export async function fetchMonthlyGoals(
   clientIds: string[],
@@ -135,14 +147,22 @@ export async function fetchMonthlyGoals(
       period: 'MONTHLY',
       startDate: { lte: monthEnd },
       endDate:   { gte: monthStart },
-      metric:    { in: ['FATURAMENTO', 'ROAS', 'SPEND', 'LEADS', 'CPL'] },
+      metric: {
+        in: ['FATURAMENTO', 'ROAS', 'SPEND', 'CPL', 'CPA', ...LOCAL_RESULT_METRIC_TYPES],
+      },
     },
+    // updatedAt: em caso de várias metas-resultado no mês, a mais recente vira a principal.
+    orderBy: { updatedAt: 'asc' },
     select: { clientId: true, metric: true, targetValue: true },
   })
 
+  const resultSet = new Set<MetricType>(LOCAL_RESULT_METRIC_TYPES)
   const result: Record<string, MonthlyGoalsRow> = {}
   for (const id of clientIds) {
-    result[id] = { FATURAMENTO: null, ROAS: null, SPEND: null, LEADS: null, CPL: null }
+    result[id] = {
+      FATURAMENTO: null, ROAS: null, SPEND: null, CPL: null, CPA: null,
+      localMetric: null, localValue: null,
+    }
   }
   for (const g of goals) {
     const row = result[g.clientId]
@@ -151,8 +171,14 @@ export async function fetchMonthlyGoals(
     if      (g.metric === 'FATURAMENTO') row.FATURAMENTO = val
     else if (g.metric === 'ROAS')        row.ROAS = val
     else if (g.metric === 'SPEND')       row.SPEND = val
-    else if (g.metric === 'LEADS')       row.LEADS = val
     else if (g.metric === 'CPL')         row.CPL = val
+    else if (g.metric === 'CPA')         row.CPA = val
+    else if (resultSet.has(g.metric)) {
+      // Métrica-resultado principal do cliente (LEADS/CONVERSIONS/MENSAGENS/…).
+      // orderBy asc → a última iterada é a mais recente e prevalece.
+      row.localMetric = g.metric
+      row.localValue  = val
+    }
   }
   return result
 }

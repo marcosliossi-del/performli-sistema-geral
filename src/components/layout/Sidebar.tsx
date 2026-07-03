@@ -112,9 +112,9 @@ const navigation: NavSection[] = [
       {
         name: 'Comercial', href: '/comercial', icon: Target,
         children: [
-          { name: 'Funil de Vendas',      href: '/pipeline',           icon: Kanban,    module: 'comercial' },
-          { name: 'CRM',                  href: '/comercial',          icon: Target,    module: 'comercial' },
-          { name: 'Dashboard Comercial',  href: '/comercial/dashboard', icon: BarChart3, module: 'comercial' },
+          { name: 'Funil de Vendas (Leads)', href: '/comercial',          icon: Target,    module: 'comercial' },
+          { name: 'Estágio da Carteira',     href: '/pipeline',           icon: Kanban,    module: 'comercial' },
+          { name: 'Dashboard Comercial',     href: '/comercial/dashboard', icon: BarChart3, module: 'comercial' },
         ],
       },
       {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { Plus, X, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,6 +10,8 @@ import { useModalA11y } from '@/lib/useModalA11y'
 interface Props {
   clients: { id: string; name: string }[]
 }
+
+interface Member { id: string; name: string; role: string; isMe?: boolean }
 
 export function TaskFormModal({ clients }: Props) {
   const [open, setOpen] = useState(false)
@@ -28,9 +30,17 @@ export function TaskFormModal({ clients }: Props) {
 
 function TaskFormDialog({ clients, onClose }: { clients: Props['clients']; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null)
+  const [members, setMembers] = useState<Member[]>([])
   const [isPending, startTransition] = useTransition()
   const formRef = useRef<HTMLFormElement>(null)
   const dialogRef = useModalA11y<HTMLDivElement>(onClose)
+
+  useEffect(() => {
+    fetch('/api/team/members')
+      .then(r => r.json())
+      .then((data: Member[]) => setMembers(data))
+      .catch(() => {})
+  }, [])
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -105,6 +115,20 @@ function TaskFormDialog({ clients, onClose }: { clients: Props['clients']; onClo
                     className="w-full h-10 px-3 rounded-lg bg-[#05141C] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2] transition-colors"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-[#87919E] uppercase tracking-wider">Responsável</label>
+                <select
+                  name="assignedTo"
+                  defaultValue=""
+                  className="w-full h-10 px-3 rounded-lg bg-[#05141C] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2] transition-colors"
+                >
+                  <option value="">Eu mesmo</option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}{m.isMe ? ' (você)' : ''} — {m.role}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-1.5">

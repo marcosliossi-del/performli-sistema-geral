@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { slugify } from '@/lib/utils'
+import { uniqueClientSlug } from '@/lib/clients/slug'
 import { statusIdFor } from '@/lib/tasks/statusMap'
 import { PipelineStage, BusinessType } from '@prisma/client'
 import { runClientOnboarding } from '@/services/client-onboarding'
@@ -36,13 +37,18 @@ export async function createClient(
 
   if (!name) return { error: 'Nome do cliente é obrigatório.' }
 
-  const slug = slugify(name)
-
-  // Check slug uniqueness
-  const existing = await prisma.client.findUnique({ where: { slug } })
-  if (existing) {
-    return { error: `Já existe um cliente com nome similar ("${existing.name}"). Use um nome diferente.` }
+  // Bloqueia APENAS nome idêntico (case-insensitive) — provável duplicata real.
+  const sameName = await prisma.client.findFirst({
+    where: { name: { equals: name, mode: 'insensitive' } },
+    select: { name: true },
+  })
+  if (sameName) {
+    return { error: `Já existe um cliente com o nome exato "${sameName.name}". Ajuste o nome para diferenciá-lo.` }
   }
+
+  // Slug: nomes diferentes que geram o mesmo slug (ex.: "Loja X" e "Loja-X") são
+  // desambiguados automaticamente com sufixo numérico (slug-2, slug-3...).
+  const slug = await uniqueClientSlug(slugify(name))
 
   const assignedUserId = managerId || session.userId
   const pipelineStage  = (pipelineStageRaw as PipelineStage) || 'ATIVO'

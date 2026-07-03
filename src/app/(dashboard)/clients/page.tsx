@@ -78,6 +78,7 @@ async function getClientesData(userId: string, role: string) {
 export default async function ClientsPage() {
   const session = await requireSession()
   const { clients, kpis } = await getClientesData(session.userId, session.role)
+  const isAdmin = normalizeRole(session.role) === 'ADMIN'
 
   const cards = [
     {
@@ -89,10 +90,10 @@ export default async function ClientsPage() {
     },
     {
       label: 'Clientes inadimplentes',
-      value: String(kpis.inadimplentes),
+      value: isAdmin ? String(kpis.inadimplentes) : '—',
       icon:  AlertTriangle,
       color: '#EF4444',
-      sub:   'Com fatura vencida no Asaas',
+      sub:   isAdmin ? 'Com fatura vencida no Asaas' : 'Restrito ao administrador',
     },
     {
       label: 'Clientes cancelados',
