@@ -7,8 +7,9 @@ import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { slugify } from '@/lib/utils'
 import { uniqueClientSlug } from '@/lib/clients/slug'
-import { BusinessType } from '@prisma/client'
+import { BusinessType, ProductChangeAction } from '@prisma/client'
 import { investimentoTotal, roasEsperado } from '@/lib/metas/projection'
+import { onProductsDowngraded } from '@/services/product-downgrade-automation'
 
 export type UpdateClientState = { error?: string; success?: boolean; slug?: string }
 
@@ -138,6 +139,114 @@ export async function updateClient(
     clientId,
     metadata: { fields: Object.keys(updateData) },
   })
+
+  revalidatePath(`/clients/${updated.slug}`)
+  revalidatePath('/clients')
+  return { success: true, slug: updated.slug }
+}
+
+/**
+ * Sanitiza a lista de produtos vinda do form: trim, remove vazios, dedupe
+ * (case-insensitive, preservando o 1º rótulo), teto de 60 chars por item e 20
+ * itens no total. Retorna a lista normalizada (ordem de chegada preservada).
+ */
+function sanitizeProdutos(input: string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of input) {
+    const p = raw.trim().slice(0, 60)
+    if (!p) continue
+    const key = p.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(p)
+    if (out.length >= 20) break
+  }
+  return out
+}
+
+/**
+ * Edita os PRODUTOS contratados do cliente (`Client.produtos`) — único caminho
+ * de mutação desse campo. Faz o diff contra o estado atual, VERSIONA cada
+ * transição em ClientProductChange (fonte canônica do histórico), grava a nova
+ * lista, registra AuditLog e dispara o gatilho de DOWNGRADE (best-effort) para
+ * cada produto removido. Adição não dispara automação (só histórico).
+ *
+ * Autorização (CLAUDE.md #2): requireSession + assertClientMutationAccess
+ * (ADMIN todos; MANAGER só clientes atribuídos; CS/ANALYST bloqueados pela posse).
+ */
+export async function updateClientProdutos(
+  clientId: string,
+  produtos: string[],
+): Promise<UpdateClientState> {
+  const session = await requireSession()
+
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { slug: true, produtos: true },
+  })
+  if (!client) return { error: 'Cliente não encontrado.' }
+
+  try {
+    await assertClientMutationAccess(session, clientId)
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
+
+  const next = sanitizeProdutos(produtos)
+  // Diff CASE-INSENSITIVE, alinhado ao sanitize/UI: re-digitar 'crm zoppy' no
+  // lugar de 'CRM Zoppy' é o MESMO produto — não pode virar REMOVED+ADDED
+  // simultâneo nem disparar alerta de downgrade espúrio.
+  const currentSet = new Set(client.produtos.map((p) => p.toLowerCase()))
+  const nextSet = new Set(next.map((p) => p.toLowerCase()))
+
+  const added = next.filter((p) => !currentSet.has(p.toLowerCase()))
+  const removed = client.produtos.filter((p) => !nextSet.has(p.toLowerCase()))
+
+  // Nada mudou → não escreve histórico nem dispara automação (sem ruído).
+  if (added.length === 0 && removed.length === 0) {
+    return { success: true, slug: client.slug }
+  }
+
+  const changes = [
+    ...added.map((product) => ({ product, action: ProductChangeAction.ADDED })),
+    ...removed.map((product) => ({ product, action: ProductChangeAction.REMOVED })),
+  ]
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.clientProductChange.createMany({
+      data: changes.map((c) => ({
+        clientId,
+        product: c.product,
+        action: c.action,
+        changedBy: session.userId,
+      })),
+    })
+    return tx.client.update({
+      where: { id: clientId },
+      data: { produtos: next },
+      select: { slug: true },
+    })
+  })
+
+  await writeAuditLog({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: 'client.produtos.update',
+    entityType: 'Client',
+    entityId: clientId,
+    clientId,
+    metadata: { added, removed },
+  })
+
+  // Gatilho de downgrade — best-effort: falha aqui NÃO reverte o save acima.
+  if (removed.length > 0) {
+    try {
+      await onProductsDowngraded(clientId, removed)
+    } catch {
+      // silêncio proposital: o gatilho já loga a própria falha em AutomationLog.
+    }
+  }
 
   revalidatePath(`/clients/${updated.slug}`)
   revalidatePath('/clients')

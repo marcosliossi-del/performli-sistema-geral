@@ -245,6 +245,7 @@ model Client {
   auditLogs           AuditLog[]
   weeklyCheckins      ClientWeeklyCheckin[]
   taskLists           TaskList[]
+  productChanges      ClientProductChange[]
 
   @@index([status])
   @@index([pipelineStage])
@@ -519,6 +520,50 @@ model AuditLog {
   @@index([clientId, createdAt])
   @@index([actorId, createdAt])
   @@index([action, createdAt])
+}
+
+// ─── HISTÓRICO DE PRODUTOS DO CLIENTE (downgrade anti-churn — Fase 3) ─────────
+
+/**
+ * Ação registrada numa transição de produto do cliente. Enum Prisma NOVO e
+ * autocontido: nenhum mapa exaustivo existente (governança, statusMap, etc.) o
+ * referencia, então criá-lo não quebra nenhum `satisfies Record<...>`.
+ */
+enum ProductChangeAction {
+  ADDED    // produto contratado passou a constar na ficha
+  REMOVED  // produto foi retirado da ficha (sinal de downgrade / teste de saída)
+}
+
+/**
+ * Histórico de transições de produtos contratados por cliente (versionamento de
+ * `Client.produtos`).
+ *
+ * JUSTIFICATIVA DO MODEL NOVO (CLAUDE.md — "nenhum model novo sem justificativa"):
+ * `Client.produtos String[]` guarda apenas o ESTADO ATUAL — não versiona quem
+ * mudou o quê e quando. NENHUM model existente (AuditLog é genérico/append de
+ * ação; ClientInteraction é contato humano; Operation é ação operacional) modela
+ * a série temporal ADDED/REMOVED de um produto de forma consultável por índice
+ * [clientId, changedAt] para alimentar o fator de score "downgrade recente".
+ * AuditLog registra o evento de auditoria em paralelo, mas não é a fonte
+ * canônica versionada dos produtos. Por isso este model existe.
+ *
+ * BACKFILL RETROATIVO: NÃO há trilha das mudanças passadas — o campo
+ * `Client.produtos` foi populado na migração do ClickUp e NUNCA teve caminho de
+ * mutação no sistema até esta fatia. Logo o histórico COMEÇA AGORA (a partir da
+ * primeira edição via `updateClientProdutos`); linhas anteriores a esta fatia
+ * simplesmente não existem, e isso é esperado.
+ */
+model ClientProductChange {
+  id        String              @id @default(cuid())
+  clientId  String
+  product   String                              // rótulo do produto (ex.: 'Tráfego Pago', 'CRM Zoppy')
+  action    ProductChangeAction                 // ADDED | REMOVED
+  changedAt DateTime            @default(now())
+  changedBy String?                             // User.id que editou (null = sistema/migração)
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, changedAt])
 }
 
 // ─── ALERTS ──────────────────────────────────────────────────────────────────
