@@ -284,8 +284,9 @@ export async function runTaskRecurrences(opts: { force?: boolean } = {}): Promis
   failed: number
 }> {
   const now = new Date()
+  // T-19: regra arquivada NUNCA roda — está fora do motor de forma definitiva.
   const rules = await prisma.taskRecurrenceRule.findMany({
-    where: { active: true },
+    where: { active: true, archivedAt: null },
     include: { template: { include: { steps: true } } },
   })
 
@@ -437,8 +438,9 @@ export async function materializeRecurringTasksForClient(
     return { created: 0, skipped: 0, failed: 0 }
   }
 
+  // T-19: regra arquivada não materializa nem no onboarding.
   const rules = await prisma.taskRecurrenceRule.findMany({
-    where: { active: true },
+    where: { active: true, archivedAt: null },
     include: { template: { include: { steps: true } } },
   })
 

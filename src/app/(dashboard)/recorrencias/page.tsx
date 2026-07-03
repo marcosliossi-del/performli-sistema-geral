@@ -1,10 +1,15 @@
 import { requireSession } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { Card } from '@/components/ui/card'
-import { Repeat, Pause, CircleCheck } from 'lucide-react'
+import { Repeat, Pause, CircleCheck, Archive } from 'lucide-react'
 import { timeAgo, formatSaoPauloDateTime, saoPauloDateString } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ToggleRecurrenceButton } from '@/components/recorrencias/ToggleRecurrenceButton'
+import {
+  RecurrenceRowActions,
+  type TemplateOption,
+} from '@/components/recorrencias/EditRecurrenceModal'
+import { RestoreRecurrenceButton } from '@/components/recorrencias/RestoreRecurrenceButton'
 import { shouldRunToday } from '@/services/recurrence-engine'
 import { redirect } from 'next/navigation'
 import type { RecurrenceFrequency } from '@prisma/client'
@@ -121,7 +126,7 @@ export default async function RecorrenciasPage() {
   const session = await requireSession()
   if (session.role !== 'ADMIN') redirect('/cockpit')
 
-  const rules = await prisma.taskRecurrenceRule.findMany({
+  const allRules = await prisma.taskRecurrenceRule.findMany({
     orderBy: [{ active: 'desc' }, { createdAt: 'asc' }],
     include: {
       template: {
@@ -130,10 +135,25 @@ export default async function RecorrenciasPage() {
     },
   })
 
+  // Regras arquivadas saem da lista padrão e vão para a seção colapsada.
+  const rules = allRules.filter((r) => r.archivedAt == null)
+  const arquivadas = allRules.filter((r) => r.archivedAt != null)
+
+  // Modelos de tarefa ativos — opções do seletor de modelo na edição.
+  // Só templates SEM regra vinculada (templateId é @unique — escolher um já
+  // ligado a outra regra violaria a constraint). O template da própria regra é
+  // sempre oferecido pelo modal via prop separada.
+  const templates = await prisma.taskTemplate.findMany({
+    where: { active: true, recurrence: null },
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
+  })
+  const templateOptions: TemplateOption[] = templates
+
   // Contagem de tarefas geradas por recorrência — um groupBy só, sem N+1.
   const counts = await prisma.task.groupBy({
     by: ['recurrenceId'],
-    where: { recurrenceId: { in: rules.map((r) => r.id) } },
+    where: { recurrenceId: { in: allRules.map((r) => r.id) } },
     _count: { _all: true },
   })
   const countMap = new Map<string, number>()
@@ -241,11 +261,26 @@ export default async function RecorrenciasPage() {
                     )}
                   </div>
 
-                  <div className="flex-shrink-0">
+                  <div className="flex-shrink-0 flex flex-col items-end gap-2">
                     <ToggleRecurrenceButton
                       ruleId={rule.id}
                       active={rule.active}
                       templateName={rule.template?.name ?? 'esta recorrência'}
+                    />
+                    <RecurrenceRowActions
+                      templates={templateOptions}
+                      rule={{
+                        id: rule.id,
+                        templateName: rule.template?.name ?? 'esta recorrência',
+                        frequency: rule.frequency,
+                        dayOfWeek: rule.dayOfWeek,
+                        dayOfMonth: rule.dayOfMonth,
+                        hour: rule.hour,
+                        minute: rule.minute,
+                        defaultAssigneeRole: rule.template?.defaultAssigneeRole ?? null,
+                        templateId: rule.templateId,
+                        hasTemplate: rule.templateId != null,
+                      }}
                     />
                   </div>
                 </div>
@@ -253,6 +288,46 @@ export default async function RecorrenciasPage() {
             )
           })}
         </div>
+      )}
+
+      {arquivadas.length > 0 && (
+        <details className="group">
+          <summary className="cursor-pointer text-xs font-semibold text-[#87919E] hover:text-[#EBEBEB] transition-colors list-none flex items-center gap-1.5">
+            <Archive size={13} />
+            Arquivadas ({arquivadas.length}) — não geram tarefas
+          </summary>
+          <div className="space-y-3 mt-3">
+            {arquivadas.map((rule) => {
+              const generated = countMap.get(rule.id) ?? 0
+              return (
+                <Card key={rule.id} className="p-4 opacity-60 border-l-4 border-l-[#38435C]">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <h3 className="text-sm font-semibold text-[#EBEBEB]">
+                          {rule.template?.name ?? 'Modelo de tarefa não vinculado'}
+                        </h3>
+                        <Badge tone="warn">Arquivada</Badge>
+                      </div>
+                      <p className="text-xs text-[#95BBE2]">{scheduleLabel(rule)}</p>
+                      <p className="text-[11px] text-[#87919E] mt-2">
+                        Não gera tarefas. As {generated} tarefa{generated !== 1 ? 's' : ''} já
+                        criada{generated !== 1 ? 's' : ''} continua{generated !== 1 ? 'm' : ''}{' '}
+                        no sistema. Restaure para voltar a usar (volta pausada).
+                      </p>
+                    </div>
+                    <div className="flex-shrink-0">
+                      <RestoreRecurrenceButton
+                        ruleId={rule.id}
+                        templateName={rule.template?.name ?? 'esta recorrência'}
+                      />
+                    </div>
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
+        </details>
       )}
     </div>
   )
