@@ -3,7 +3,7 @@
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { saoPauloDayStart } from '@/lib/utils'
-import { getRealizadoBatch } from '@/lib/metas/realizado'
+import { getRealizadoBatch, type Realizado } from '@/lib/metas/realizado'
 import {
   LOCAL_RESULT_METRICS,
   LOCAL_RESULT_METRIC_SET,
@@ -177,16 +177,45 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
     }
   }
 
+  // ── Realizado ECOM (faturamento/investimento/ROAS) via fonte única ────────
+  // Mesma definição que estava duplicada aqui (GA4 conversionValue, spend das
+  // contas de mídia, revenue÷spend), agora servida por getRealizadoBatch — assim
+  // não diverge de /agency/metas na primeira mudança de aggregateSnapshots.
+  // SEM N+1: três queries (uma por métrica), não uma por cliente.
+  // Só se aplica ao MÊS CORRENTE (janela MTD do helper) e a clientes ECOMMERCE;
+  // meses passados e clientes LOCAL preservam o cálculo local e seus números.
+  let fatBatch:   Map<string, Realizado> | null = null
+  let spendBatch: Map<string, Realizado> | null = null
+  let roasBatch:  Map<string, Realizado> | null = null
+  if (isCurrentMonth) {
+    const ecomForBatch = clients
+      .filter((c) => c.businessType === 'ECOMMERCE')
+      .map((c) => ({ id: c.id, businessType: c.businessType }))
+    if (ecomForBatch.length > 0) {
+      ;[fatBatch, spendBatch, roasBatch] = await Promise.all([
+        getRealizadoBatch(ecomForBatch, 'FATURAMENTO', 'MTD'),
+        getRealizadoBatch(ecomForBatch, 'SPEND', 'MTD'),
+        getRealizadoBatch(ecomForBatch, 'ROAS', 'MTD'),
+      ])
+    }
+  }
+
   const labelByMetric = new Map(LOCAL_RESULT_METRICS.map((m) => [m.value, m.label]))
 
   return clients.map((c): ClientProgress => {
     const ga4  = c.metricSnapshots.filter((x) => x.platformAccount.platform === 'GA4')
     const ads  = c.metricSnapshots.filter((x) => x.platformAccount.platform !== 'GA4')
 
-    const revenue    = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
-    const purchases  = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
-    const sessions   = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
-    const spend      = ads.reduce((s, x) => s + Number(x.spend ?? 0), 0)
+    const localRevenue = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+    const purchases    = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const sessions     = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
+    const localSpend   = ads.reduce((s, x) => s + Number(x.spend ?? 0), 0)
+
+    // Faturamento/investimento vêm da fonte única no mês corrente (ECOM); nos
+    // demais casos mantém o cálculo local (idêntico em definição para ECOM).
+    const isEcom  = c.businessType === 'ECOMMERCE'
+    const revenue = isEcom && fatBatch   ? (fatBatch.get(c.id)?.valor   ?? 0) : localRevenue
+    const spend   = isEcom && spendBatch ? (spendBatch.get(c.id)?.valor ?? 0) : localSpend
 
     // clicks = link clicks from ad platforms (outbound link clicks, not all clicks)
     const adClicks      = ads.reduce((s, x) => s + (x.clicks ?? 0), 0)
@@ -195,7 +224,10 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
     const ctr  = adImpressions > 0 && adClicks > 0 ? (adClicks / adImpressions) * 100 : null
     const cpc  = spend > 0 && adClicks > 0 ? spend / adClicks : null
 
-    const roas        = spend > 0 && revenue > 0 ? revenue / spend : null
+    // ROAS da fonte única no mês corrente (ECOM); senão revenue÷spend local.
+    const roas        = isEcom && roasBatch
+      ? (roasBatch.get(c.id)?.valor ?? null)
+      : (spend > 0 && revenue > 0 ? revenue / spend : null)
     const ticketMedio = purchases > 0 && revenue > 0 ? revenue / purchases : null
     const taxaConversao = sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null
 

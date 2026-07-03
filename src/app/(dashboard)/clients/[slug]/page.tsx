@@ -21,7 +21,9 @@ import { Card, CardHeader, CardTitle, CardValue } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { healthLabels, healthBgClasses } from '@/lib/health'
 import { HealthStatus } from '@prisma/client'
-import { formatCurrency, formatNumber, timeAgo } from '@/lib/utils'
+import { formatCurrency, formatNumber, timeAgo, getWeekRange, getMonthRange } from '@/lib/utils'
+import { deriveOverallStatus } from '@/lib/health-derive'
+import { getRealizadoForMetrics } from '@/lib/metas/realizado'
 import { ArrowLeft, Target, BookOpen, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { ClientContractCard } from '@/components/clients/ClientContractCard'
 import { GoalFormModal } from '@/components/clients/GoalFormModal'
@@ -202,14 +204,25 @@ export default async function ClientDetailPage({
   // base de /agency/metas. NÃO usar HealthScore.actualValue aqui (divergia).
   const monthlyRealizadoByMetric = new Map(paceGoals.map((p) => [p.metric, p.actualValue]))
 
-  const overallStatus: HealthStatus | null =
-    weeklyGoals.length === 0
-      ? null
-      : weeklyGoals.some((g) => g.healthScores[0]?.status === 'RUIM')
-      ? 'RUIM'
-      : weeklyGoals.some((g) => g.healthScores[0]?.status === 'REGULAR')
-      ? 'REGULAR'
-      : 'OTIMO'
+  // Metas da Semana: REALIZADO da fonte única (getRealizado, janela SEMANA_FECHADA),
+  // não de HealthScore.actualValue. HealthScore permanece como STATUS.
+  const weeklyRealizadoByMetric = await getRealizadoForMetrics(
+    client.id,
+    weeklyGoals.map((g) => g.metric),
+    'SEMANA_FECHADA',
+    client.businessType,
+  )
+
+  // Régua A (health) — MESMA janela canônica das demais telas (helper único):
+  // WEEKLY da semana corrente preferido, fallback MONTHLY do mês. Antes era
+  // weekly-only, divergindo do grid/tabela/rollups.
+  const { start: pageWeekStart } = getWeekRange()
+  const { start: pageMonthStart } = getMonthRange()
+  const overallStatus: HealthStatus | null = deriveOverallStatus(
+    client.goals.flatMap((g) => g.healthScores),
+    pageWeekStart,
+    pageMonthStart,
+  )
 
   const STATUS_RANK_PAGE: Record<HealthStatus, number> = { RUIM: 0, REGULAR: 1, OTIMO: 2 }
   const streakStatus = client.statusStreak?.status ?? null
@@ -630,7 +643,9 @@ export default async function ClientDetailPage({
                       <p className="text-sm text-[#87919E]">Aguardando sync</p>
                     )}
                     {pct !== null && <Progress value={Math.min(pct, 100)} />}
-                    {pct !== null && <p className="text-xs text-[#87919E]">{pct}% da meta atingido</p>}
+                    {/* Rótulo honesto: achievementPct é PRORATEADO (ritmo até o
+                        dia N do mês), não % da meta cheia. */}
+                    {pct !== null && <p className="text-xs text-[#87919E]">{pct}% do ritmo (dia {kpis.daysElapsed})</p>}
                   </div>
                 </Card>
               )
@@ -662,7 +677,8 @@ export default async function ClientDetailPage({
               const hs = goal.healthScores[0]
               const status = hs?.status ?? null
               const pct = hs ? Math.round(Number(hs.achievementPct)) : null
-              const actual = hs ? Number(hs.actualValue) : null
+              // Realizado da FONTE ÚNICA (SEMANA_FECHADA), não de HealthScore.actualValue.
+              const actual = weeklyRealizadoByMetric.get(goal.metric)?.valor ?? null
 
               return (
                 <Card key={goal.id}>
@@ -714,9 +730,9 @@ export default async function ClientDetailPage({
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-[#EBEBEB]">Histórico de Saúde</h2>
             <div className="flex items-center gap-3 text-[10px] text-[#87919E]">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#22C55E] inline-block" /> ≥90% Ótimo</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#EAB308] inline-block" /> ≥70% Regular</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#EF4444] inline-block" /> &lt;70% Ruim</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#22C55E] inline-block" /> ≥90% Saudável</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#EAB308] inline-block" /> ≥70% Atenção</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#EF4444] inline-block" /> &lt;70% Crítico</span>
             </div>
           </div>
           <div className="card p-4">

@@ -46,9 +46,9 @@ const STATUS_BADGE: Record<CriticalProtocolStatus, 'ruim' | 'regular' | 'otimo'>
 const TRIGGER_LABELS: Record<AlertType, string> = {
   ROAS_BELOW_TARGET_2W:          'ROAS abaixo por 2 semanas',
   FATURAMENTO_BELOW_70PCT_WEEK2: 'Faturamento <70% na 2ª semana',
-  STATUS_DROPPED_TO_RUIM:        'Status caiu para Ruim',
-  STATUS_DROPPED_TO_REGULAR:     'Status caiu para Regular',
-  STATUS_IMPROVED_TO_OTIMO:      'Status melhorou para Ótimo',
+  STATUS_DROPPED_TO_RUIM:        'Status caiu para Crítico',
+  STATUS_DROPPED_TO_REGULAR:     'Status caiu para Atenção',
+  STATUS_IMPROVED_TO_OTIMO:      'Status melhorou para Saudável',
   SYNC_FAILED:                   'Falha de sync',
   BUDGET_EXHAUSTED:              'Orçamento esgotado',
   BUDGET_WARNING:                'Budget quase esgotado',

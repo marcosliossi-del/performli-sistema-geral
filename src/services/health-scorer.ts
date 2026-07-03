@@ -27,7 +27,7 @@ import { getWeekRange, getMonthRange } from '@/lib/utils'
 // como gerar um score de FATURAMENTO/CPA a partir de Client.faturamentoEsperado/
 // cpaMaximo sem um Goal real. Precedência Goal > Client fica registrada; o plug
 // depende de tornar goalId opcional (fora do escopo da Onda 1). Deixado como está.
-const LOWER_IS_BETTER: Set<MetricType> = new Set([
+export const LOWER_IS_BETTER: Set<MetricType> = new Set([
   'CPL', 'CPA', 'CAC', 'CPC', 'SPEND', 'CPS', 'CPM',
 ])
 

@@ -13,7 +13,16 @@ import { prisma } from '@/lib/prisma'
 import { GA4Client } from '@/services/ga4/client'
 import { getWeekRange, getMonthRange, formatCurrency } from '@/lib/utils'
 import { getClientKPIs } from '@/lib/dal'
+import { getRealizadoForMetrics } from '@/lib/metas/realizado'
 import { buildReportPrompt, type ReportCheckin } from '@/services/report-prompts'
+import type { MetricType } from '@prisma/client'
+
+/**
+ * Métricas-resultado (com meta) que DEVEM vir da fonte única realizado.ts para
+ * não divergir das telas internas. As demais (reach, impressões, visitas, spend)
+ * seguem locais, pois o helper não as cobre.
+ */
+const LOCAL_REPORT_HELPER_METRICS: MetricType[] = ['MENSAGENS', 'LEADS', 'CONVERSIONS', 'FATURAMENTO']
 
 const anthropic = new Anthropic()
 
@@ -194,7 +203,29 @@ export async function generateWeeklyReportForClient(
     const pwLocal = computeLocalMetrics(prevWeekSnaps)
     const mLocal  = computeLocalMetrics(monthSnaps)
 
-    const periodoStr  = `${lastWeekStart.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} a ${lastWeekEnd.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`
+    // ── Fonte única para as métricas-resultado (com meta) ─────────────────────
+    // mensagens/leads/conversões (semana fechada) e o acumulado do mês passam a
+    // vir de realizado.ts (mesma conta das telas internas). reach/impressões/
+    // visitas/investimento continuam locais (o helper não os cobre).
+    // Obs: usa a janela canônica SEMANA_FECHADA/MTD; quando o relatório é
+    // regenerado manualmente com fromStr/toStr custom, a semana pode diferir da
+    // janela canônica — o caminho padrão do cron (sem args) sempre coincide.
+    const [weekReal, monthReal] = await Promise.all([
+      getRealizadoForMetrics(clientId, LOCAL_REPORT_HELPER_METRICS, 'SEMANA_FECHADA', client.businessType ?? 'LOCAL'),
+      getRealizadoForMetrics(clientId, LOCAL_REPORT_HELPER_METRICS, 'MTD',            client.businessType ?? 'LOCAL'),
+    ])
+
+    lwLocal.mensagens = weekReal.get('MENSAGENS')?.valor  ?? 0
+    lwLocal.leads     = weekReal.get('LEADS')?.valor      ?? 0
+    lwLocal.adRevenue = weekReal.get('FATURAMENTO')?.valor ?? 0
+    lwLocal.cpl       = lwLocal.leads > 0 && lwLocal.spend > 0 ? lwLocal.spend / lwLocal.leads : null
+
+    mLocal.mensagens  = monthReal.get('MENSAGENS')?.valor  ?? 0
+    mLocal.leads      = monthReal.get('LEADS')?.valor      ?? 0
+    mLocal.adRevenue  = monthReal.get('FATURAMENTO')?.valor ?? 0
+    mLocal.cpl        = mLocal.leads > 0 && mLocal.spend > 0 ? mLocal.spend / mLocal.leads : null
+
+    const periodoStr = `${lastWeekStart.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} a ${lastWeekEnd.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`
     const daysElapsed = today.getDate()
     const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
 

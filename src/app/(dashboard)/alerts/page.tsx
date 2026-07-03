@@ -10,9 +10,9 @@ import { AlertType } from '@prisma/client'
 import { normalizeRole } from '@/lib/rbac'
 
 const alertConfig: Record<AlertType, { icon: typeof AlertTriangle; color: string; label: string }> = {
-  STATUS_DROPPED_TO_RUIM:         { icon: AlertTriangle,  color: 'text-[#EF4444]', label: 'Performance Ruim' },
-  STATUS_DROPPED_TO_REGULAR:      { icon: TrendingDown,   color: 'text-[#EAB308]', label: 'Performance Regular' },
-  STATUS_IMPROVED_TO_OTIMO:       { icon: CheckCircle2,   color: 'text-[#22C55E]', label: 'Melhora para Ótimo' },
+  STATUS_DROPPED_TO_RUIM:         { icon: AlertTriangle,  color: 'text-[#EF4444]', label: 'Saúde Crítica' },
+  STATUS_DROPPED_TO_REGULAR:      { icon: TrendingDown,   color: 'text-[#EAB308]', label: 'Saúde em Atenção' },
+  STATUS_IMPROVED_TO_OTIMO:       { icon: CheckCircle2,   color: 'text-[#22C55E]', label: 'Melhora para Saudável' },
   SYNC_FAILED:                    { icon: AlertTriangle,  color: 'text-[#EAB308]', label: 'Integração parou de atualizar' },
   BUDGET_EXHAUSTED:               { icon: AlertTriangle,  color: 'text-[#EF4444]', label: 'Orçamento Esgotado' },
   BUDGET_WARNING:                 { icon: AlertTriangle,  color: 'text-[#EAB308]', label: 'Budget Quase Esgotado' },

@@ -8,6 +8,8 @@
 import { prisma } from '@/lib/prisma'
 import { broadcastWhatsApp } from '@/lib/whatsapp'
 import { getMonthRange, getWeekRange } from '@/lib/utils'
+import { getRealizadoBatch, type Realizado } from '@/lib/metas/realizado'
+import type { MetricType, BusinessType } from '@prisma/client'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -50,7 +52,8 @@ function formatVal(metric: string, value: number): string {
   if (value === 0) return '—'
   switch (metric) {
     case 'ROAS':
-      return `${value.toFixed(1)}x`
+      // 2 casas para casar com todas as telas internas (metas, Client 360, etc).
+      return `${value.toFixed(2)}x`
     case 'CTR':
     case 'TAXA_CONVERSAO':
       return `${value.toFixed(1)}%`
@@ -107,11 +110,26 @@ const METRIC_FALLBACK: Record<string, { histDrop: string; action: string }> = {
  */
 type FunnelRates = { visitToCart: number | null; cartToCheckout: number | null; checkoutToPurchase: number | null } | null
 
+/**
+ * Números canônicos (realizado MTD via fonte única + meta mensal via Goal) por
+ * (cliente, métrica). O STATUS continua vindo do HealthScore; só os NÚMEROS
+ * exibidos (realizado, meta, ritmo %) passam a bater com as telas internas.
+ */
+type MetricNumbers = {
+  /** realizado MTD por métrica → Map<clientId, Realizado> (fonte única). */
+  realizadoByMetric: Map<string, Map<string, Realizado>>
+  /** meta mensal por `${clientId}:${metric}` (Goal MONTHLY). */
+  goalLookup: Map<string, number>
+  daysElapsed: number
+  daysInMonth: number
+}
+
 function buildSmartInsight(
   clientId: string,
   scores: HealthScoreRow[],
   businessType: string,
   getHistAvgFn: (cId: string, metric: string) => number | null,
+  nums: MetricNumbers,
   funnelRates: FunnelRates = null,
 ): string | null {
   const ruimSet = new Set(scores.filter(s => s.status === 'RUIM').map(s => s.metric))
@@ -126,14 +144,24 @@ function buildSmartInsight(
   const notRuim  = (m: string) => !ruimSet.has(m)
   const exists   = (m: string) => scores.some(s => s.metric === m)
 
-  // Compact "actual vs full-period target (pace X%)" label for a single metric
+  // Compact "actual vs full-period target (pace X%)" label for a single metric.
+  // Realizado e meta vêm da FONTE ÚNICA (realizado MTD + Goal mensal), não mais
+  // do HealthScore — assim os números batem com /agency/metas e Client 360.
+  // O ritmo % das métricas de pacing usa a meta pró-rateada pelos dias do mês.
   const label = (metric: string): string => {
     const s = scores.find(s => s.metric === metric)
     if (!s) return metric
-    const actual = toNum(s.actualValue)
-    const target = toNum(s.targetValue)
-    const pct    = Math.round(toNum(s.achievementPct))
-    const pctLabel = PACE_METRICS.has(metric) ? `ritmo ${pct}%` : `${pct}%`
+    const actual = nums.realizadoByMetric.get(metric)?.get(clientId)?.valor ?? 0
+    const target = nums.goalLookup.get(`${clientId}:${metric}`) ?? 0
+    const isPace = PACE_METRICS.has(metric)
+    let pct = 0
+    if (isPace) {
+      const paced = target * (nums.daysElapsed / nums.daysInMonth)
+      pct = paced > 0 ? Math.round((actual / paced) * 100) : 0
+    } else {
+      pct = target > 0 ? Math.round((actual / target) * 100) : 0
+    }
+    const pctLabel = isPace ? `ritmo ${pct}%` : `${pct}%`
     let base = `${metric}: ${formatVal(metric, actual)} (meta ${formatVal(metric, target)}, ${pctLabel})`
     const trend = toNum(s.trendPct)
     if (Math.abs(trend) >= 20) {
@@ -291,7 +319,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
 
   const now          = new Date()
   const { start: weekStart }  = getWeekRange()
-  const { start: monthStart } = getMonthRange()
+  const { start: monthStart, end: monthEnd } = getMonthRange()
   const fetchFrom    = monthStart < weekStart ? monthStart : weekStart
   const yesterday    = new Date(now); yesterday.setDate(yesterday.getDate() - 1)
   const sixWeeksAgo  = new Date(now.getTime() - 42 * 86_400_000)
@@ -321,6 +349,43 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
     },
     orderBy: { name: 'asc' },
   })
+
+  // ── Números canônicos: realizado MTD (fonte única) + meta mensal (Goal) ──────
+  // STATUS continua vindo do HealthScore; só os NÚMEROS exibidos passam por aqui,
+  // para não divergir de /agency/metas e Client 360. SEM N+1: uma query de
+  // snapshots por MÉTRICA distinta (getRealizadoBatch), não por cliente; e uma
+  // única query de metas mensais para todos os clientes.
+  const clientsForBatch = clients.map((c) => ({
+    id:           c.id,
+    businessType: (c.businessType ?? 'ECOMMERCE') as BusinessType,
+  }))
+  const distinctMetrics = new Set<string>()
+  for (const c of clients) for (const s of c.healthScores) distinctMetrics.add(s.metric)
+
+  const realizadoByMetric = new Map<string, Map<string, Realizado>>()
+  for (const metric of distinctMetrics) {
+    realizadoByMetric.set(
+      metric,
+      await getRealizadoBatch(clientsForBatch, metric as MetricType, 'MTD'),
+    )
+  }
+
+  const monthlyGoals = await prisma.goal.findMany({
+    where: {
+      clientId:  { in: clients.map((c) => c.id) },
+      period:    'MONTHLY',
+      startDate: { lte: monthEnd },
+      endDate:   { gte: monthStart },
+    },
+    select: { clientId: true, metric: true, targetValue: true },
+  })
+  const goalLookup = new Map<string, number>()
+  for (const g of monthlyGoals) goalLookup.set(`${g.clientId}:${g.metric}`, Number(g.targetValue))
+
+  const digestNow    = new Date()
+  const daysElapsed  = digestNow.getDate()
+  const daysInMonth  = new Date(digestNow.getFullYear(), digestNow.getMonth() + 1, 0).getDate()
+  const metricNumbers: MetricNumbers = { realizadoByMetric, goalLookup, daysElapsed, daysInMonth }
 
   // ── Historical HealthScores (last 6 weeks, WEEKLY) for context ───────────────
   const historicalRaw = await prisma.healthScore.findMany({
@@ -508,7 +573,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
       if (c.activeScores.length > 0 && (c.status === 'RUIM' || (
         c.status === 'REGULAR' && c.activeScores.some(s => Math.abs(toNum(s.trendPct)) >= 20)
       ))) {
-        const insight = buildSmartInsight(c.id, c.activeScores, c.businessType, getHistAvg, funnelMap.get(c.id) ?? null)
+        const insight = buildSmartInsight(c.id, c.activeScores, c.businessType, getHistAvg, metricNumbers, funnelMap.get(c.id) ?? null)
         if (insight) lines.push(insight)
       }
     }
@@ -537,7 +602,7 @@ export async function sendDailyDigest(): Promise<{ sent: number; skipped: boolea
         if (c.activeScores.length > 0 && (c.status === 'RUIM' || (
           c.status === 'REGULAR' && c.activeScores.some(s => Math.abs(toNum(s.trendPct)) >= 20)
         ))) {
-          const insight = buildSmartInsight(c.id, c.activeScores, c.businessType, getHistAvg, funnelMap.get(c.id) ?? null)
+          const insight = buildSmartInsight(c.id, c.activeScores, c.businessType, getHistAvg, metricNumbers, funnelMap.get(c.id) ?? null)
           if (insight) extraLines.push(insight)
         }
       }

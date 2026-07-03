@@ -213,7 +213,7 @@ export function ClientesTable({ clients }: Props) {
               </th>
               <th className="text-left px-3 py-3 font-medium">NOME</th>
               <th className="text-left px-3 py-3 font-medium">TIPO</th>
-              <th className="text-left px-3 py-3 font-medium">RESULTADO</th>
+              <th className="text-left px-3 py-3 font-medium">RESULTADO<span className="normal-case font-normal text-[#87919E]"> (ROAS · sem. passada)</span></th>
               <th className="text-left px-3 py-3 font-medium">ETAPA</th>
               <th className="text-left px-3 py-3 font-medium">RELACIONAMENTO</th>
               <th className="text-left px-3 py-3 font-medium">NPS</th>

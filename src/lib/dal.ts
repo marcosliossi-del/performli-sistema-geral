@@ -4,12 +4,14 @@ import { unstable_cache } from 'next/cache'
 import { prisma } from './prisma'
 import { getSession } from './session'
 import { redirect } from 'next/navigation'
-import { HealthStatus, Prisma } from '@prisma/client'
+import { HealthStatus, GoalPeriod, Prisma } from '@prisma/client'
 import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
 import { normalizeRole, stripSensitive, scopeClients, isRevenueMetric } from './rbac'
 import { readCronHeartbeat, CRON_STALE_HOURS } from './cron-heartbeat'
 import { getRealizadoForMetrics } from './metas/realizado'
 import { RATE_METRICS } from '@/services/weekly-goals-sync'
+import { LOWER_IS_BETTER } from '@/services/health-scorer'
+import { deriveOverallStatus, selectCanonicalScores } from './health-derive'
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 
@@ -161,10 +163,9 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
   const summaries: ClientHealthSummary[] = clients.map((client) => {
     const allScores = client.healthScores
 
-    // Prefer current-week WEEKLY scores; fall back to current-month MONTHLY scores
-    const weeklyScores  = allScores.filter((s) => s.period === 'WEEKLY'  && s.periodStart >= weekStart)
-    const monthlyScores = allScores.filter((s) => s.period === 'MONTHLY' && s.periodStart >= monthStart)
-    const scores = weeklyScores.length > 0 ? weeklyScores : monthlyScores
+    // Janela canônica unificada (helper): WEEKLY da semana corrente preferido,
+    // fallback MONTHLY do mês. MESMA regra em todas as telas.
+    const scores = selectCanonicalScores(allScores, weekStart, monthStart)
 
     // Previous reference: last week's weekly scores or previous monthly scores
     const prevScores = allScores.filter((s) => !scores.includes(s))
@@ -186,15 +187,8 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
         ? 'down'
         : 'stable'
 
-    // Overall = worst status; null when no scores (sem metas configuradas)
-    const overallStatus: HealthStatus | null =
-      scores.length === 0
-        ? null
-        : scores.some((s) => s.status === 'RUIM')
-        ? 'RUIM'
-        : scores.some((s) => s.status === 'REGULAR')
-        ? 'REGULAR'
-        : 'OTIMO'
+    // Overall = worst status na janela canônica; null = sem score (sem metas)
+    const overallStatus = deriveOverallStatus(allScores, weekStart, monthStart)
 
     return {
       id: client.id,
@@ -266,6 +260,7 @@ export const getClientsOperationalTable = cache(async (
   const today = new Date()
   const { start: monthStart } = getMonthRange(today)
   const { start: weekStart } = getWeekRange()
+  const fetchFrom = monthStart < weekStart ? monthStart : weekStart
 
   const where: Prisma.ClientWhereInput =
     canViewAll(role)
@@ -292,8 +287,8 @@ export const getClientsOperationalTable = cache(async (
         },
       },
       healthScores: {
-        where: { periodStart: { gte: monthStart } },
-        select: { status: true },
+        where: { periodStart: { gte: fetchFrom } },
+        select: { status: true, period: true, periodStart: true },
       },
       goals: {
         where: {
@@ -336,15 +331,7 @@ export const getClientsOperationalTable = cache(async (
     const cps           = spend > 0 && sessions > 0 ? spend / sessions : null
     const taxaConversao = sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null
 
-    const scores = c.healthScores
-    const overallStatus: HealthStatus | null =
-      scores.length === 0
-        ? null
-        : scores.some((s) => s.status === 'RUIM')
-        ? 'RUIM'
-        : scores.some((s) => s.status === 'REGULAR')
-        ? 'REGULAR'
-        : 'OTIMO'
+    const overallStatus = deriveOverallStatus(c.healthScores, weekStart, monthStart)
 
     const budgetPlanned = c.goals[0] ? Number(c.goals[0].targetValue) : null
     const goalId        = c.goals[0]?.id ?? null
@@ -393,6 +380,8 @@ export type ClientListItem = {
 async function _fetchClientsList(userId: string, role: string) {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const { start: weekStart } = getWeekRange()
+  const fetchFrom = monthStart < weekStart ? monthStart : weekStart
 
   const where: Prisma.ClientWhereInput =
     canViewAll(role)
@@ -409,9 +398,9 @@ async function _fetchClientsList(userId: string, role: string) {
       },
       platformAccounts: { where: { active: true }, select: { platform: true } },
       healthScores: {
-        // monthStart ensures both monthly (periodStart=1st) and weekly scores are included
-        where: { periodStart: { gte: monthStart } },
-        select: { status: true, achievementPct: true },
+        // Fetch weekly+monthly; a janela canônica é escolhida no helper.
+        where: { periodStart: { gte: fetchFrom } },
+        select: { status: true, achievementPct: true, period: true, periodStart: true },
       },
     },
     orderBy: { name: 'asc' },
@@ -434,20 +423,14 @@ async function _fetchClientsList(userId: string, role: string) {
   }
 
   return clients.map((c): ClientListItem => {
-    const scores = c.healthScores
+    // Janela canônica unificada — mesma régua do grid/tabela.
+    const scores = selectCanonicalScores(c.healthScores, weekStart, monthStart)
     const avgPct =
       scores.length > 0
         ? scores.reduce((sum, s) => sum + Number(s.achievementPct), 0) / scores.length
         : 0
 
-    const overallStatus: HealthStatus | null =
-      scores.length === 0
-        ? null
-        : scores.some((s) => s.status === 'RUIM')
-        ? 'RUIM'
-        : scores.some((s) => s.status === 'REGULAR')
-        ? 'REGULAR'
-        : 'OTIMO'
+    const overallStatus = deriveOverallStatus(c.healthScores, weekStart, monthStart)
 
     return {
       id: c.id,
@@ -608,10 +591,11 @@ export const getClientKPIs = cache(async (
 ): Promise<ClientKPIs> => {
   const today = new Date()
 
-  // Default: 1st of current month → yesterday
+  // Default: 1st of current month → AGORA (mesmo limite superior do helper de
+  // realizado, que encerra a janela MTD em `now`; antes terminava "ontem" e
+  // divergia do REALIZADO exibido nas outras telas).
   const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1)
-  const defaultTo   = new Date(today); defaultTo.setDate(defaultTo.getDate() - 1)
-  defaultTo.setHours(23, 59, 59, 999)
+  const defaultTo   = new Date(today)
 
   const rangeFrom = fromStr ? new Date(fromStr + 'T00:00:00') : defaultFrom
   const rangeTo   = toStr   ? new Date(toStr   + 'T23:59:59') : defaultTo
@@ -1112,17 +1096,30 @@ export const getReportData = cache(async (
     },
   })
 
-  const metrics = goals
+  const visibleGoals = goals
     // Metas de RECEITA (FATURAMENTO/SALES/TICKET_MEDIO/CAC) são financeiras —
     // some da lista para não-ADMIN (regra 5.1 do RBAC; evita vazar em /reports).
     .filter((g) => isAdmin || !isRevenueMetric(g.metric))
+
+  // REALIZADO vem da fonte única (getRealizado), não do HealthScore.actualValue.
+  // HealthScore permanece como STATUS. Batch numa única query de snapshots.
+  // Janela EXPLÍCITA da semana SELECIONADA (o /reports navega por weekOffset):
+  // usar 'SEMANA_FECHADA' fixaria sempre a última semana e desalinharia o
+  // realizado da meta/status da semana escolhida (apontado pelo guardião).
+  const realizadoByMetric = await getRealizadoForMetrics(
+    clientId,
+    visibleGoals.map((g) => g.metric),
+    { start: weekStart, end: weekEnd, label: 'na semana selecionada' },
+  )
+
+  const metrics = visibleGoals
     .map((g) => {
     const hs = g.healthScores[0]
     return {
       metric: g.metric,
       label: metricLabels[g.metric] ?? g.metric,
       target: Number(g.targetValue),
-      actual: hs ? Number(hs.actualValue) : null,
+      actual: realizadoByMetric.get(g.metric)?.valor ?? null,
       status: hs?.status ?? null,
       pct: hs ? Math.round(Number(hs.achievementPct)) : null,
       lowerIsBetter: ['CPL', 'CPA', 'CPC'].includes(g.metric),
@@ -1398,6 +1395,10 @@ export type CockpitData = {
   clientesOk: number
   clientesAtencao: number
   clientesCriticos: number
+  // Sem HealthScore na janela canônica: distingue "tem meta, aguardando dados"
+  // de "sem meta configurada" (o streak não distinguia).
+  clientesAguardandoDados: number
+  clientesSemMeta: number
   warRoomsAtivas: number
   warRoomsSemCriterio: number
   demandasAtrasadas: number
@@ -1428,10 +1429,41 @@ export const getCockpitData = cache(
       ? {}
       : { OR: [{ client: { assignments: { some: { userId } } } }, { assignedTo: userId }] }
 
+    // Contadores de saúde derivados da MESMA fonte/cálculo do grid (HealthScore
+    // na janela canônica), não do ClientStatusStreak — para os números baterem.
+    const { start: weekStart } = getWeekRange()
+    const { start: monthStart } = getMonthRange()
+    const fetchFrom = monthStart < weekStart ? monthStart : weekStart
+    const healthClients = await prisma.client.findMany({
+      where: clientScope,
+      select: {
+        id: true,
+        healthScores: {
+          where: { periodStart: { gte: fetchFrom } },
+          select: { status: true, period: true, periodStart: true },
+        },
+      },
+    })
+    const cockpitGoalClientIds = await getClientsWithActiveGoal(
+      healthClients.map((c) => c.id),
+      monthStart,
+      weekStart,
+    )
+    let clientesOk = 0
+    let clientesAtencao = 0
+    let clientesCriticos = 0
+    let clientesAguardandoDados = 0
+    let clientesSemMeta = 0
+    for (const c of healthClients) {
+      const status = deriveOverallStatus(c.healthScores, weekStart, monthStart)
+      if (status === 'OTIMO') clientesOk++
+      else if (status === 'REGULAR') clientesAtencao++
+      else if (status === 'RUIM') clientesCriticos++
+      else if (cockpitGoalClientIds.has(c.id)) clientesAguardandoDados++
+      else clientesSemMeta++
+    }
+
     const [
-      clientesOk,
-      clientesAtencao,
-      clientesCriticos,
       warRoomsAtivas,
       warRoomsSemCriterio,
       demandasAtrasadas,
@@ -1440,9 +1472,6 @@ export const getCockpitData = cache(
       faturasAgg,
       lastSync,
     ] = await Promise.all([
-      prisma.clientStatusStreak.count({ where: { status: 'OTIMO', client: clientScope } }),
-      prisma.clientStatusStreak.count({ where: { status: 'REGULAR', client: clientScope } }),
-      prisma.clientStatusStreak.count({ where: { status: 'RUIM', client: clientScope } }),
       prisma.criticalProtocol.count({
         where: { status: { not: 'ENCERRADO' }, client: clientScope },
       }),
@@ -1480,6 +1509,8 @@ export const getCockpitData = cache(
       clientesOk,
       clientesAtencao,
       clientesCriticos,
+      clientesAguardandoDados,
+      clientesSemMeta,
       warRoomsAtivas,
       warRoomsSemCriterio,
       demandasAtrasadas,
@@ -1829,9 +1860,9 @@ export const getManagersOverview = cache(async (): Promise<ManagerWithStats[]> =
             include: {
               platformAccounts: { where: { active: true }, select: { platform: true } },
               healthScores: {
-                // monthStart covers both monthly (periodStart=1st) and weekly scores
-                where: { periodStart: { gte: monthStart } },
-                select: { status: true, metric: true, period: true, achievementPct: true },
+                // Fetch weekly+monthly; a janela canônica é escolhida no helper.
+                where: { periodStart: { gte: monthStart < weekStart ? monthStart : weekStart } },
+                select: { status: true, metric: true, period: true, achievementPct: true, periodStart: true },
               },
               goals: {
                 where: {
@@ -1854,16 +1885,10 @@ export const getManagersOverview = cache(async (): Promise<ManagerWithStats[]> =
   return users.map((user) => {
     const clientRows: ManagerClientRow[] = user.managedClients.map((assignment) => {
       const c = assignment.client
-      const scores = c.healthScores
+      // Janela canônica unificada — mesma régua do grid/tabela.
+      const scores = selectCanonicalScores(c.healthScores, weekStart, monthStart)
 
-      const overallStatus: HealthStatus | null =
-        scores.length === 0
-          ? null
-          : scores.some((s) => s.status === 'RUIM')
-          ? 'RUIM'
-          : scores.some((s) => s.status === 'REGULAR')
-          ? 'REGULAR'
-          : 'OTIMO'
+      const overallStatus = deriveOverallStatus(c.healthScores, weekStart, monthStart)
 
       const avgPct = scores.length > 0
         ? Math.round(scores.reduce((s, h) => s + Number(h.achievementPct ?? 0), 0) / scores.length)
@@ -2032,6 +2057,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
   const { start: weekStart, end: weekEnd } = getWeekRange()
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const fetchFrom = monthStart < weekStart ? monthStart : weekStart
   const prevWeekStart = new Date(weekStart)
   prevWeekStart.setDate(prevWeekStart.getDate() - 7)
   const prevWeekEnd = new Date(weekStart)
@@ -2059,10 +2085,10 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
           platformAccount: { select: { platform: true } },
         },
       },
-      // Monthly scores use periodStart=1st; use monthStart to include both
+      // Fetch weekly+monthly; a janela canônica é escolhida no helper.
       healthScores: {
-        where: { periodStart: { gte: monthStart } },
-        select: { status: true, achievementPct: true },
+        where: { periodStart: { gte: fetchFrom } },
+        select: { status: true, achievementPct: true, period: true, periodStart: true },
       },
       statusStreak: { select: { status: true, prevStatus: true, days: true } },
     },
@@ -2087,7 +2113,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
     : []
 
   type SnapItem = (typeof clients)[number]['metricSnapshots'][number]
-  type HealthItem = { status: HealthStatus; achievementPct: unknown }
+  type HealthItem = { status: HealthStatus; achievementPct: unknown; period: GoalPeriod; periodStart: Date }
 
   // Group by manager
   const managerMap = new Map<string, {
@@ -2169,14 +2195,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
         cpaValues.push(clientSpend / clientPurchases)
       }
 
-      const overallStatus: HealthStatus | null =
-        healthScores.length === 0
-          ? null
-          : healthScores.some((s) => s.status === 'RUIM')
-          ? 'RUIM'
-          : healthScores.some((s) => s.status === 'REGULAR')
-          ? 'REGULAR'
-          : 'OTIMO'
+      const overallStatus = deriveOverallStatus(healthScores, weekStart, monthStart)
 
       if (overallStatus === 'OTIMO') clientsHealthy++
       else if (overallStatus === 'REGULAR') clientsWarning++
@@ -2198,19 +2217,17 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
         : null
 
     const clientRows: ManagerClientRow[] = clientData.map(({ id, name, slug, healthScores, streakDays, streakStatus, statusTrend }) => {
-      const overallStatus: HealthStatus | null =
-        healthScores.length === 0 ? null
-        : healthScores.some((s) => s.status === 'RUIM') ? 'RUIM'
-        : healthScores.some((s) => s.status === 'REGULAR') ? 'REGULAR'
-        : 'OTIMO'
-      const avgPct = healthScores.length > 0
-        ? Math.round(healthScores.reduce((s, h) => s + Number(h.achievementPct ?? 0), 0) / healthScores.length)
+      // Janela canônica unificada — mesma régua do grid/tabela.
+      const canon = selectCanonicalScores(healthScores, weekStart, monthStart)
+      const overallStatus = deriveOverallStatus(healthScores, weekStart, monthStart)
+      const avgPct = canon.length > 0
+        ? Math.round(canon.reduce((s, h) => s + Number(h.achievementPct ?? 0), 0) / canon.length)
         : null
       return {
         id, name, slug, overallStatus, hasActiveGoal: goalClientIds.has(id),
         achievementPct: avgPct,
-        platforms: [], goalsTotal: healthScores.length,
-        goalsHit: healthScores.filter((s) => s.status === 'OTIMO').length,
+        platforms: [], goalsTotal: canon.length,
+        goalsHit: canon.filter((s) => s.status === 'OTIMO').length,
         streakDays, streakStatus, statusTrend,
       }
     })
@@ -2553,9 +2570,19 @@ export const getGoalPaceMetrics = cache(async (clientId: string): Promise<GoalPa
       : dailyTarget !== null
         ? dailyTarget * daysElapsed
         : null
+    // Para métricas "menor é melhor" (CPL/CPA/CAC/CPC/CPM/SPEND/CPS) o ritmo é
+    // invertido — espelha computeAchievementPct do health-scorer: esperado÷real.
+    // Divisão por zero (real <= 0) → null.
+    const lowerIsBetter = LOWER_IS_BETTER.has(goal.metric)
     const paceAchievement =
-      actualValue !== null && paceExpected !== null && paceExpected > 0
-        ? (actualValue / paceExpected) * 100
+      actualValue !== null && paceExpected !== null
+        ? lowerIsBetter
+          ? actualValue > 0
+            ? (paceExpected / actualValue) * 100
+            : null
+          : paceExpected > 0
+            ? (actualValue / paceExpected) * 100
+            : null
         : null
     // Projeção só faz sentido para métricas acumulativas; RATE já é uma média.
     const projectedMonth = isRate
@@ -2717,6 +2744,8 @@ export type AgencyOverview = {
 export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const { start: weekStart } = getWeekRange()
+  const fetchFrom = monthStart < weekStart ? monthStart : weekStart
 
   // Churn stats (independent of active clients)
   const churnedTotal = await prisma.client.count({ where: { status: 'CHURNED' } })
@@ -2739,14 +2768,13 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
         take: 1,
       },
       healthScores: {
-        where: { periodStart: { gte: monthStart } },
-        select: { status: true },
+        where: { periodStart: { gte: fetchFrom } },
+        select: { status: true, period: true, periodStart: true },
       },
     },
   })
 
   const clientIds = clients.map((c) => c.id)
-  const { start: weekStart } = getWeekRange()
   const goalClientIds = await getClientsWithActiveGoal(clientIds, monthStart, weekStart)
 
   // All MTD snapshots in one query
@@ -2788,11 +2816,7 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
     totalSpend     += k.spend
     totalPurchases += k.purchases
 
-    const status: HealthStatus | null =
-      c.healthScores.length === 0 ? null
-        : c.healthScores.some((s) => s.status === 'RUIM') ? 'RUIM'
-        : c.healthScores.some((s) => s.status === 'REGULAR') ? 'REGULAR'
-        : 'OTIMO'
+    const status = deriveOverallStatus(c.healthScores, weekStart, monthStart)
 
     if (status === 'OTIMO') health.otimo++
     else if (status === 'REGULAR') health.regular++
@@ -2987,6 +3011,8 @@ export type AssignmentManager = {
 export const getAssignmentsData = cache(async () => {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const { start: weekStart } = getWeekRange()
+  const fetchFrom = monthStart < weekStart ? monthStart : weekStart
 
   const [rawClients, managers] = await Promise.all([
     prisma.client.findMany({
@@ -3002,8 +3028,8 @@ export const getAssignmentsData = cache(async () => {
           take: 1,
         },
         healthScores: {
-          where: { periodStart: { gte: monthStart } },
-          select: { status: true, achievementPct: true },
+          where: { periodStart: { gte: fetchFrom } },
+          select: { status: true, achievementPct: true, period: true, periodStart: true },
         },
       },
       orderBy: { name: 'asc' },
@@ -3017,19 +3043,13 @@ export const getAssignmentsData = cache(async () => {
   ])
 
   const clients: AssignmentClientRow[] = rawClients.map((c) => {
-    const scores = c.healthScores
+    // Janela canônica unificada — mesma régua do grid/tabela.
+    const scores = selectCanonicalScores(c.healthScores, weekStart, monthStart)
     const avgPct =
       scores.length > 0
         ? scores.reduce((sum, s) => sum + Number(s.achievementPct), 0) / scores.length
         : 0
-    const overallStatus: HealthStatus | null =
-      scores.length === 0
-        ? null
-        : scores.some((s) => s.status === 'RUIM')
-        ? 'RUIM'
-        : scores.some((s) => s.status === 'REGULAR')
-        ? 'REGULAR'
-        : 'OTIMO'
+    const overallStatus = deriveOverallStatus(c.healthScores, weekStart, monthStart)
 
     const primary = c.assignments[0]
 

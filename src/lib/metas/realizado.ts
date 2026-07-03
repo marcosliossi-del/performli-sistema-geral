@@ -45,10 +45,20 @@ export type Realizado = {
   fonte: string
 }
 
-type Janela = { start: Date; end: Date; label: string }
+export type Janela = { start: Date; end: Date; label: string }
+
+/**
+ * Período aceito pelas funções de realizado: um dos períodos canônicos OU uma
+ * janela EXPLÍCITA {start, end, label} — necessária em telas com navegação
+ * temporal (ex.: /reports com weekOffset), onde a semana exibida não é
+ * necessariamente a última fechada. A janela explícita usa a MESMA agregação
+ * canônica; só a fatia de tempo muda.
+ */
+export type PeriodoOuJanela = RealizadoPeriodo | Janela
 
 /** Resolve a janela [start, end] e o rótulo de exibição para o período pedido. */
-export function resolveJanela(periodo: RealizadoPeriodo, now: Date = new Date()): Janela {
+export function resolveJanela(periodo: PeriodoOuJanela, now: Date = new Date()): Janela {
+  if (typeof periodo === 'object') return periodo
   if (periodo === 'SEMANA_FECHADA') {
     // Mesma janela do resultado-engine (a semana que contém "hoje - 7 dias"),
     // para que o realizado bata com Client.resultadoRoas.
@@ -85,7 +95,7 @@ async function loadBusinessType(clientId: string): Promise<BusinessType> {
 export async function getRealizado(
   clientId: string,
   metric: MetricType,
-  periodo: RealizadoPeriodo,
+  periodo: PeriodoOuJanela,
   businessType?: BusinessType,
 ): Promise<Realizado> {
   const janela = resolveJanela(periodo)
@@ -108,7 +118,7 @@ export async function getRealizado(
 export async function getRealizadoForMetrics(
   clientId: string,
   metrics: MetricType[],
-  periodo: RealizadoPeriodo,
+  periodo: PeriodoOuJanela,
   businessType?: BusinessType,
 ): Promise<Map<MetricType, Realizado>> {
   const janela = resolveJanela(periodo)
