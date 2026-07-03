@@ -21,6 +21,7 @@ import { escalateOverdueTasks, markOverdueTasks } from '@/services/task-escalati
 import { detectSilentAtRiskClients } from '@/services/antichurn-monitor'
 import { runRetentionWatchdog } from '@/services/retention-watchdog'
 import { runAlertSlaWatchdog } from '@/services/alert-sla-watchdog'
+import { runChurnRadars } from '@/services/churn-radars'
 import { runReportDeliveryTracker } from '@/services/report-delivery-tracker'
 import { checkCheckins } from '@/services/checkin-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/services/weekly-goals-sync'
@@ -239,6 +240,20 @@ async function runDailySync() {
     }
   }
 
+  // ── Step 5a4: Churn radars — suporte acumulado (#9), investimento caindo
+  //             (#10), silêncio desacoplado (#11) e inadimplência → churn (#14).
+  //             Cruza sinais que hoje passam batidos por estarem em tabelas
+  //             separadas; cada radar isola falha por cliente. ─────────────────
+  try {
+    const churnRadarsResult = await runChurnRadars()
+    summary.churnRadars = { ok: true, ...churnRadarsResult }
+  } catch (err) {
+    summary.churnRadars = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
   // ── Step 5a3: Entrega do relatório semanal — funil gerado→enviado→respondido
   //             (A) firstReplyAt automático (quando houver fonte de inbound do
   //             cliente) + (B) terça: relatório gerado e NÃO enviado ao cliente. ─
@@ -259,6 +274,8 @@ async function runDailySync() {
       ok: true,
       missingAlerts: checkinResult.missingAlerts,
       staleRejectedAlerts: checkinResult.staleRejectedAlerts,
+      reincidenciaTasks: checkinResult.reincidenciaTasks,
+      reincidenciaAlerts: checkinResult.reincidenciaAlerts,
     }
   } catch (err) {
     summary.checkins = {
