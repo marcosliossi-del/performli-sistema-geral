@@ -303,6 +303,13 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
   ])
 
   const lastAsaasSync = lastSyncAgg._max.syncedAt
+  // Sync travada: passou de 26h sem sincronizar (o cron diário roda 1x/dia).
+  // A DRE fica desatualizada em silêncio se o Asaas parar — por isso alertamos.
+  const asaasStaleHours = lastAsaasSync
+    ? (Date.now() - new Date(lastAsaasSync).getTime()) / 3_600_000
+    : null
+  const asaasStale = asaasStaleHours != null && asaasStaleHours > 26
+  const asaasStaleDias = asaasStaleHours != null ? Math.floor(asaasStaleHours / 24) : 0
 
   return (
     <div className="space-y-5 pb-8">
@@ -311,12 +318,17 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
         <div>
           <h1 className="text-xl font-bold text-[#EBEBEB]">DRE — Financeiro</h1>
           <p className="text-sm text-[#87919E] mt-0.5">Demonstrativo de resultado da agência</p>
-          <p className={`text-xs mt-1 flex items-center gap-1.5 ${lastAsaasSync ? 'text-[#87919E]' : 'text-[#EF4444]'}`}>
+          <p className={`text-xs mt-1 flex items-center gap-1.5 ${lastAsaasSync && !asaasStale ? 'text-[#87919E]' : 'text-[#EF4444]'}`}>
             <Clock size={11} />
             {lastAsaasSync
               ? `Sincronizado com o Asaas em ${formatSaoPauloDateTime(new Date(lastAsaasSync))}`
               : 'Asaas nunca sincronizado'}
           </p>
+          {asaasStale && (
+            <p className="text-xs mt-1 flex items-center gap-1.5 text-[#EF4444] font-semibold">
+              ⚠ Sincronização travada {asaasStaleDias >= 1 ? `há ${asaasStaleDias} dia(s)` : 'há mais de 26h'} — a DRE pode estar desatualizada. Clique em “Sincronizar” ou verifique a integração do Asaas.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <ExpenseLaunchButton />
