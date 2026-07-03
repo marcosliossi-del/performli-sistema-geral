@@ -1132,7 +1132,8 @@ model TaskTemplate {
   // Migração ClickUp→Performli: checklist obrigatório TRAVA a conclusão (regra 4.5),
   // independente de criticidade. Propagado p/ Task.enforceChecklist na materialização.
   enforceChecklist    Boolean      @default(false)
-  // Etiquetas do template (ex.: CS, review, tráfego) — copiadas p/ Task.tags.
+  // Etiquetas do template (campo aditivo, opcional). Hoje as recorrentes NÃO
+  // propagam tags para a Task (decisão de produto: sem etiquetas nas tarefas).
   tags                String[]     @default([])
   active              Boolean      @default(true)
   createdAt           DateTime     @default(now())
