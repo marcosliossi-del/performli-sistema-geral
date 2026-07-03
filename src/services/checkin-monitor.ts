@@ -26,9 +26,13 @@ const DAY_MS = 86_400_000
 const MISSING_DEDUP_DAYS = 5
 const STALE_DEDUP_DAYS = 3
 const REJECTED_GRACE_DAYS = 2
+// T-04: check-in entregue parado na fila da CS por >= 2 dias sem validação.
+const VALIDATION_GRACE_DAYS = 2
 
 // Tag de dedupe do Alert de escalação (#13) — 1 por cliente por semana.
 const TAG_2SEM = '[checkin:2sem]'
+// T-04: tag de dedupe do Alert "entregue sem validação" — 1 por cliente por semana.
+const TAG_SEM_VALIDACAO = '[checkin:sem-validacao]'
 
 async function hasRecentAlert(
   clientId: string,
@@ -117,6 +121,7 @@ export async function checkCheckins(): Promise<{
   staleRejectedAlerts: number
   reincidenciaTasks: number
   reincidenciaAlerts: number
+  semValidacaoAlerts: number
 }> {
   const { start: weekStart } = getWeekRange()
   const prevWeekStart = new Date(weekStart.getTime() - 7 * DAY_MS)
@@ -131,10 +136,11 @@ export async function checkCheckins(): Promise<{
       id: true,
       name: true,
       gestorId: true,
+      createdAt: true,
       assignments: { where: { isPrimary: true }, take: 1, select: { userId: true } },
       weeklyCheckins: {
         where: { weekStart: { in: [weekStart, prevWeekStart] } },
-        select: { weekStart: true, status: true, reviewedAt: true },
+        select: { weekStart: true, status: true, reviewedAt: true, submittedAt: true },
       },
     },
   })
@@ -143,6 +149,7 @@ export async function checkCheckins(): Promise<{
   let staleRejectedAlerts = 0
   let reincidenciaTasks = 0
   let reincidenciaAlerts = 0
+  let semValidacaoAlerts = 0
 
   for (const c of clients) {
     try {
@@ -155,8 +162,13 @@ export async function checkCheckins(): Promise<{
       const submitted = !!checkin && checkin.status !== 'PENDENTE'
       const prevSubmitted = !!prevCheckin && prevCheckin.status !== 'PENDENTE'
 
+      // T-06: cliente só entra na régua de cobrança se JÁ existia no início da
+      // semana. Cliente novo no meio da semana não é cobrado no dia 1.
+      const existedThisWeek = c.createdAt.getTime() <= weekStart.getTime()
+      const existedPrevWeek = c.createdAt.getTime() <= prevWeekStart.getTime()
+
       // 1. Sem check-in (de quarta em diante)
-      if (!submitted && dayOfWeek >= 3) {
+      if (!submitted && dayOfWeek >= 3 && existedThisWeek) {
         if (!(await hasRecentAlert(c.id, 'CHECKIN_MISSING', MISSING_DEDUP_DAYS))) {
           await prisma.alert.create({
             data: {
@@ -170,8 +182,10 @@ export async function checkCheckins(): Promise<{
         }
 
         // 3. (#13) Reincidência — também não teve check-in na semana anterior:
-        //    2ª semana consecutiva sem prestação de contas → escala.
-        if (!prevSubmitted) {
+        //    2ª semana consecutiva sem prestação de contas → escala. A régua de
+        //    reincidência (T-06) exige que o cliente já existisse na semana
+        //    ANTERIOR, senão a "2ª semana" seria falsa para cliente recém-entrado.
+        if (!prevSubmitted && existedPrevWeek) {
           const { assigneeId: gestorId } = await resolveClientOwner({
             gestorId: c.gestorId,
             assignments: c.assignments,
@@ -238,10 +252,40 @@ export async function checkCheckins(): Promise<{
           }
         }
       }
+
+      // T-04. Check-in ENTREGUE porém nunca validado — some do radar.
+      //       PREENCHIDO com submissão há >= 2 dias e ainda sem revisão da CS.
+      //       Sem validação, a prestação de contas não fecha. Dedupe semanal
+      //       por tag no body (padrão retention-watchdog).
+      if (checkin?.status === 'PREENCHIDO' && checkin.submittedAt && !checkin.reviewedAt) {
+        const daysWaiting = Math.floor((now - new Date(checkin.submittedAt).getTime()) / DAY_MS)
+        if (daysWaiting >= VALIDATION_GRACE_DAYS) {
+          const already = await prisma.alert.findFirst({
+            where: {
+              clientId: c.id,
+              type: 'CHECKIN_MISSING',
+              createdAt: { gte: weekStart },
+              body: { contains: TAG_SEM_VALIDACAO },
+            },
+            select: { id: true },
+          })
+          if (!already) {
+            await prisma.alert.create({
+              data: {
+                clientId: c.id,
+                type: 'CHECKIN_MISSING',
+                title: `Check-in de ${c.name} entregue há ${daysWaiting} dias aguardando validação da CS`,
+                body: `O check-in de ${c.name} foi entregue e está há ${daysWaiting} dias parado na fila da CS, sem aprovação nem reprovação. Sem a validação, a prestação de contas da semana não fecha. ${TAG_SEM_VALIDACAO}`,
+              },
+            })
+            semValidacaoAlerts++
+          }
+        }
+      }
     } catch (err) {
       console.error(`[checkin-monitor] falha no cliente ${c.id}:`, err)
     }
   }
 
-  return { missingAlerts, staleRejectedAlerts, reincidenciaTasks, reincidenciaAlerts }
+  return { missingAlerts, staleRejectedAlerts, reincidenciaTasks, reincidenciaAlerts, semValidacaoAlerts }
 }

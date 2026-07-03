@@ -45,11 +45,13 @@ export async function updateClientPrimaryManager(
   const previousManagerId = previousPrimary?.userId ?? null
 
   let reassignedTasks = 0
+  let reassignedProtocols = 0
 
   // Tudo na MESMA transação: troca da carteira + sync de Client.gestorId +
-  // reatribuição das tarefas automáticas em aberto do gestor antigo.
+  // reatribuição das tarefas automáticas em aberto do gestor antigo +
+  // migração das War Rooms ativas do cliente (T-09).
   try {
-    reassignedTasks = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // Remove primary flag from all existing assignments for this client
       await tx.clientAssignment.updateMany({
         where: { clientId, isPrimary: true },
@@ -70,26 +72,39 @@ export async function updateClientPrimaryManager(
         data: { gestorId: managerId },
       })
 
-      // Reatribui tarefas AUTOMÁTICAS EM ABERTO do gestor antigo para o novo.
-      // Conservador (S2-017): só toca tasks do cliente, geradas por automação
-      // (origin=AUTOMACAO), que ainda estão em aberto e cujo responsável era o
-      // gestor ANTIGO. NÃO mexe em concluídas/canceladas, nem em tasks manuais
-      // ou de outros responsáveis. Só reatribui assignedTo (não altera status,
-      // logo não há espelho statusId a atualizar — D-005 não se aplica).
+      // Reatribui tarefas GERADAS POR SISTEMA EM ABERTO do gestor antigo para o
+      // novo. Conservador (S2-017): só toca tasks do cliente, cujo responsável
+      // era o gestor ANTIGO, ainda em aberto. T-09 amplia o escopo para incluir
+      // as RECORRÊNCIAS (origin=RECORRENCIA), que antes ficavam presas ao gestor
+      // que saiu da conta. NÃO mexe em concluídas/canceladas nem em tasks manuais.
+      // Só reatribui assignedTo (não altera status, logo sem espelho statusId).
+      let tasks = 0
+      let protocols = 0
       if (previousManagerId && previousManagerId !== managerId) {
         const res = await tx.task.updateMany({
           where: {
             clientId,
             assignedTo: previousManagerId,
-            origin: 'AUTOMACAO',
+            origin: { in: ['AUTOMACAO', 'RECORRENCIA'] },
             status: { in: OPEN_TASK_STATUSES },
           },
           data: { assignedTo: managerId },
         })
-        return res.count
+        tasks = res.count
       }
-      return 0
+
+      // T-09: War Rooms ATIVAS do cliente migram para o novo gestor. Sem isso, o
+      // monitor continuaria cobrando o diagnóstico do gestor que saiu da conta.
+      const protoRes = await tx.criticalProtocol.updateMany({
+        where: { clientId, status: { not: 'ENCERRADO' } },
+        data: { responsibleId: managerId },
+      })
+      protocols = protoRes.count
+
+      return { tasks, protocols }
     })
+    reassignedTasks = result.tasks
+    reassignedProtocols = result.protocols
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Falha ao trocar o gestor.' }
   }
@@ -106,7 +121,9 @@ export async function updateClientPrimaryManager(
       previousManagerId,
       newManagerId: managerId,
       reassignedTasks,
-      criteria: 'origin=AUTOMACAO, status em aberto, assignedTo=gestorAnterior',
+      reassignedProtocols,
+      criteria:
+        'origin IN (AUTOMACAO, RECORRENCIA), status em aberto, assignedTo=gestorAnterior; War Rooms ativas migradas (responsibleId)',
     },
   })
 

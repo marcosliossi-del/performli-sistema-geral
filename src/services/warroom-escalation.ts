@@ -27,6 +27,8 @@ export async function escalateStaleWarRooms(): Promise<{
       status: { not: 'ENCERRADO' },
       escalatedAt: null,
       activatedAt: { lte: cutoff },
+      // T-08: cliente CHURNED não é mais escalado (PAUSED segue por ora).
+      client: { status: { not: 'CHURNED' } },
     },
     select: {
       id: true,

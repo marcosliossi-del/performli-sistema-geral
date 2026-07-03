@@ -117,6 +117,7 @@ export default async function CheckinsPage() {
                     oQueFoiFeito: r.checkin?.oQueFoiFeito ?? null,
                     proximosPassos: r.checkin?.proximosPassos ?? null,
                     reviewNote: r.checkin?.reviewNote ?? null,
+                    pastReproved: r.pastReproved,
                   }}
                 />
               ))}

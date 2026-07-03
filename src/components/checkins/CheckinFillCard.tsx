@@ -23,6 +23,8 @@ export type FillItem = {
   oQueFoiFeito: string | null
   proximosPassos: string | null
   reviewNote: string | null
+  // T-05: semana passada REPROVADA que ainda pode ser corrigida (janela de correção).
+  pastReproved: { weekStartStr: string; reviewNote: string | null } | null
 }
 
 export function CheckinFillCard({ item }: { item: FillItem }) {
@@ -35,11 +37,21 @@ export function CheckinFillCard({ item }: { item: FillItem }) {
   const badge = STATUS_BADGE[item.status]
   const locked = item.status === 'APROVADO'
 
-  function handleSubmit() {
+  function handleSubmit(weekStartStr?: string) {
     setMsg(null)
     startTransition(async () => {
-      const res = await submitCheckin(item.clientId, { resultadoSemana, oQueFoiFeito, proximosPassos })
-      setMsg('error' in res ? res.error : 'Check-in enviado para validação da CS.')
+      const res = await submitCheckin(
+        item.clientId,
+        { resultadoSemana, oQueFoiFeito, proximosPassos },
+        weekStartStr,
+      )
+      setMsg(
+        'error' in res
+          ? res.error
+          : weekStartStr
+            ? 'Correção da semana passada enviada para validação da CS.'
+            : 'Check-in enviado para validação da CS.',
+      )
     })
   }
 
@@ -67,11 +79,31 @@ export function CheckinFillCard({ item }: { item: FillItem }) {
           <FillField label="O que foi feito" value={oQueFoiFeito} onChange={setFeito} placeholder="Ações executadas na conta" />
           <FillField label="Próximos passos" value={proximosPassos} onChange={setPassos} placeholder="Plano para a próxima semana" />
           <button
-            onClick={handleSubmit}
+            onClick={() => handleSubmit()}
             disabled={isPending}
             className="flex items-center gap-1.5 text-xs bg-[#95BBE2]/10 text-[#95BBE2] border border-[#95BBE2]/20 rounded-lg px-3 py-1.5 hover:bg-[#95BBE2]/20 transition-colors disabled:opacity-50"
           >
             <Send size={12} /> {item.status === 'PENDENTE' ? 'Enviar check-in' : 'Reenviar para validação'}
+          </button>
+        </div>
+      )}
+
+      {item.pastReproved && (
+        <div className="space-y-1.5 border-t border-[#38435C]/50 pt-2.5">
+          <div className="flex items-start gap-2 text-[11px] text-[#EAB308]">
+            <AlertTriangle size={13} className="mt-0.5 flex-shrink-0" />
+            <span>
+              A semana passada foi reprovada pela CS
+              {item.pastReproved.reviewNote ? `: ${item.pastReproved.reviewNote}` : ''}. Corrija-a
+              enquanto a janela de correção está aberta.
+            </span>
+          </div>
+          <button
+            onClick={() => handleSubmit(item.pastReproved!.weekStartStr)}
+            disabled={isPending}
+            className="flex items-center gap-1.5 text-xs bg-[#EAB308]/10 text-[#EAB308] border border-[#EAB308]/20 rounded-lg px-3 py-1.5 hover:bg-[#EAB308]/20 transition-colors disabled:opacity-50"
+          >
+            <Send size={12} /> Corrigir semana passada
           </button>
         </div>
       )}

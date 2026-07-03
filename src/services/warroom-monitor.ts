@@ -51,7 +51,8 @@ export async function monitorWarRooms(): Promise<{
   diagnosticoChaseTasks: number
 }> {
   const protocols = await prisma.criticalProtocol.findMany({
-    where: { status: { not: 'ENCERRADO' } },
+    // T-08: cliente CHURNED não é mais cobrado/monitorado (PAUSED segue por ora).
+    where: { status: { not: 'ENCERRADO' }, client: { status: { not: 'CHURNED' } } },
     select: {
       id: true,
       clientId: true,
