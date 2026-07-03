@@ -315,7 +315,11 @@ export function OperacionalBoard({
       const prevCompleted = task.completedAt
       patchTask(task.id, { status: next, completedAt: next === 'CONCLUIDO' ? new Date() : null })
       try {
-        await updateTaskStatus(task.id, next as TaskStatus) // lança no guard
+        const r = await updateTaskStatus(task.id, next as TaskStatus)
+        if ('error' in r) {
+          patchTask(task.id, { status: prevStatus, completedAt: prevCompleted })
+          throw new Error(r.error) // KanbanBoard exibe o motivo do bloqueio
+        }
       } catch (e) {
         patchTask(task.id, { status: prevStatus, completedAt: prevCompleted })
         throw e

@@ -266,10 +266,12 @@ function PanelSections({
     setTitle(next)
   }
 
-  // Status (updateTaskStatus LANÇA no guard — StatusBadge captura e mostra o motivo).
+  // Status (bloqueio do guard vem como { error } — relança para o StatusBadge
+  // capturar e mostrar o motivo operacional).
   async function saveStatus(next: StatusValue) {
     if (next.kind !== 'legacy') return
-    await updateTaskStatus(data.id, next.status)
+    const r = await updateTaskStatus(data.id, next.status)
+    if ('error' in r) throw new Error(r.error)
     setStatus(next.status)
   }
 
