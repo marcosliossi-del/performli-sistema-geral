@@ -19,6 +19,7 @@ import { checkInadimplencia } from '@/services/inadimplencia-checker'
 import { checkLeadFollowups } from '@/services/lead-followup-checker'
 import { escalateOverdueTasks, markOverdueTasks } from '@/services/task-escalation'
 import { detectSilentAtRiskClients } from '@/services/antichurn-monitor'
+import { runRetentionWatchdog } from '@/services/retention-watchdog'
 import { checkCheckins } from '@/services/checkin-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/services/weekly-goals-sync'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
@@ -59,6 +60,7 @@ async function runDailySync() {
     alerts: { ok: false },
     churnRisk: { ok: false },
     antiChurnSilent: { ok: false },
+    retentionWatchdog: { ok: false },
     checkins: { ok: false },
     budgetWarnings: { ok: false },
     criticalAccounts: { ok: false },
@@ -203,6 +205,18 @@ async function runDailySync() {
     }
   } catch (err) {
     summary.antiChurnSilent = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // ── Step 5a2: Retention watchdog — escalação de retenção vencida + possível
+  //             churn parado sem contato (o "não-evento" da retenção) ──────────
+  try {
+    const watchdogResult = await runRetentionWatchdog()
+    summary.retentionWatchdog = { ok: true, ...watchdogResult }
+  } catch (err) {
+    summary.retentionWatchdog = {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     }
