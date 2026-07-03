@@ -956,6 +956,9 @@ model Task {
   reviewerId          String?  // quem valida (id, sem FK — igual requesterId)
   requiresEvidence    Boolean  @default(false)
   requiresReview      Boolean  @default(false)
+  // Checklist obrigatório TRAVA a conclusão mesmo em tarefa não-crítica (regra 4.5
+  // da migração ClickUp). Propagado de TaskTemplate.enforceChecklist.
+  enforceChecklist    Boolean  @default(false)
   qualityScore        Int?
   riskScore           Int?
   completionNotes     String?
@@ -1126,6 +1129,11 @@ model TaskTemplate {
   relativeDueDays     Int?
   slaHours            Int?
   evidenceRequired    Boolean      @default(false)
+  // Migração ClickUp→Performli: checklist obrigatório TRAVA a conclusão (regra 4.5),
+  // independente de criticidade. Propagado p/ Task.enforceChecklist na materialização.
+  enforceChecklist    Boolean      @default(false)
+  // Etiquetas do template (ex.: CS, review, tráfego) — copiadas p/ Task.tags.
+  tags                String[]     @default([])
   active              Boolean      @default(true)
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
@@ -1162,10 +1170,19 @@ model TaskRecurrenceRule {
   template   TaskTemplate?       @relation(fields: [templateId], references: [id])
   frequency  RecurrenceFrequency
   dayOfWeek  Int?
+  // Múltiplos dias da semana (ex.: [2,5] = terça+sexta) — quando preenchido,
+  // tem precedência sobre dayOfWeek em SEMANAL/DIA_DA_SEMANA. Vazio = usa dayOfWeek.
+  daysOfWeek Int[]               @default([])
   dayOfMonth Int?
   hour       Int?
   minute     Int?                @default(0)
   anchorDate DateTime?           // âncora obrigatória p/ QUINZENAL (dia-base do ciclo)
+  // Prorrogação p/ dia útil (regra 4.7): se o dia-alvo cair em sáb/dom, dispara
+  // no próximo dia útil. Combinado com DIA_DO_MES=1 => "primeiro dia útil do mês".
+  rollToBusinessDay Boolean      @default(false)
+  // Escopo por segmento: NULL = todos os clientes ativos (comportamento legado);
+  // preenchido = fan-out só p/ clientes daquele businessType (ex.: ECOMMERCE).
+  businessType BusinessType?
   active     Boolean             @default(true)
   archivedAt DateTime?           // arquivada: some da lista padrão e NUNCA roda no motor (T-19)
   lastRunAt  DateTime?

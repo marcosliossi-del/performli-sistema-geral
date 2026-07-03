@@ -26,6 +26,7 @@ export async function checkTaskCompletion(
         completionNotes: true,
         requiresEvidence: true,
         requiresReview: true,
+        enforceChecklist: true,
         riskScore: true,
         checklist: { select: { required: true, done: true } },
         approvals: { select: { approved: true } },
@@ -48,8 +49,11 @@ export async function checkTaskCompletion(
     (task.riskScore != null && task.riskScore >= 4) ||
     task.priority === 'CRITICA'
 
-  // Não crítica → nunca bloqueia. Comportamento atual preservado.
-  if (!isCritical) return { allowed: true }
+  // Não crítica E sem enforceChecklist → nunca bloqueia. Comportamento legado
+  // preservado. enforceChecklist (migração ClickUp, regra 4.5) faz o checklist
+  // obrigatório TRAVAR a conclusão mesmo em tarefa não-crítica — mas SÓ o
+  // checklist (evidência/revisão continuam restritas a tarefas críticas).
+  if (!isCritical && !task.enforceChecklist) return { allowed: true }
 
   const reasons: string[] = []
 

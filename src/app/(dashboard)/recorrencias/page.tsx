@@ -95,10 +95,12 @@ const FANOUT_ROLES = new Set(['GESTOR', 'MANAGER', 'CS', 'CRM', 'SUPERVISOR', 'H
 type NextRunRule = {
   frequency: RecurrenceFrequency
   dayOfWeek: number | null
+  daysOfWeek: number[]
   dayOfMonth: number | null
   hour: number | null
   minute: number | null
   anchorDate: Date | null
+  rollToBusinessDay: boolean
 }
 
 /**
@@ -116,7 +118,7 @@ function computeNextRun(rule: NextRunRule, now: Date = new Date()): Date | null 
   for (let i = 0; i <= 370; i++) {
     const dayStr = new Date(anchorNoon.getTime() + i * 86_400_000).toISOString().slice(0, 10)
     const candidateNoon = new Date(`${dayStr}T12:00:00Z`)
-    if (!shouldRunToday(rule.frequency, rule.dayOfWeek, rule.dayOfMonth, rule.anchorDate, candidateNoon)) {
+    if (!shouldRunToday(rule.frequency, rule.dayOfWeek, rule.dayOfMonth, rule.anchorDate, candidateNoon, rule.daysOfWeek, rule.rollToBusinessDay)) {
       continue
     }
     const run = new Date(`${dayStr}T${pad(hh)}:${pad(mm)}:00-03:00`)

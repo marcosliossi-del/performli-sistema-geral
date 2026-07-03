@@ -3,7 +3,7 @@ import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { seedOperacaoArkza } from '@/services/seed-operacao'
 import { seedCarteiras, createNovosClientes, getCancelCandidates, cancelarForaDaCarteira } from '@/services/seed-carteiras'
-import { materializeRecurringTasksForClient } from '@/services/recurrence-engine'
+import { materializeRecurringTasksForClient, materializeRulesForClient } from '@/services/recurrence-engine'
 import { importarSuporteClickUp } from '@/services/seed-suporte'
 import { migrarClickUp, type LoteName } from '@/services/clickup-migration'
 import { reconcileAsaasTasks } from '@/services/asaas-task-reconciler'
@@ -225,6 +225,71 @@ export async function POST(req: NextRequest) {
         select: { name: true, slug: true },
       })
       return NextResponse.json({ ok: true, phase, semGestor: clients })
+    }
+
+    if (phase === 'materializar-lalluzi-ecom') {
+      // Migração ClickUp — GATE 1: materializa as 16 recorrentes ECOMMERCE (regras
+      // ainda INATIVAS) SÓ na Lalluzi, forçado, para a auditoria humana. Nada vaza
+      // para a carteira antes da ativação.
+      const lalluzi = await prisma.client.findFirst({
+        where: { name: { contains: 'Lalluzi', mode: 'insensitive' }, status: 'ACTIVE' },
+        select: { id: true, name: true },
+      })
+      if (!lalluzi) {
+        return NextResponse.json({ error: 'Cliente Lalluzi (ativo) não encontrado.' }, { status: 404 })
+      }
+      const ecomRules = await prisma.taskRecurrenceRule.findMany({
+        where: { template: { code: { startsWith: 'REC-ECOM-' } } },
+        select: { id: true },
+      })
+      const result = await materializeRulesForClient(lalluzi.id, ecomRules.map((r) => r.id))
+      await writeAuditLog({
+        actorId: session.userId,
+        actorRole: session.role,
+        action: 'recurrence.materializeLalluziEcom',
+        entityType: 'Client',
+        entityId: lalluzi.id,
+        metadata: { cliente: lalluzi.name, regras: ecomRules.length, ...result },
+      })
+      return NextResponse.json({ ok: true, phase, cliente: lalluzi.name, regras: ecomRules.length, ...result })
+    }
+
+    if (phase === 'ativar-ecom-recorrencias') {
+      // Migração ClickUp — pós-GATE 1: ativa as 16 regras ECOMMERCE e materializa
+      // AGORA para todos os clientes ECOMMERCE ativos (o cron seguiria depois).
+      const activated = await prisma.taskRecurrenceRule.updateMany({
+        where: { template: { code: { startsWith: 'REC-ECOM-' } }, active: false },
+        data: { active: true },
+      })
+      const clients = await prisma.client.findMany({
+        where: { status: 'ACTIVE', businessType: 'ECOMMERCE' },
+        select: { id: true },
+      })
+      let created = 0
+      let skipped = 0
+      let failed = 0
+      let clientsProcessed = 0
+      for (const c of clients) {
+        try {
+          const r = await materializeRecurringTasksForClient(c.id)
+          created += r.created
+          skipped += r.skipped
+          failed += r.failed
+          clientsProcessed++
+        } catch (err) {
+          console.error(`[seed-operacao] ativar-ecom falhou p/ cliente ${c.id}:`, err)
+          failed++
+        }
+      }
+      await writeAuditLog({
+        actorId: session.userId,
+        actorRole: session.role,
+        action: 'recurrence.activateEcom',
+        entityType: 'TaskRecurrenceRule',
+        entityId: 'bulk',
+        metadata: { regrasAtivadas: activated.count, clientsProcessed, created, skipped, failed },
+      })
+      return NextResponse.json({ ok: true, phase, regrasAtivadas: activated.count, clientsProcessed, created, skipped, failed })
     }
 
     if (phase === 'wipe-all-tasks') {
