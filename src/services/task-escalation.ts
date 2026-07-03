@@ -66,9 +66,10 @@ export async function escalateOverdueTasks(): Promise<{ checked: number; escalat
 
       // ── #2: Alert operacional para task crítica/automação escalada ──────────
       // Alert exige clientId — tasks sem cliente são puladas (só sobem prioridade).
+      // (CRITICA já cobre qualquer origem; para AUTOMACAO basta checar ALTA —
+      // repetir CRITICA no ramo direito vira TS2367 após o narrowing do ||.)
       const critica =
-        t.priority === 'CRITICA' ||
-        (t.origin === 'AUTOMACAO' && (t.priority === 'ALTA' || t.priority === 'CRITICA'))
+        t.priority === 'CRITICA' || (t.origin === 'AUTOMACAO' && t.priority === 'ALTA')
       if (critica && t.clientId) {
         try {
           const dias = t.dueDate
