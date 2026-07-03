@@ -26,7 +26,7 @@ export async function reconciliarBusinessTypeB2B(actor?: {
   actorRole: string
 }): Promise<{ atualizados: number; clientes: string[] }> {
   // Slugs prováveis dos 3 atacados (nunca casam com "…-varejo").
-  const slugs = ['duplo-sentido-atacado', 'svn-atacado', 'tuca']
+  const slugs = ['duplo-sentido-atacado', 'svn-atacado', 'tuca', 'tuca-oficial', 'tuca-clothing']
 
   // Condições de nome restritas ao ATACADO das marcas certas + Tuca Clothing.
   // Não usamos apenas "Atacado" solto para não pegar outra marca por engano.
@@ -35,6 +35,7 @@ export async function reconciliarBusinessTypeB2B(actor?: {
     { name: { contains: 'Svn Atacado', mode: 'insensitive' } },
     { name: { contains: 'SVN Atacado', mode: 'insensitive' } },
     { name: { contains: 'Tuca Clothing', mode: 'insensitive' } },
+    { name: { contains: 'Tuca Oficial', mode: 'insensitive' } },
   ]
 
   const where: Prisma.ClientWhereInput = {
