@@ -12,5 +12,9 @@ export async function GET() {
     orderBy: { name: 'asc' },
   })
 
-  return NextResponse.json(users)
+  // `isMe` permite à UI pré-selecionar o usuário atual como responsável (ex.:
+  // gestor que converte o próprio lead) sem precisar de um endpoint /me à parte.
+  const withMe = users.map(u => ({ ...u, isMe: u.id === session.userId }))
+
+  return NextResponse.json(withMe)
 }

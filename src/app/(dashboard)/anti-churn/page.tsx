@@ -105,7 +105,7 @@ export default async function AntiChurnPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-[#EBEBEB]">Protocolo de Conta Crítica</h1>
+            <h1 className="text-2xl font-bold text-[#EBEBEB]">War Room — Contas Críticas</h1>
             <p className="text-[#87919E] text-sm mt-0.5">
               Contas em protocolo ativo · ROAS 2 semanas abaixo · Faturamento &lt;70% na 2ª semana
             </p>

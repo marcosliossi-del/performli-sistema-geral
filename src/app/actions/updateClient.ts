@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { slugify } from '@/lib/utils'
+import { uniqueClientSlug } from '@/lib/clients/slug'
 import { BusinessType } from '@prisma/client'
 import { investimentoTotal, roasEsperado } from '@/lib/metas/projection'
 
@@ -71,13 +72,18 @@ export async function updateClient(
   }
 
   if (data.name !== undefined && data.name.trim()) {
-    updateData.name = data.name.trim()
+    const newName = data.name.trim()
+    updateData.name = newName
     // Only reslug if name changed
-    if (data.name.trim() !== client.name) {
-      const newSlug = slugify(data.name.trim())
-      const conflict = await prisma.client.findFirst({ where: { slug: newSlug, NOT: { id: clientId } } })
-      if (conflict) return { error: 'Já existe um cliente com esse nome.' }
-      updateData.slug = newSlug
+    if (newName !== client.name) {
+      // Bloqueia APENAS nome idêntico (case-insensitive) de OUTRO cliente.
+      const sameName = await prisma.client.findFirst({
+        where: { name: { equals: newName, mode: 'insensitive' }, NOT: { id: clientId } },
+        select: { name: true },
+      })
+      if (sameName) return { error: `Já existe um cliente com o nome exato "${sameName.name}". Ajuste o nome para diferenciá-lo.` }
+      // Slug repetido é desambiguado com sufixo (slug-2...), sem bloquear o nome.
+      updateData.slug = await uniqueClientSlug(slugify(newName), clientId)
     }
   }
   if ('industry' in data) updateData.industry = data.industry ?? null

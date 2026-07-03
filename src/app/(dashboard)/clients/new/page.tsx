@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createClient, type ClientFormState } from '@/app/actions/clients'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ArrowLeft, UserPlus, ShoppingCart, MapPin } from 'lucide-react'
+import { ArrowLeft, UserPlus, ShoppingCart, MapPin, Building2 } from 'lucide-react'
 
 const PIPELINE_STAGES = [
   { value: 'LEAD',       label: 'Lead'       },
@@ -33,11 +33,12 @@ const industries = [
 const BUSINESS_TYPES = [
   { value: 'ECOMMERCE', label: 'E-commerce',    icon: ShoppingCart, desc: 'ROAS, Faturamento, Conversões' },
   { value: 'LOCAL',     label: 'Negócio Local',  icon: MapPin,       desc: 'Leads, Mensagens, Seguidores' },
+  { value: 'B2B',       label: 'B2B / Atacado',  icon: Building2,    desc: 'Leads, Mensagens — mede como negócio local' },
 ] as const
 
 export default function NewClientPage() {
   const [state, formAction, pending] = useActionState(createClient, initialState)
-  const [businessType, setBusinessType] = useState<'ECOMMERCE' | 'LOCAL'>('ECOMMERCE')
+  const [businessType, setBusinessType] = useState<'ECOMMERCE' | 'LOCAL' | 'B2B'>('ECOMMERCE')
 
   return (
     <div className="max-w-xl space-y-6">

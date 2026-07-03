@@ -1,11 +1,36 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Loader2, UserCheck, Building2, Calendar, DollarSign, Target, User } from 'lucide-react'
+import { X, Loader2, UserCheck, Building2, Calendar, DollarSign, Target, User, AlertTriangle } from 'lucide-react'
 import type { Lead } from './types'
 import { useModalA11y } from '@/lib/useModalA11y'
 
-interface Member { id: string; name: string; role: string }
+interface Member { id: string; name: string; role: string; isMe?: boolean }
+
+// Papéis que assumem clientes (podem virar gestor responsável na conversão).
+const MANAGER_ROLES = ['MANAGER', 'GESTOR_TRAFEGO']
+
+// Tipo de negócio — mesmo trio do EditClientModal (fonte da verdade: enum
+// BusinessType). Define como o cliente é medido depois da conversão.
+const BUSINESS_TYPES = [
+  { value: 'ECOMMERCE', label: 'E-commerce' },
+  { value: 'LOCAL',     label: 'Negócio Local' },
+  { value: 'B2B',       label: 'B2B / Atacado' },
+] as const
+
+// Métricas coerentes com o GoalFormModal (o resto do sistema não usa 'SALES').
+// TODO: importar de src/lib/metas/metricOptions quando o módulo compartilhado
+// existir (outro agente está extraindo) — remover esta lista local então.
+const GOAL_METRICS = [
+  { value: 'FATURAMENTO',  label: 'Faturamento' },
+  { value: 'ROAS',         label: 'ROAS' },
+  { value: 'SPEND',        label: 'Investimento' },
+  { value: 'LEADS',        label: 'Leads' },
+  { value: 'CPL',          label: 'CPL' },
+  { value: 'CONVERSIONS',  label: 'Conversões' },
+  { value: 'MENSAGENS',    label: 'Mensagens' },
+  { value: 'AGENDAMENTOS', label: 'Agendamentos' },
+] as const
 
 interface Props {
   lead: Lead
@@ -26,6 +51,8 @@ export function ConvertToClientModal({ lead, onClose, onConverted }: Props) {
 
   const [form, setForm] = useState({
     clientName:     lead.company || lead.name,
+    razaoSocial:    '',
+    businessType:   'ECOMMERCE',
     phone:          lead.phone   ?? '',
     email:          lead.email   ?? '',
     industry:       '',
@@ -38,7 +65,15 @@ export function ConvertToClientModal({ lead, onClose, onConverted }: Props) {
   })
 
   useEffect(() => {
-    fetch('/api/team/members').then(r => r.json()).then(setMembers).catch(() => {})
+    fetch('/api/team/members')
+      .then(r => r.json())
+      .then((data: Member[]) => {
+        setMembers(data)
+        // Pré-seleciona o usuário atual como gestor se ele for gestor de tráfego.
+        const me = data.find(m => m.isMe && MANAGER_ROLES.includes(m.role))
+        if (me) setForm(f => (f.managerId ? f : { ...f, managerId: me.id }))
+      })
+      .catch(() => {})
   }, [])
 
   function set(field: keyof typeof form, value: string) {
@@ -55,6 +90,8 @@ export function ConvertToClientModal({ lead, onClose, onConverted }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clientName:    form.clientName.trim(),
+          razaoSocial:   form.razaoSocial.trim() || undefined,
+          businessType:  form.businessType,
           phone:         form.phone    || undefined,
           email:         form.email    || undefined,
           industry:      form.industry || undefined,
@@ -120,6 +157,29 @@ export function ConvertToClientModal({ lead, onClose, onConverted }: Props) {
                 <label className={labelCls}>Nome do cliente / empresa *</label>
                 <input value={form.clientName} onChange={e => set('clientName', e.target.value)} className={inputCls} placeholder="Nome da empresa ou cliente" />
               </div>
+              <div className="col-span-2">
+                <label className={labelCls}>Razão social (como está no Asaas)</label>
+                <input value={form.razaoSocial} onChange={e => set('razaoSocial', e.target.value)} className={inputCls} placeholder="Usada para conciliar faturas do Asaas com este cliente" />
+              </div>
+              <div className="col-span-2">
+                <label className={labelCls}>Tipo de negócio</label>
+                <div className="flex gap-2">
+                  {BUSINESS_TYPES.map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => set('businessType', value)}
+                      className={`flex-1 px-3 py-2 rounded-lg border text-xs font-semibold transition-colors ${
+                        form.businessType === value
+                          ? 'border-[#95BBE2] bg-[#95BBE2]/10 text-[#95BBE2]'
+                          : 'border-[#38435C] text-[#87919E] hover:border-[#38435C]/80'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div>
                 <label className={labelCls}>Telefone</label>
                 <input value={form.phone} onChange={e => set('phone', e.target.value)} className={inputCls} placeholder="(11) 99999-0000" />
@@ -172,6 +232,12 @@ export function ConvertToClientModal({ lead, onClose, onConverted }: Props) {
                 <option key={m.id} value={m.id}>{m.name} — {m.role}</option>
               ))}
             </select>
+            {!form.managerId && (
+              <p className="mt-2 flex items-start gap-1.5 text-[11px] text-[#F59E0B] bg-[#F59E0B]/10 border border-[#F59E0B]/30 rounded-lg px-2.5 py-1.5">
+                <AlertTriangle size={13} className="mt-px shrink-0" />
+                Sem gestor definido — o cliente ficará sem responsável.
+              </p>
+            )}
           </div>
 
           {/* Meta */}
@@ -184,12 +250,9 @@ export function ConvertToClientModal({ lead, onClose, onConverted }: Props) {
               <div>
                 <label className={labelCls}>Métrica</label>
                 <select value={form.goalMetric} onChange={e => set('goalMetric', e.target.value)} className={inputCls}>
-                  <option value="FATURAMENTO">Faturamento</option>
-                  <option value="ROAS">ROAS</option>
-                  <option value="CPL">CPL</option>
-                  <option value="CONVERSIONS">Conversões</option>
-                  <option value="SALES">Vendas</option>
-                  <option value="INVESTMENT">Investimento</option>
+                  {GOAL_METRICS.map(({ value, label }) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
                 </select>
               </div>
               <div>

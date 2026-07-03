@@ -131,7 +131,7 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
       where: canViewAll(role)
         ? { read: false, type: { notIn: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] } }
         : { read: false, type: { notIn: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, client: { assignments: { some: { userId } } } },
-      include: { client: { select: { name: true } } },
+      include: { client: { select: { name: true, slug: true } } },
       orderBy: { createdAt: 'desc' },
       take: 5,
     }),

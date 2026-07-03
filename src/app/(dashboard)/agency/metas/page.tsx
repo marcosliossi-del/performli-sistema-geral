@@ -7,6 +7,8 @@ import { fetchMonthProgress } from '@/app/actions/progress'
 import { MetasPageTabs } from '@/components/agency/MetasPageTabs'
 import { SyncWeeklyGoalsButton } from '@/components/agency/SyncWeeklyGoalsButton'
 import { normalizeRole, can, stripSensitive } from '@/lib/rbac'
+import { LOCAL_RESULT_METRICS } from '@/lib/metas/metricOptions'
+import type { MetricType } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,8 +48,11 @@ export default async function MetasPage() {
             period: 'MONTHLY',
             startDate: { lte: monthEnd },
             endDate:   { gte: monthStart },
-            metric:    { in: ['FATURAMENTO', 'ROAS', 'SPEND', 'LEADS', 'CPL'] },
+            metric: {
+              in: ['FATURAMENTO', 'ROAS', 'SPEND', 'CPL', 'CPA', ...LOCAL_RESULT_METRICS.map((m) => m.value)],
+            },
           },
+          orderBy: { updatedAt: 'asc' },
           select: { metric: true, targetValue: true },
         },
       },
@@ -67,15 +72,28 @@ export default async function MetasPage() {
     prevHealthScores.map((hs) => [hs.clientId, Number(hs.actualValue)])
   )
 
+  const localResultSet = new Set<MetricType>(LOCAL_RESULT_METRICS.map((m) => m.value))
+
   const clientsData = clients.map((c) => {
     const fat   = c.goals.find((g) => g.metric === 'FATURAMENTO')
     const roas  = c.goals.find((g) => g.metric === 'ROAS')
     const spend = c.goals.find((g) => g.metric === 'SPEND')
-    const leads = c.goals.find((g) => g.metric === 'LEADS')
     const cpl   = c.goals.find((g) => g.metric === 'CPL')
+    const cpa   = c.goals.find((g) => g.metric === 'CPA')
+    // Métrica-resultado PRINCIPAL do cliente local/B2B (default por cliente): a
+    // meta não-taxa existente no mês. c.goals já vem em orderBy updatedAt asc, o
+    // último match é o mais recente e prevalece.
+    let localMetric: MetricType | null = null
+    let localValue: number | null = null
+    for (const g of c.goals) {
+      if (localResultSet.has(g.metric)) {
+        localMetric = g.metric
+        localValue  = Number(g.targetValue)
+      }
+    }
     const tm    = prevTicket.get(c.id) ?? null
     // Meta de FATURAMENTO é RECEITA (REVENUE_METRICS): oculta para não-ADMIN via
-    // stripSensitive('Goal'). Metas operacionais (ROAS/SPEND/LEADS/CPL) ficam.
+    // stripSensitive('Goal'). Metas operacionais ficam.
     const fatStripped = fat
       ? stripSensitive(role, 'Goal', { metric: 'FATURAMENTO', targetValue: Number(fat.targetValue) })
       : null
@@ -89,8 +107,10 @@ export default async function MetasPage() {
         FATURAMENTO: fatStripped && 'targetValue' in fatStripped ? (fatStripped.targetValue as number) : null,
         ROAS:        roas  ? Number(roas.targetValue)  : null,
         SPEND:       spend ? Number(spend.targetValue) : null,
-        LEADS:       leads ? Number(leads.targetValue) : null,
         CPL:         cpl   ? Number(cpl.targetValue)   : null,
+        CPA:         cpa   ? Number(cpa.targetValue)   : null,
+        localMetric,
+        localValue,
       },
       suggestedCpa:    tm != null ? Math.round(tm * 0.10 * 100) / 100 : null,
       prevTicketMedio: tm,

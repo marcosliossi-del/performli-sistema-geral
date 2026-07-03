@@ -810,17 +810,26 @@ export default async function ClientDetailPage({
       {/* ══ CONVERSAS & OPERAÇÕES ══ */}
       <section id="sec-conversas" className="scroll-mt-24 space-y-6">
       {/* ── Chat do Cliente ───────────────────────────────────────────────── */}
-      {chat && (
-        <div id="chat" className="print:hidden scroll-mt-20">
-          <h2 className="text-sm font-semibold text-[#EBEBEB] mb-3">Canal interno do cliente</h2>
+      {/* id="chat" fica SEMPRE presente (âncora #chat da Central de Comunicação
+          nunca quebra). Sem canal ainda, mostramos estado vazio explicando o porquê. */}
+      <div id="chat" className="print:hidden scroll-mt-20">
+        <h2 className="text-sm font-semibold text-[#EBEBEB] mb-3">Canal interno do cliente</h2>
+        {chat ? (
           <ClientChatPanel
             chatId={chat.id}
             clientSlug={slug}
             messages={chat.messages}
             currentUserId={session.userId}
           />
-        </div>
-      )}
+        ) : (
+          <div className="rounded-lg border border-dashed border-[#38435C]/60 px-4 py-6 text-center">
+            <p className="text-sm text-[#EBEBEB] font-medium">Canal ainda não conectado</p>
+            <p className="text-xs text-[#87919E] mt-1">
+              Assim que o canal interno deste cliente for criado, o histórico de mensagens aparece aqui.
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Recent operations */}
       {client.operations.length > 0 && (

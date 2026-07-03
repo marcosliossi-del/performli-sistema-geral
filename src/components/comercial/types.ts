@@ -32,6 +32,7 @@ export interface Lead {
   company:         string | null
   source:          string | null
   status:          LeadStatus
+  ownerId:         string | null
   value:           number | null
   probability:     number | null
   expectedCloseAt: string | null

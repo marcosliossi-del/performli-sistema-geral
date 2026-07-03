@@ -106,6 +106,25 @@ export async function updateContract(
   const endDate   = endDateRaw   ? parseDate(endDateRaw)   : undefined
   const signedAt  = signedAtRaw  ? parseDate(signedAtRaw)  : undefined
 
+  if (startDateRaw && !startDate) return { error: 'Data de início inválida.' }
+  if (endDateRaw && !endDate)     return { error: 'Data de vencimento inválida.' }
+
+  // Validação de datas (espelha a criação): a vigência não pode terminar antes
+  // de começar. Como o update é parcial, comparamos os valores EFETIVOS (o que
+  // veio no formulário prevalece; o que não veio usa o valor atual do contrato).
+  if (startDate || endDate) {
+    const current = await prisma.contract.findUnique({
+      where: { id },
+      select: { startDate: true, endDate: true },
+    })
+    if (!current) return { error: 'Contrato não encontrado.' }
+    const effectiveStart = startDate ?? current.startDate
+    const effectiveEnd   = endDate   ?? current.endDate
+    if (effectiveEnd <= effectiveStart) {
+      return { error: 'Data de vencimento deve ser após a data de início.' }
+    }
+  }
+
   const cancelledAt = status === 'CANCELADO' ? new Date() : undefined
 
   const updated = await prisma.contract.update({

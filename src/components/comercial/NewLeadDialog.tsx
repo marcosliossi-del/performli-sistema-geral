@@ -3,6 +3,12 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import type { Lead } from './types'
+import { KANBAN_STAGES, STAGE_CONFIG } from './types'
+
+interface Member { id: string; name: string; role: string; isMe?: boolean }
+
+// Papéis que assumem leads como responsável comercial.
+const OWNER_ROLES = ['MANAGER', 'GESTOR_TRAFEGO']
 
 interface Props {
   open:    boolean
@@ -13,6 +19,8 @@ interface Props {
 
 export function NewLeadDialog({ open, lead, onClose, onSave }: Props) {
   const [saving, setSaving] = useState(false)
+  const [error, setError]   = useState<string | null>(null)
+  const [members, setMembers] = useState<Member[]>([])
   const [form, setForm] = useState({
     name:            '',
     email:           '',
@@ -23,9 +31,19 @@ export function NewLeadDialog({ open, lead, onClose, onSave }: Props) {
     probability:     '',
     expectedCloseAt: '',
     notes:           '',
+    status:          'NOVO',
+    ownerId:         '',
   })
 
   useEffect(() => {
+    fetch('/api/team/members')
+      .then(r => r.json())
+      .then((data: Member[]) => setMembers(data))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    setError(null)
     if (lead) {
       setForm({
         name:            lead.name,
@@ -37,16 +55,37 @@ export function NewLeadDialog({ open, lead, onClose, onSave }: Props) {
         probability:     lead.probability != null ? String(lead.probability) : '',
         expectedCloseAt: lead.expectedCloseAt ? lead.expectedCloseAt.split('T')[0] : '',
         notes:           lead.notes ?? '',
+        status:          lead.status ?? 'NOVO',
+        ownerId:         lead.ownerId ?? '',
       })
     } else {
-      setForm({ name:'', email:'', phone:'', company:'', source:'', value:'', probability:'', expectedCloseAt:'', notes:'' })
+      setForm({ name:'', email:'', phone:'', company:'', source:'', value:'', probability:'', expectedCloseAt:'', notes:'', status:'NOVO', ownerId:'' })
     }
   }, [lead, open])
+
+  // Pré-seleciona o usuário atual como responsável ao criar (se for gestor).
+  useEffect(() => {
+    if (lead || !open || members.length === 0) return
+    const me = members.find(m => m.isMe && OWNER_ROLES.includes(m.role))
+    if (me) setForm(f => (f.ownerId ? f : { ...f, ownerId: me.id }))
+  }, [members, lead, open])
 
   if (!open) return null
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setError(null)
+
+    // Valor do contrato: número válido e não-negativo. NaN é rejeitado.
+    let value: number | undefined
+    if (form.value.trim()) {
+      value = parseFloat(form.value.replace(/\./g, '').replace(',', '.'))
+      if (Number.isNaN(value) || value <= 0) {
+        setError('Informe um valor de contrato válido (número maior que zero) ou deixe em branco.')
+        return
+      }
+    }
+
     setSaving(true)
     try {
       const payload = {
@@ -55,10 +94,12 @@ export function NewLeadDialog({ open, lead, onClose, onSave }: Props) {
         phone:           form.phone || undefined,
         company:         form.company || undefined,
         source:          form.source || undefined,
-        value:           form.value ? parseFloat(form.value.replace(',', '.')) : undefined,
+        value,
         probability:     form.probability ? parseInt(form.probability) : undefined,
         expectedCloseAt: form.expectedCloseAt || undefined,
         notes:           form.notes || undefined,
+        status:          form.status,
+        ownerId:         form.ownerId || undefined,
       }
 
       const res = lead
@@ -69,6 +110,9 @@ export function NewLeadDialog({ open, lead, onClose, onSave }: Props) {
         const saved = await res.json()
         onSave(saved)
         onClose()
+      } else {
+        const data = await res.json().catch(() => null)
+        setError(typeof data?.error === 'string' ? data.error : 'Não foi possível salvar o lead.')
       }
     } finally {
       setSaving(false)
@@ -121,11 +165,28 @@ export function NewLeadDialog({ open, lead, onClose, onSave }: Props) {
             </div>
             <div>
               <label className="block text-xs text-[#87919E] mb-1">Valor do contrato (R$)</label>
-              <input {...f('value')} placeholder="5000" className={inputCls} />
+              <input {...f('value')} type="number" min="0" step="0.01" inputMode="decimal" placeholder="5000" className={inputCls} />
             </div>
             <div>
               <label className="block text-xs text-[#87919E] mb-1">Probabilidade (%)</label>
               <input {...f('probability')} type="number" min="0" max="100" placeholder="70" className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-[#87919E] mb-1">Etapa</label>
+              <select {...f('status')} className={inputCls}>
+                {KANBAN_STAGES.map(s => (
+                  <option key={s} value={s}>{STAGE_CONFIG[s].label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-[#87919E] mb-1">Responsável</label>
+              <select {...f('ownerId')} className={inputCls}>
+                <option value="">Sem responsável</option>
+                {members.map(m => (
+                  <option key={m.id} value={m.id}>{m.name} — {m.role}</option>
+                ))}
+              </select>
             </div>
             <div className="col-span-2">
               <label className="block text-xs text-[#87919E] mb-1">Previsão de fechamento</label>
@@ -141,6 +202,10 @@ export function NewLeadDialog({ open, lead, onClose, onSave }: Props) {
               />
             </div>
           </div>
+
+          {error && (
+            <p className="text-xs text-[#EF4444] bg-[#EF4444]/10 border border-[#EF4444]/30 rounded-lg px-3 py-2">{error}</p>
+          )}
         </form>
 
         {/* Footer */}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { Loader2, DatabaseZap, CheckCircle2 } from 'lucide-react'
 import { ContractsTable } from './ContractsTable'
 import { ContractFeesBulkTable } from './ContractFeesBulkTable'
@@ -21,10 +21,22 @@ type Props = {
 type Tab = 'contratos' | 'fees'
 
 export function JuridicoPageTabs({ contracts, clients, users, feesData }: Props) {
-  const [tab, setTab]       = useState<Tab>('contratos')
+  const router       = useRouter()
+  const pathname     = usePathname()
+  const searchParams = useSearchParams()
+
+  // Aba ativa persiste em ?tab= para sobreviver a reload e ao botão voltar.
+  const initialTab: Tab = searchParams.get('tab') === 'fees' ? 'fees' : 'contratos'
+  const [tab, setTabState] = useState<Tab>(initialTab)
   const [seeding, start]    = useTransition()
   const [seedResult, setSeedResult] = useState<null | { created: number; results: { match: string; clientName: string; status: string }[] }>(null)
-  const router = useRouter()
+
+  function setTab(next: Tab) {
+    setTabState(next)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('tab', next)
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }
 
   function handleSeed() {
     start(async () => {

@@ -6,6 +6,7 @@ import { MetricType, BusinessType } from '@prisma/client'
 import { Check, Loader2, AlertCircle, Plus, Zap } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { GoalFormModal } from '@/components/clients/GoalFormModal'
+import { LOCAL_RESULT_METRICS, costMetricFor, costLabelFor } from '@/lib/metas/metricOptions'
 
 type ClientGoals = {
   id: string
@@ -23,14 +24,15 @@ type RowState = {
   faturamento: string
   roas: string
   // Local fields
-  leads: string
-  cpl: string
+  mainMetric: MetricType   // métrica-resultado principal escolhida por cliente
+  mainValue: string        // valor da meta dessa métrica principal
+  cost: string             // custo-alvo (grava CPL se métrica=LEADS, senão CPA)
   // Common
   spend: string
-  lastManual: 'faturamento' | 'roas' | 'leads' | null
+  lastManual: 'faturamento' | 'roas' | 'mainValue' | null
   autoRoas: boolean
   autoFat: boolean
-  autoCpl: boolean
+  autoCost: boolean
   saved: boolean
   error: string | null
 }
@@ -90,24 +92,25 @@ function calcAutoFieldsEcommerce(
 }
 
 function calcAutoFieldsLocal(
-  field: 'leads' | 'spend',
+  field: 'mainValue' | 'spend',
   value: string,
   row: RowState,
 ): Partial<RowState> {
   const val = parseFloat(value)
 
-  if (field === 'leads') {
+  // Custo-alvo = budget ÷ meta da métrica principal (mesma mecânica do antigo CPL).
+  if (field === 'mainValue') {
     const spend = parseFloat(row.spend)
     if (!isNaN(val) && val > 0 && !isNaN(spend) && spend > 0) {
-      return { autoCpl: true, lastManual: 'leads', cpl: (spend / val).toFixed(2) }
+      return { autoCost: true, lastManual: 'mainValue', cost: (spend / val).toFixed(2) }
     }
-    return { autoCpl: false, lastManual: 'leads' }
+    return { autoCost: false, lastManual: 'mainValue' }
   }
 
   if (field === 'spend') {
-    const leads = parseFloat(row.leads)
-    if (!isNaN(val) && val > 0 && !isNaN(leads) && leads > 0) {
-      return { autoCpl: true, cpl: (val / leads).toFixed(2) }
+    const main = parseFloat(row.mainValue)
+    if (!isNaN(val) && val > 0 && !isNaN(main) && main > 0) {
+      return { autoCost: true, cost: (val / main).toFixed(2) }
     }
   }
 
@@ -117,19 +120,25 @@ function calcAutoFieldsLocal(
 function initRow(goals: MonthlyGoalsRow): RowState {
   const fat   = goals.FATURAMENTO != null ? String(goals.FATURAMENTO) : ''
   const roas  = goals.ROAS        != null ? String(goals.ROAS)        : ''
-  const leads = goals.LEADS       != null ? String(goals.LEADS)       : ''
-  const cpl   = goals.CPL         != null ? String(goals.CPL)         : ''
   const spend = goals.SPEND       != null ? String(goals.SPEND)       : ''
+  // Default inteligente por cliente: métrica principal = a meta-resultado
+  // existente do cliente no mês; sem meta existente → LEADS.
+  const mainMetric: MetricType = goals.localMetric ?? 'LEADS'
+  const mainValue = goals.localValue != null ? String(goals.localValue) : ''
+  // Custo-alvo correspondente: CPL quando a principal é LEADS, senão CPA.
+  const costVal = costMetricFor(mainMetric) === 'CPL' ? goals.CPL : goals.CPA
+  const cost = costVal != null ? String(costVal) : ''
   return {
     faturamento: fat,
     roas,
-    leads,
-    cpl,
+    mainMetric,
+    mainValue,
+    cost,
     spend,
-    lastManual: fat ? 'faturamento' : roas ? 'roas' : leads ? 'leads' : null,
+    lastManual: fat ? 'faturamento' : roas ? 'roas' : mainValue ? 'mainValue' : null,
     autoRoas: false,
     autoFat: false,
-    autoCpl: false,
+    autoCost: false,
     saved: false,
     error: null,
   }
@@ -162,7 +171,7 @@ export function MetasBulkTable({
       setRows(
         Object.fromEntries(
           clients.map((c) => {
-            const g = data[c.id] ?? { FATURAMENTO: null, ROAS: null, SPEND: null, LEADS: null, CPL: null }
+            const g = data[c.id] ?? { FATURAMENTO: null, ROAS: null, SPEND: null, CPL: null, CPA: null, localMetric: null, localValue: null }
             return [c.id, initRow(g)]
           })
         )
@@ -173,12 +182,12 @@ export function MetasBulkTable({
   }, [year, month])
 
   const setField = useCallback(
-    (clientId: string, field: 'faturamento' | 'roas' | 'spend' | 'leads' | 'cpl', value: string, isLocal: boolean) => {
+    (clientId: string, field: 'faturamento' | 'roas' | 'spend' | 'mainValue' | 'cost', value: string, isLocal: boolean) => {
       setRows((prev) => {
         const row = prev[clientId]
         let auto: Partial<RowState> = {}
         if (isLocal) {
-          if (field === 'leads' || field === 'spend') {
+          if (field === 'mainValue' || field === 'spend') {
             auto = calcAutoFieldsLocal(field, value, row)
           }
         } else {
@@ -195,6 +204,15 @@ export function MetasBulkTable({
     []
   )
 
+  // Troca da métrica principal do cliente (seletor por linha). Não recalcula o
+  // custo — só muda para qual métrica-resultado o valor/custo será gravado.
+  const setMetric = useCallback((clientId: string, metric: MetricType) => {
+    setRows((prev) => ({
+      ...prev,
+      [clientId]: { ...prev[clientId], mainMetric: metric, saved: false, error: null },
+    }))
+  }, [])
+
   function buildGoals(clientId: string, row: RowState, isLocal: boolean): GoalUpsert[] {
     const { startDate, endDate } = monthBounds(year, month)
     const result: GoalUpsert[] = []
@@ -205,13 +223,17 @@ export function MetasBulkTable({
     }
 
     if (isLocal) {
-      const leads = parseFloat(row.leads)
-      if (!isNaN(leads) && leads >= 0) {
-        result.push({ clientId, metric: 'LEADS' as MetricType, value: leads, startDate, endDate })
+      // Grava a Goal da MÉTRICA PRINCIPAL escolhida por este cliente (não mais
+      // LEADS fixo). Ao trocar a métrica, a antiga não é apagada — o dono limpa
+      // manualmente se quiser (ver handoff).
+      const mainValue = parseFloat(row.mainValue)
+      if (!isNaN(mainValue) && mainValue >= 0) {
+        result.push({ clientId, metric: row.mainMetric, value: mainValue, startDate, endDate })
       }
-      const cpl = parseFloat(row.cpl)
-      if (!isNaN(cpl) && cpl >= 0) {
-        result.push({ clientId, metric: 'CPL' as MetricType, value: cpl, startDate, endDate })
+      const cost = parseFloat(row.cost)
+      if (!isNaN(cost) && cost >= 0) {
+        // CPL quando a principal é LEADS, senão CPA.
+        result.push({ clientId, metric: costMetricFor(row.mainMetric), value: cost, startDate, endDate })
       }
     } else {
       const fat = parseFloat(row.faturamento)
@@ -454,22 +476,25 @@ export function MetasBulkTable({
       {/* ── Negócio Local ──────────────────────────────────────────────────── */}
       {localClients.length > 0 && (
         <div>
-          <p className="text-[10px] font-semibold text-[#87919E] uppercase tracking-widest mb-2">Negócio Local</p>
+          <p className="text-[10px] font-semibold text-[#87919E] uppercase tracking-widest mb-2">Negócio Local / B2B</p>
           <div className="rounded-xl border border-[#38435C] overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#38435C] bg-[#0A1E2C]">
                   <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-4 py-3 w-[180px]">Cliente</th>
                   <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3 w-[100px]">Gestor</th>
+                  <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3 w-[190px]">Métrica principal</th>
+                  <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3">Meta</th>
+                  <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3">Custo-alvo (R$)</th>
                   <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3">Budget (R$)</th>
-                  <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3">Leads</th>
-                  <th className="text-left text-[10px] font-semibold text-[#87919E] uppercase tracking-wider px-3 py-3">CPL Meta (R$)</th>
                   <th className="px-3 py-3 w-[80px]" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#38435C]">
                 {localClients.map((client) => {
                   const row = rows[client.id]
+                  const metric = row?.mainMetric ?? 'LEADS'
+                  const costLabel = costLabelFor(metric)
                   return (
                     <tr key={client.id} className="hover:bg-[#38435C]/20 transition-colors group">
                       <td className="px-4 py-3">
@@ -479,6 +504,44 @@ export function MetasBulkTable({
                       </td>
                       <td className="px-3 py-3 text-xs text-[#87919E]">{client.managerName}</td>
                       <td className="px-3 py-3">
+                        <select
+                          value={metric}
+                          onChange={(e) => setMetric(client.id, e.target.value as MetricType)}
+                          disabled={isLoading}
+                          className="w-full bg-[#0A1E2C] border border-[#38435C] focus:border-[#95BBE2]/50 rounded-lg px-2 py-1.5 text-xs text-[#EBEBEB] focus:outline-none transition-colors disabled:opacity-40"
+                        >
+                          {LOCAL_RESULT_METRICS.map((m) => (
+                            <option key={m.value} value={m.value}>{m.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-3">
+                        <input
+                          type="number" min="0" step="1" placeholder="ex: 150"
+                          value={row?.mainValue ?? ''}
+                          onChange={(e) => setField(client.id, 'mainValue', e.target.value, true)}
+                          onKeyDown={(e) => e.key === 'Enter' && saveRow(client.id, true)}
+                          disabled={isLoading}
+                          className="w-full bg-[#0A1E2C] border border-[#38435C] focus:border-[#95BBE2]/50 rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/40 focus:outline-none transition-colors disabled:opacity-40"
+                        />
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="relative">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-[#87919E]/70 pointer-events-none">{costLabel}</span>
+                          <input
+                            type="number" min="0" step="0.01" placeholder="opcional"
+                            value={row?.cost ?? ''}
+                            onChange={(e) => setField(client.id, 'cost', e.target.value, true)}
+                            onKeyDown={(e) => e.key === 'Enter' && saveRow(client.id, true)}
+                            disabled={isLoading}
+                            className={`w-full bg-[#0A1E2C] border rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/40 focus:outline-none transition-colors disabled:opacity-40 ${
+                              row?.autoCost ? 'border-[#95BBE2]/40 bg-[#95BBE2]/5' : 'border-[#38435C] focus:border-[#95BBE2]/50'
+                            }`}
+                          />
+                          {row?.autoCost && <Zap size={10} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#95BBE2]/60" />}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
                         <input
                           type="number" min="0" step="100" placeholder="ex: 3000"
                           value={row?.spend ?? ''}
@@ -487,31 +550,6 @@ export function MetasBulkTable({
                           disabled={isLoading}
                           className="w-full bg-[#0A1E2C] border border-[#38435C] focus:border-[#95BBE2]/50 rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/40 focus:outline-none transition-colors disabled:opacity-40"
                         />
-                      </td>
-                      <td className="px-3 py-3">
-                        <input
-                          type="number" min="0" step="1" placeholder="ex: 150"
-                          value={row?.leads ?? ''}
-                          onChange={(e) => setField(client.id, 'leads', e.target.value, true)}
-                          onKeyDown={(e) => e.key === 'Enter' && saveRow(client.id, true)}
-                          disabled={isLoading}
-                          className="w-full bg-[#0A1E2C] border border-[#38435C] focus:border-[#95BBE2]/50 rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/40 focus:outline-none transition-colors disabled:opacity-40"
-                        />
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="relative">
-                          <input
-                            type="number" min="0" step="0.01" placeholder="ex: 20.00"
-                            value={row?.cpl ?? ''}
-                            onChange={(e) => setField(client.id, 'cpl', e.target.value, true)}
-                            onKeyDown={(e) => e.key === 'Enter' && saveRow(client.id, true)}
-                            disabled={isLoading}
-                            className={`w-full bg-[#0A1E2C] border rounded-lg px-3 py-1.5 text-xs text-[#EBEBEB] placeholder:text-[#87919E]/40 focus:outline-none transition-colors disabled:opacity-40 ${
-                              row?.autoCpl ? 'border-[#95BBE2]/40 bg-[#95BBE2]/5' : 'border-[#38435C] focus:border-[#95BBE2]/50'
-                            }`}
-                          />
-                          {row?.autoCpl && <Zap size={10} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#95BBE2]/60" />}
-                        </div>
                       </td>
                       <td className="px-3 py-3"><RowActions client={client} isLocal={true} /></td>
                     </tr>
