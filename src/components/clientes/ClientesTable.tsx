@@ -15,6 +15,8 @@ export interface ClientRow {
   phone:         string | null
   email:         string | null
   status:        string
+  pausedAt:      string | null
+  pauseReason:   string | null
   contractValue: number | null
   createdAt:     string
   businessType:  string
@@ -354,6 +356,11 @@ export function ClientesTable({ clients }: Props) {
                       <span
                         className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
                         style={{ color: st.color, background: `${st.color}18` }}
+                        title={
+                          client.status === 'PAUSED'
+                            ? `Pausado${client.pausedAt ? ` desde ${new Date(client.pausedAt).toLocaleDateString('pt-BR')}` : ''}${client.pauseReason ? ` — ${client.pauseReason}` : ''}`
+                            : undefined
+                        }
                       >
                         {st.label}
                       </span>

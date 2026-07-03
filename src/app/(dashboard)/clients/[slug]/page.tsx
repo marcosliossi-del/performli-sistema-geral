@@ -49,6 +49,7 @@ import { RevenuePaceChart } from '@/components/clients/RevenuePaceChart'
 import { MonthlyComparisonChart } from '@/components/clients/MonthlyComparisonChart'
 import { InteractionTimeline } from '@/components/clients/InteractionTimeline'
 import { EditClientButton } from '@/components/clients/ClientHeader'
+import { PauseClientControl } from '@/components/clients/PauseClientControl'
 import { PlanoAcaoPanel } from '@/components/clients/PlanoAcaoPanel'
 import { RemovePlatformButton } from '@/components/clients/RemovePlatformButton'
 import { HealthScoreHistoryChart } from '@/components/clients/HealthScoreHistoryChart'
@@ -317,6 +318,12 @@ export default async function ClientDetailPage({
               investimentoTiktok: client.investimentoTiktok != null ? Number(client.investimentoTiktok) : null,
               produtos: client.produtos,
             }}
+          />
+          <PauseClientControl
+            clientId={client.id}
+            status={client.status}
+            pausedAt={client.pausedAt ? client.pausedAt.toISOString() : null}
+            pauseReason={client.pauseReason ?? null}
           />
           <SyncButton clientId={client.id} />
           <GoalFormModal clientId={client.id} businessType={client.businessType} />

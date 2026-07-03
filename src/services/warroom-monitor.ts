@@ -51,8 +51,10 @@ export async function monitorWarRooms(): Promise<{
   diagnosticoChaseTasks: number
 }> {
   const protocols = await prisma.criticalProtocol.findMany({
-    // T-08: cliente CHURNED não é mais cobrado/monitorado (PAUSED segue por ora).
-    where: { status: { not: 'ENCERRADO' }, client: { status: { not: 'CHURNED' } } },
+    // T-08/T-23: só cliente ACTIVE é cobrado/monitorado. CHURNED saiu; PAUSED
+    // está INTENCIONALMENTE sem operação — não gera War Room automática enquanto
+    // pausado (o monitor anti-esquecimento de pausa cobre o risco da pausa longa).
+    where: { status: { not: 'ENCERRADO' }, client: { status: 'ACTIVE' } },
     select: {
       id: true,
       clientId: true,

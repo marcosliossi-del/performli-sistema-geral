@@ -161,6 +161,14 @@ model Client {
   phone          String?
   document       String?
   status         ClientStatus  @default(ACTIVE)
+  // ── Semântica do PAUSED (T-23): cliente temporariamente sem operação ativa ──
+  // pausar NÃO cancela contrato/financeiro; só silencia INTENCIONALMENTE os
+  // crons operacionais (check-in, saúde, churn, War Room, relatório semanal).
+  // pausedAt marca "desde quando" (base do monitor anti-esquecimento em 45d);
+  // pauseReason é o motivo operacional visível nas listas. Ambos voltam a null
+  // ao retomar (resumeClient).
+  pausedAt       DateTime?     // quando o cliente entrou em PAUSED (null = não pausado)
+  pauseReason    String?       // motivo operacional da pausa (visível nas telas)
   businessType   BusinessType  @default(ECOMMERCE)
   pipelineStage  PipelineStage @default(ATIVO)
   contractValue  Decimal?

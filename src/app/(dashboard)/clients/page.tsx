@@ -1,4 +1,4 @@
-import { Users, AlertTriangle, UserMinus, UserPlus, DollarSign, TrendingUp } from 'lucide-react'
+import { Users, AlertTriangle, UserMinus, UserPlus, DollarSign, TrendingUp, PauseCircle } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { formatCurrency } from '@/lib/utils'
@@ -24,7 +24,8 @@ async function getClientesData(userId: string, role: string) {
       where,
       select: {
         id: true, name: true, razaoSocial: true, slug: true, source: true, phone: true,
-        email: true, status: true, contractValue: true, createdAt: true,
+        email: true, status: true, pausedAt: true, pauseReason: true,
+        contractValue: true, createdAt: true,
         businessType: true,
         resultado: true, etapa: true, resultadoRoas: true, resultadoUpdatedAt: true,
         nps: true, relacionamento: true, curva: true,
@@ -41,7 +42,10 @@ async function getClientesData(userId: string, role: string) {
       : Promise.resolve(0),
   ])
 
+  // PAUSED é contado À PARTE (T-23): não infla os ativos nem vira churn — é um
+  // terceiro estado (cliente temporariamente sem operação, contrato intacto).
   const active   = clients.filter(c => c.status === 'ACTIVE')
+  const paused   = clients.filter(c => c.status === 'PAUSED')
   const churned  = clients.filter(c => c.status === 'CHURNED')
   const newMonth = clients.filter(c => c.createdAt >= monthStart)
 
@@ -59,12 +63,15 @@ async function getClientesData(userId: string, role: string) {
       ...c,
       // Fee do contrato só é exposto para ADMIN (stripSensitive de Client).
       contractValue: isAdmin && c.contractValue ? Number(c.contractValue) : null,
+      pausedAt:      c.pausedAt ? c.pausedAt.toISOString() : null,
+      pauseReason:   c.pauseReason ?? null,
       createdAt:     c.createdAt.toISOString(),
       resultadoRoas:      c.resultadoRoas != null ? Number(c.resultadoRoas) : null,
       resultadoUpdatedAt: c.resultadoUpdatedAt ? c.resultadoUpdatedAt.toISOString() : null,
     })),
     kpis: {
       recorrentes:       active.length,
+      pausados:          paused.length,
       inadimplentes:     overdueCount,
       cancelados:        churned.length,
       novos:             newMonth.length,
@@ -94,6 +101,13 @@ export default async function ClientsPage() {
       icon:  AlertTriangle,
       color: '#EF4444',
       sub:   isAdmin ? 'Com fatura vencida no Asaas' : 'Restrito ao administrador',
+    },
+    {
+      label: 'Clientes pausados',
+      value: String(kpis.pausados),
+      icon:  PauseCircle,
+      color: '#F59E0B',
+      sub:   'Operação em pausa · contrato ativo',
     },
     {
       label: 'Clientes cancelados',
