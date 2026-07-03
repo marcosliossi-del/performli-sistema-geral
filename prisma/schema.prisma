@@ -560,6 +560,11 @@ model Alert {
   read        Boolean   @default(false)
   triggeredBy String?
   sentAt      DateTime?
+  // ── Governança de alertas (Fase 2): SLA com dono ──────────────────────────
+  // acknowledged* é o CONTRATO DE SLA (quem assumiu e quando), distinto de
+  // `read` (mero estado visual). O watchdog de SLA usa acknowledgedAt=null.
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
   createdAt   DateTime  @default(now())
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -567,6 +572,7 @@ model Alert {
 
   @@index([clientId, read])
   @@index([createdAt])
+  @@index([type, acknowledgedAt, createdAt])
 }
 
 // ─── WORKSPACE / TENANCY (D-007) ─────────────────────────────────────────────

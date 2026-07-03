@@ -3,9 +3,10 @@ import { requireSession } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
-import { markAlertRead, markAllAlertsRead } from '@/app/actions/alerts'
+import { markAlertRead, markAllAlertsRead, acknowledgeAlert } from '@/app/actions/alerts'
+import { getAlertGovernanceHealth } from '@/lib/dal'
 import { timeAgo } from '@/lib/utils'
-import { AlertTriangle, AlertCircle, CheckCircle2, TrendingDown, Bell, BellOff, ArrowDownRight, ArrowUpRight, ShieldAlert, Scale } from 'lucide-react'
+import { AlertTriangle, AlertCircle, CheckCircle2, TrendingDown, Bell, BellOff, ArrowDownRight, ArrowUpRight, ShieldAlert, Scale, ShieldCheck } from 'lucide-react'
 import { AlertType } from '@prisma/client'
 import { normalizeRole } from '@/lib/rbac'
 
@@ -76,6 +77,16 @@ export default async function AlertsPage({
     take: 100,
   })
 
+  // Nomes de quem reconheceu (acknowledgedBy é userId) — resolvidos em lote.
+  const ackUserIds = [...new Set(allAlerts.map((a) => a.acknowledgedBy).filter((v): v is string => !!v))]
+  const ackUsers = ackUserIds.length
+    ? await prisma.user.findMany({ where: { id: { in: ackUserIds } }, select: { id: true, name: true } })
+    : []
+  const ackNameById = new Map(ackUsers.map((u) => [u.id, u.name]))
+
+  // Dashboard de saúde da governança (ADMIN only; demais recebem lista vazia).
+  const governanceHealth = await getAlertGovernanceHealth(session.role)
+
   const unread = allAlerts.filter((a) => !a.read).length
 
   const alerts = allAlerts.filter((a) => {
@@ -107,6 +118,63 @@ export default async function AlertsPage({
           </form>
         )}
       </div>
+
+      {/* Dashboard de saúde da governança (ADMIN only) */}
+      {governanceHealth.length > 0 && (
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <ShieldCheck size={15} className="text-[#95BBE2]" />
+            <h2 className="text-sm font-semibold text-[#EBEBEB]">Saúde dos alertas — últimos 14 dias</h2>
+          </div>
+          <p className="text-xs text-[#87919E] mb-3">
+            Quando um tipo é reconhecido por menos da metade do time, ele vira ruído: aparece marcado
+            como <span className="text-[#EF4444] font-medium">MAL DESENHADO</span> — hora de recalibrar o gatilho.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-[#87919E] text-left border-b border-[#38435C]">
+                  <th className="py-2 pr-3 font-medium">Tipo</th>
+                  <th className="py-2 px-3 font-medium">Dono</th>
+                  <th className="py-2 px-3 font-medium text-right">Criados</th>
+                  <th className="py-2 px-3 font-medium text-right">Reconhecidos</th>
+                  <th className="py-2 px-3 font-medium text-right">Taxa</th>
+                  <th className="py-2 px-3 font-medium text-right">Tempo médio</th>
+                  <th className="py-2 pl-3 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {governanceHealth.map((row) => (
+                  <tr key={row.type} className="border-b border-[#38435C]/40">
+                    <td className="py-2 pr-3 text-[#EBEBEB]">{row.label}</td>
+                    <td className="py-2 px-3 text-[#87919E]">{row.ownerLabel}</td>
+                    <td className="py-2 px-3 text-right text-[#EBEBEB]">{row.criados}</td>
+                    <td className="py-2 px-3 text-right text-[#EBEBEB]">{row.reconhecidos}</td>
+                    <td className={`py-2 px-3 text-right font-medium ${
+                      row.taxaReconhecimento === null ? 'text-[#87919E]'
+                        : row.taxaReconhecimento < 50 ? 'text-[#EF4444]'
+                        : row.taxaReconhecimento < 80 ? 'text-[#EAB308]'
+                        : 'text-[#22C55E]'
+                    }`}>
+                      {row.taxaReconhecimento === null ? '—' : `${row.taxaReconhecimento}%`}
+                    </td>
+                    <td className="py-2 px-3 text-right text-[#87919E]">
+                      {row.tempoMedioHoras === null ? '—' : `${row.tempoMedioHoras}h`}
+                    </td>
+                    <td className="py-2 pl-3">
+                      {row.malDesenhado && (
+                        <Badge variant="outline" className="text-[10px] py-0 border-[#EF4444] text-[#EF4444]">
+                          MAL DESENHADO
+                        </Badge>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {/* Filters */}
       <div className="flex gap-2">
@@ -194,19 +262,41 @@ export default async function AlertsPage({
                       <p className="text-[10px] text-[#87919E]/60 mt-1">
                         {timeAgo(new Date(alert.createdAt))}
                       </p>
+                      {alert.acknowledgedAt && (
+                        <p className="text-[10px] text-[#22C55E] mt-1 flex items-center gap-1">
+                          <ShieldCheck size={11} />
+                          Reconhecido por {ackNameById.get(alert.acknowledgedBy ?? '') ?? 'responsável'}
+                          {' · '}
+                          {timeAgo(new Date(alert.acknowledgedAt))}
+                        </p>
+                      )}
                     </div>
                   </div>
 
-                  {!alert.read && (
-                    <form action={markAlertRead.bind(null, alert.id)}>
-                      <button
-                        type="submit"
-                        className="text-[10px] text-[#87919E] hover:text-[#EBEBEB] whitespace-nowrap border border-[#38435C] rounded px-2 py-1 transition-colors hover:bg-[#38435C]/40 flex-shrink-0"
-                      >
-                        Marcar lido
-                      </button>
-                    </form>
-                  )}
+                  <div className="flex flex-col gap-1.5 flex-shrink-0">
+                    {!alert.acknowledgedAt && (
+                      <form action={acknowledgeAlert.bind(null, alert.id)}>
+                        <button
+                          type="submit"
+                          className="w-full text-[10px] font-medium text-[#0B1120] bg-[#22C55E] hover:bg-[#16A34A] whitespace-nowrap rounded px-2 py-1 transition-colors flex items-center gap-1 justify-center"
+                          title="Assumir o SLA deste alerta"
+                        >
+                          <ShieldCheck size={11} />
+                          Reconhecer
+                        </button>
+                      </form>
+                    )}
+                    {!alert.read && (
+                      <form action={markAlertRead.bind(null, alert.id)}>
+                        <button
+                          type="submit"
+                          className="w-full text-[10px] text-[#87919E] hover:text-[#EBEBEB] whitespace-nowrap border border-[#38435C] rounded px-2 py-1 transition-colors hover:bg-[#38435C]/40"
+                        >
+                          Marcar lido
+                        </button>
+                      </form>
+                    )}
+                  </div>
                 </div>
               </Card>
             )
