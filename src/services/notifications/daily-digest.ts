@@ -172,7 +172,8 @@ function buildSmartInsight(
     return base
   }
 
-  const isLocal = businessType === 'LOCAL'
+  // D-012: B2B mede como local (leads) — mesmos padrões de diagnóstico.
+  const isLocal = businessType === 'LOCAL' || businessType === 'B2B'
 
   if (!isLocal) {
     // ── E-commerce patterns (most specific → least specific) ──────────────────

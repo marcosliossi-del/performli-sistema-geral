@@ -287,7 +287,7 @@ export function ClientesTable({ clients }: Props) {
                             <p className="text-[10px] text-[#87919E] mt-0.5 tabular">ROAS {client.resultadoRoas.toFixed(2)}</p>
                           )}
                         </div>
-                      ) : client.businessType === 'LOCAL' ? (
+                      ) : client.businessType === 'LOCAL' || client.businessType === 'B2B' ? (
                         <span className="text-[10px] text-[#576070]">manual</span>
                       ) : (
                         <span className="text-[10px] text-[#576070]">aguardando</span>

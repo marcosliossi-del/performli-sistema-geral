@@ -308,7 +308,8 @@ export type ReportCheckin = {
 }
 
 function selectPrompt(businessType: string, period: 'weekly' | 'monthly'): string {
-  const isLocal = businessType === 'LOCAL'
+  // D-012: B2B usa o prompt de negócio local (mede leads, não faturamento de loja).
+  const isLocal = businessType === 'LOCAL' || businessType === 'B2B'
   if (period === 'weekly') return isLocal ? NL_WEEKLY : ECOMM_WEEKLY
   return isLocal ? NL_MONTHLY : ECOMM_MONTHLY
 }

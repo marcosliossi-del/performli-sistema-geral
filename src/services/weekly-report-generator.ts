@@ -181,7 +181,8 @@ export async function generateWeeklyReportForClient(
     prev > 0 ? ((curr - prev) / prev) * 100 : null
 
   // ── LOCAL BUSINESS REPORT ──────────────────────────────────────────────────
-  if (client.businessType === 'LOCAL') {
+  // D-012: B2B mede como negócio local (leads/mensagens) — mesmo formato de relatório.
+  if (client.businessType === 'LOCAL' || client.businessType === 'B2B') {
     function computeLocalMetrics(snaps: typeof lastWeekSnaps) {
       const meta = snaps.filter((x) => x.platformAccount.platform === 'META_ADS')
       const spend       = meta.reduce((s, x) => s + Number(x.spend ?? 0), 0)
@@ -613,7 +614,8 @@ export async function generateMonthlyReportForClient(
     prev > 0 ? ((curr - prev) / prev) * 100 : null
 
   // ── LOCAL ─────────────────────────────────────────────────────────────────
-  if (client.businessType === 'LOCAL') {
+  // D-012: B2B mede como negócio local (leads/mensagens) — mesmo formato de relatório.
+  if (client.businessType === 'LOCAL' || client.businessType === 'B2B') {
     function computeLocal(snaps: typeof currSnaps) {
       const meta = snaps.filter((x) => x.platformAccount.platform === 'META_ADS')
       const spend       = meta.reduce((s, x) => s + Number(x.spend ?? 0), 0)
