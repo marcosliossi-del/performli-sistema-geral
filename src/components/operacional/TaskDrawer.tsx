@@ -132,13 +132,7 @@ export function TaskDrawer({
       return
     }
     const notes = completionNotes.trim()
-    // Tarefa crítica exige "o que foi feito" — avisa exatamente onde preencher
-    // (o guard do servidor também barra; aqui é feedback imediato).
-    if (detail?.critical && notes.length === 0) {
-      setActionError("Preencha 'O que foi feito' antes de concluir.")
-      toast("Preencha 'O que foi feito' antes de concluir.", 'err')
-      return
-    }
+    // "O que foi feito" é OPCIONAL — não bloqueia a conclusão de nenhuma tarefa.
     setActionError(null)
     startTransition(async () => {
       try {
@@ -244,10 +238,10 @@ export function TaskDrawer({
               </>
             )}
 
-            {/* O que foi feito (completionNotes) — obrigatório em tarefas críticas */}
+            {/* O que foi feito (completionNotes) — OPCIONAL, nunca bloqueia a conclusão */}
             {detail?.canSubmit && (
               <>
-                <Sec>O que foi feito{detail?.critical ? ' (obrigatório)' : ''}</Sec>
+                <Sec>O que foi feito (opcional)</Sec>
                 <textarea
                   value={completionNotes}
                   onChange={(e) => setCompletionNotes(e.target.value)}

@@ -69,12 +69,11 @@ export async function checkTaskCompletion(
     }
   }
 
-  // 3) Registro de conclusão (o que foi feito).
-  if (task.completionNotes == null || task.completionNotes.trim().length === 0) {
-    reasons.push("Preencha 'O que foi feito' antes de concluir")
-  }
+  // (Registro de conclusão "O que foi feito" é OPCIONAL — nunca bloqueia a
+  //  conclusão de nenhuma tarefa. O campo segue disponível para quem quiser
+  //  documentar, mas não é exigido.)
 
-  // 4) Revisão aprovada. Se o próprio ato em curso é a aprovação da revisão
+  // 3) Revisão aprovada. Se o próprio ato em curso é a aprovação da revisão
   //    (fluxo da CS em decideTaskValidation), considera-se satisfeita.
   if (task.requiresReview && !opts?.reviewSatisfied) {
     const hasApproved = task.approvals.some((a) => a.approved === true)

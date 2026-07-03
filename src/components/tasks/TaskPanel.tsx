@@ -285,11 +285,7 @@ function PanelSections({
   async function saveStatus(next: StatusValue) {
     if (next.kind !== 'legacy') return
     if (next.status === 'CONCLUIDO') {
-      // Concluir tarefa crítica pelo dropdown usa os campos da seção "Conclusão
-      // e validação" — nunca vira dead-end (guard também barra no servidor).
-      if (data.critical && completionNotes.trim().length === 0) {
-        throw new Error("Preencha 'O que foi feito' na seção Conclusão antes de concluir.")
-      }
+      // "O que foi feito" é opcional — enviamos se preenchido, mas não bloqueia.
       const r = await updateTaskStatus(data.id, 'CONCLUIDO', {
         completionNotes: completionNotes.trim(),
         evidence: evidence.trim(),
@@ -303,12 +299,8 @@ function PanelSections({
     setStatus(next.status)
   }
 
-  // Concluir direto (botão da seção Conclusão).
+  // Concluir direto (botão da seção Conclusão). "O que foi feito" é opcional.
   async function handleConclude() {
-    if (data.critical && completionNotes.trim().length === 0) {
-      toast("Preencha 'O que foi feito' antes de concluir.", 'err')
-      return
-    }
     setBusy(true)
     try {
       const r = await updateTaskStatus(data.id, 'CONCLUIDO', {
@@ -639,7 +631,7 @@ function PanelSections({
               <>
                 <div>
                   <label className="mb-1 block text-[11px] text-text-mid">
-                    O que foi feito{data.critical ? ' (obrigatório)' : ''}
+                    O que foi feito (opcional)
                   </label>
                   <textarea
                     value={completionNotes}
