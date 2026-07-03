@@ -85,6 +85,9 @@ async function createAutoTask(opts: {
   supportCategory?: SupportCategory
   checklist?: { label: string; required: boolean; order: number }[]
   popId?: string
+  // #8: tasks críticas de automação exigem EVIDÊNCIA para poder concluir
+  // (consumido por task-completion-guard). Só as regras críticas passam true.
+  requiresEvidence?: boolean
 }): Promise<Outcome> {
   const idempotencyKey = `auto:${opts.rule}:${opts.clientId}:${opts.weekKey}`
   const exists = await prisma.task.findUnique({ where: { idempotencyKey }, select: { id: true } })
@@ -111,6 +114,7 @@ async function createAutoTask(opts: {
       popId: opts.popId ?? null,
       requestedAt: now,
       dueDate: opts.dueDate,
+      requiresEvidence: opts.requiresEvidence ?? false,
       idempotencyKey,
       ...(opts.isSupport
         ? { isSupport: true, supportDirection: 'NOS_PARA_CLIENTE', supportCategory: opts.supportCategory ?? null }
@@ -139,7 +143,7 @@ async function postSystemChatMessage(clientId: string, authorUserId: string | nu
   await prisma.clientChatMessage.create({ data: { chatId: chat.id, userId: authorUserId, content } })
 }
 
-type AlertKind = 'ANTICHURN_ACTION_NEEDED' | 'STATUS_DROPPED_TO_RUIM' | 'STATUS_IMPROVED_TO_OTIMO'
+type AlertKind = 'ANTICHURN_ACTION_NEEDED' | 'STATUS_DROPPED_TO_RUIM' | 'STATUS_IMPROVED_TO_OTIMO' | 'WARROOM_EXIT_CRITERIA_MET'
 
 /** Cria Alert apenas se não houver um do mesmo tipo para o cliente nesta semana. */
 async function createAlertOncePerWeek(clientId: string, type: AlertKind, title: string, body: string, weekStart: Date): Promise<void> {
@@ -273,6 +277,7 @@ export async function onFichaCsUpdated(
           rule: 'escalacao-2fb', clientId: client.id, assignedTo: head,
           title: `🔴 Escalação · 2 feedbacks negativos · consultar CS + gestor — ${client.name}`,
           description: `Cliente com 2 feedbacks negativos na semana e resultado ${resultado ? label[resultado] : '—'}. HEAD deve ligar para o cliente e INTERDITAR o cancelamento: ouvir a insatisfação, consultar CS e gestor, e definir plano de retenção. Registrar o combinado.`,
+          requiresEvidence: true,
           priority: 'CRITICA', dueDate: spDatePlus(0, now), weekKey,
           isSupport: true, supportCategory: 'TRAFEGO', popId: 'pop_csx_13',
           checklist: [
@@ -301,6 +306,7 @@ export async function onFichaCsUpdated(
           rule: 'primeiro-fb', clientId: client.id, assignedTo: gestorId,
           title: `🟡 1º feedback negativo da semana — ${client.name}`,
           description: texto,
+          requiresEvidence: true,
           priority: 'CRITICA', dueDate: spDatePlus(0, now), weekKey,
           isSupport: true, supportCategory: 'TRAFEGO', popId: 'pop_csx_13',
         })
@@ -318,6 +324,7 @@ export async function onFichaCsUpdated(
             rule: 'escalacao-reincidencia', clientId: client.id, assignedTo: head,
             title: `🔴 Escalação · reincidência — fechou a semana passada em risco e já deu novo sinal — ${client.name}`,
             description: 'Cliente fechou a semana anterior com feedback negativo e já registrou novo sinal nesta semana. Reincidência: HEAD deve entrar em contato, avaliar retenção e alinhar plano com CS + gestor antes que escale para cancelamento.',
+            requiresEvidence: true,
             priority: 'CRITICA', dueDate: spDatePlus(0, now), weekKey,
             isSupport: true, supportCategory: 'TRAFEGO', popId: 'pop_csx_13',
           })
@@ -399,6 +406,7 @@ async function enterWarRoom(
       rule: 'warroom-critico', clientId: client.id, assignedTo: gestorId,
       title: `[WAR ROOM] 🧨 Conta em estado crítico — ${client.name}`,
       description: `${causa} Conta em War Room. Assumir o caso, levantar a causa da queda e iniciar contenção imediata. Cliente entra em acompanhamento DIÁRIO até sair do crítico.`,
+      requiresEvidence: true,
       priority: 'CRITICA', dueDate: spDatePlus(1, now), weekKey,
       isSupport: true, supportCategory: 'TRAFEGO', popId: 'pop_war_14',
     })
@@ -412,6 +420,7 @@ async function enterWarRoom(
       rule: 'warroom-acompanhar', clientId: client.id, assignedTo: gestorId,
       title: `🔴 ${client.name} em WAR ROOM → Acompanhar`,
       description: 'Acompanhar diariamente a conta em War Room: execução do plano de ação, evolução das métricas e comunicação com o cliente até sair do crítico.',
+      requiresEvidence: true,
       priority: 'CRITICA', dueDate: spDatePlus(1, now), weekKey,
       isSupport: true, supportCategory: 'TRAFEGO', popId: 'pop_war_14',
     })
@@ -465,13 +474,44 @@ async function closeWarRoomManually(client: WarRoomClient): Promise<void> {
 }
 
 async function recoverFromWarRoom(client: WarRoomClient, novo: ClientResultado, weekStart: Date): Promise<void> {
-  // A5: zera OS DOIS flags — sala de guerra e possível churn.
+  // A5: a métrica recuperou → zera OS DOIS flags (sala de guerra e possível
+  // churn) — isso sempre acontece, pois o resultado voltou a {BOM,ÓTIMO}.
   await prisma.client.update({ where: { id: client.id }, data: { salaDeGuerra: false, possivelChurn: false } })
 
   const active = await prisma.criticalProtocol.findFirst({
     where: { clientId: client.id, status: { not: 'ENCERRADO' } },
     select: { id: true },
   })
+
+  // ── #5: NÃO encerrar a War Room com plano de ação em aberto ────────────────
+  // O resultado recuperar por 1 semana pode ser sazonalidade. Se as tasks do
+  // plano de ação (Otimização + tasks da War Room) ainda estão abertas, encerrar
+  // automático apaga o risco sem que ninguém tenha tocado no plano — churn
+  // silencioso. Mantemos o protocolo ATIVADO e cobramos o registro das ações.
+  const planoAberto = await prisma.task.findFirst({
+    where: {
+      clientId: client.id,
+      status: { notIn: ['CONCLUIDO', 'CANCELADO'] },
+      OR: [
+        { idempotencyKey: { startsWith: 'auto:warroom' } },
+        { idempotencyKey: { startsWith: 'otimizacao:' } },
+      ],
+    },
+    select: { id: true },
+  })
+
+  if (planoAberto && active) {
+    // Não encerra o protocolo — só registra que a métrica recuperou e cobra o
+    // encerramento manual após o registro das ações. Alerta com dedupe semanal.
+    await createAlertOncePerWeek(
+      client.id, 'WARROOM_EXIT_CRITERIA_MET', `${client.name}: encerrar a War Room só após registrar as ações`,
+      `Resultado recuperou para ${label[novo]}, mas o plano de ação da War Room não foi concluído. Encerrar a War Room só após registrar as ações — a recuperação pode ser sazonal e o plano precisa fechar o ciclo.`, weekStart,
+    )
+    await writeAuditLog({ actorRole: 'SYSTEM', action: 'warroom.exit_blocked_open_plan', entityType: 'CriticalProtocol', entityId: active.id, clientId: client.id, metadata: { motivo: 'plano de ação em aberto', resultado: novo } })
+    await prisma.automationLog.create({ data: { clientId: client.id, status: 'SUCESSO', reason: `A5 — recuperação (${label[novo]}) mas plano de ação em aberto: War Room mantida até registro das ações` } })
+    return
+  }
+
   if (active) {
     await prisma.criticalProtocol.update({
       where: { id: active.id },
