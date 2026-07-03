@@ -67,6 +67,7 @@ export function SeedOperacaoCard() {
   const [vinculo, setVinculo] = useState<VinculoResult | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [backtest, setBacktest] = useState<BacktestReport | null>(null)
+  const [onboardingRerun, setOnboardingRerun] = useState<{ checked: number; rerun: number; tasksCreated: number; failed: number } | null>(null)
 
   async function post(qs: string) {
     const res = await fetch(`/api/admin/seed-operacao${qs}`, { method: 'POST' })
@@ -117,6 +118,37 @@ export function SeedOperacaoCard() {
       toast(`Carteiras preenchidas (${res.carteiras?.updated ?? 0} clientes) e tarefas geradas.`, 'ok')
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Não foi possível concluir.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function runRegenChecklist() {
+    setLoading(true)
+    try {
+      const res = await post('?phase=regen-weekly-checklist')
+      toast(`Checklist da semana regerado: ${res?.managersProcessed ?? 0} gestor(es), ${res?.totalItems ?? 0} item(ns).`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível regerar o checklist.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function runRerunOnboarding() {
+    setLoading(true)
+    setOnboardingRerun(null)
+    try {
+      const res = await post('?phase=rerun-onboarding')
+      setOnboardingRerun({
+        checked: res?.checked ?? 0,
+        rerun: res?.rerun ?? 0,
+        tasksCreated: res?.tasksCreated ?? 0,
+        failed: res?.failed ?? 0,
+      })
+      toast(`Onboarding reprocessado: ${res?.rerun ?? 0} cliente(s) sem tarefas iniciais, ${res?.tasksCreated ?? 0} tarefa(s) criada(s).`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível reprocessar o onboarding.', 'err')
     } finally {
       setLoading(false)
     }
@@ -373,7 +405,36 @@ export function SeedOperacaoCard() {
           {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
           Importar Suporte (ClickUp)
         </button>
+        <button
+          type="button"
+          onClick={runRegenChecklist}
+          disabled={loading}
+          className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+        >
+          {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+          Regerar checklist da semana
+        </button>
+        <button
+          type="button"
+          onClick={runRerunOnboarding}
+          disabled={loading}
+          className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+        >
+          {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+          Re-disparar onboarding faltante
+        </button>
       </div>
+
+      {onboardingRerun && (
+        <div className="mt-4 text-xs text-[#87919E] space-y-0.5 border-t border-[#38435C] pt-3">
+          <p>
+            Clientes verificados: <span className="text-[#EBEBEB]">{onboardingRerun.checked}</span>
+            {' · '}sem tarefas iniciais: <span className="text-[#EBEBEB]">{onboardingRerun.rerun}</span>
+            {' · '}tarefas criadas: <span className="text-[#EBEBEB]">{onboardingRerun.tasksCreated}</span>
+            {onboardingRerun.failed > 0 && <> · falhas: <span className="text-[#EF4444]">{onboardingRerun.failed}</span></>}
+          </p>
+        </div>
+      )}
 
       {(loading && progress) && (
         <p className="mt-3 text-xs text-[#95BBE2]">Gerando tarefas… {progress}</p>

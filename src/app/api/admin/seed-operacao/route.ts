@@ -13,6 +13,8 @@ import { limparMetasZeradas } from '@/services/limpar-metas-zeradas'
 import { reconciliarBusinessTypeB2B } from '@/services/reconciliar-business-type'
 import { backfillEtapaFromResultado } from '@/services/client-etapa-backfill'
 import { runChurnBacktest } from '@/services/churn-backtest'
+import { generateAllWeeklyChecklists } from '@/services/weekly-checklist-generator'
+import { runClientOnboarding } from '@/services/client-onboarding'
 import { writeAuditLog } from '@/lib/audit'
 
 // Backfill pode processar vários clientes — dá folga ao tempo de execução.
@@ -161,6 +163,52 @@ export async function POST(req: NextRequest) {
     if (phase === 'reconciliar-asaas') {
       const reconcile = await reconcileAsaasTasks()
       return NextResponse.json({ ok: true, phase, reconcile })
+    }
+
+    if (phase === 'regen-weekly-checklist') {
+      // T-21 — regenera o checklist semanal da SEMANA CORRENTE para todos os
+      // gestores (upsert idempotente do generator). Saída manual para quando o
+      // cron de domingo falhou e a semana ficou sem checklist.
+      const result = await generateAllWeeklyChecklists()
+      await writeAuditLog({
+        actorId: session.userId,
+        actorRole: session.role,
+        action: 'weeklyChecklist.regenerate',
+        entityType: 'WeeklyChecklist',
+        entityId: 'bulk',
+        metadata: { managersProcessed: result.managersProcessed, totalItems: result.totalItems },
+      })
+      return NextResponse.json({ ok: true, phase, ...result })
+    }
+
+    if (phase === 'rerun-onboarding') {
+      // T-22 — re-dispara o onboarding nos clientes ATIVOS que não têm todas as
+      // tarefas iniciais (idempotencyKey `onboarding-init:<clientId>:<slug>`).
+      // runClientOnboarding é idempotente por natureza (só cria o que falta).
+      const slugs = ['kickoff', 'acessos', 'acompanhamento-30d']
+      const clients = await prisma.client.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true },
+      })
+      let checked = 0
+      let rerun = 0
+      let tasksCreated = 0
+      let failed = 0
+      for (const c of clients) {
+        checked++
+        try {
+          const expectedKeys = slugs.map((s) => `onboarding-init:${c.id}:${s}`)
+          const have = await prisma.task.count({ where: { idempotencyKey: { in: expectedKeys } } })
+          if (have >= slugs.length) continue
+          rerun++
+          const result = await runClientOnboarding(c.id)
+          tasksCreated += result.onboardingTasksCreated
+        } catch (err) {
+          console.error(`[seed-operacao] rerun-onboarding falhou p/ cliente ${c.id}:`, err)
+          failed++
+        }
+      }
+      return NextResponse.json({ ok: true, phase, checked, rerun, tasksCreated, failed })
     }
 
     if (phase === 'diagnostico') {

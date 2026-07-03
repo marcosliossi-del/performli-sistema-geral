@@ -18,7 +18,8 @@ import { escalateStaleWarRooms } from '@/services/warroom-escalation'
 import { monitorWarRooms } from '@/services/warroom-monitor'
 import { checkInadimplencia } from '@/services/inadimplencia-checker'
 import { checkLeadFollowups } from '@/services/lead-followup-checker'
-import { escalateOverdueTasks, markOverdueTasks } from '@/services/task-escalation'
+import { escalateOverdueTasks, markOverdueTasks, checkValidationSla, alertOrphanedTasks } from '@/services/task-escalation'
+import { prisma } from '@/lib/prisma'
 import { detectSilentAtRiskClients } from '@/services/antichurn-monitor'
 import { runRetentionWatchdog } from '@/services/retention-watchdog'
 import { runAlertSlaWatchdog } from '@/services/alert-sla-watchdog'
@@ -75,6 +76,8 @@ async function runDailySync() {
     inadimplencia: { ok: false },
     weeklyReports: isSunday ? { ok: false } : { ok: true, skipped: true },
     weeklyChecklists: isSunday ? { ok: false } : { ok: true, skipped: true },
+    validationSla: { ok: false },
+    orphanedTasks: { ok: false },
     contractExpiry:   { ok: false },
   }
 
@@ -353,6 +356,24 @@ async function runDailySync() {
     summary.taskEscalation = { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 
+  // ── Step 5e.1: SLA de validação da CS (T-13) — tarefa entregue parada na fila
+  //             da CS há >= 3 dias volta ao radar via Alert operacional. ────────
+  try {
+    const slaResult = await checkValidationSla()
+    summary.validationSla = { ok: true, ...slaResult }
+  } catch (err) {
+    summary.validationSla = { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+
+  // ── Step 5e.2: Tarefas em responsável desativado (T-15) — dono inativo não
+  //             age; cobra reatribuição via Alert (ou AutomationLog se sem cliente). ─
+  try {
+    const orphanResult = await alertOrphanedTasks()
+    summary.orphanedTasks = { ok: true, ...orphanResult }
+  } catch (err) {
+    summary.orphanedTasks = { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+
   // ── Step 6: Budget warnings ────────────────────────────────────────────────
   try {
     const budgetResult = await checkBudgetWarnings()
@@ -444,6 +465,16 @@ async function runDailySync() {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
       }
+      // T-21: a semana sem checklist não pode morrer em silêncio — registra a
+      // falha para virar sinal (e habilitar a regeneração manual pelo seed).
+      await prisma.automationLog
+        .create({
+          data: {
+            status: 'FALHA',
+            reason: `Geração do checklist semanal (domingo) falhou — regere manualmente em Ajustes › Semear operação: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        })
+        .catch(() => {})
     }
   }
 

@@ -88,9 +88,21 @@ export async function monitorWarRooms(): Promise<{
       if (p.diagnosticoGestor == null && new Date(p.activatedAt).getTime() <= chaseCutoff) {
         const assignee = p.responsibleId ?? p.client.assignments[0]?.userId ?? null
         if (assignee) {
-          const idempotencyKey = `auto:warroom-diagnostico:${p.id}`
-          const exists = await prisma.task.findUnique({ where: { idempotencyKey }, select: { id: true } })
-          if (!exists) {
+          // T-26 — idempotencyKey de COBRANÇA CONTÍNUA: a War Room segue viva
+          // enquanto não tem diagnóstico; se a task de cobrança foi CANCELADA, a
+          // cobrança precisa renascer (o cancelamento não encerra a War Room, só
+          // dispensou aquela ocorrência). Recriamos com key sufixada (:r2/:r3…),
+          // contando as ocorrências anteriores, de forma determinística. (Difere
+          // de onboarding-30d, cuja key cancelada NÃO renasce — lá o cancelamento
+          // é uma decisão sobre o processo, não uma ocorrência de janela.)
+          const baseKey = `auto:warroom-diagnostico:${p.id}`
+          const prior = await prisma.task.findMany({
+            where: { idempotencyKey: { startsWith: baseKey } },
+            select: { status: true },
+          })
+          const anyLive = prior.some((t) => t.status !== 'CANCELADO')
+          if (!anyLive) {
+            const idempotencyKey = prior.length === 0 ? baseKey : `${baseKey}:r${prior.length + 1}`
             await prisma.task.create({
               data: {
                 title: `Preencher diagnóstico da War Room até quarta — ${p.client.name}`,

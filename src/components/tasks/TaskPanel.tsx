@@ -28,10 +28,13 @@ import { InlineEdit } from './InlineEdit'
 import { RecurrenceEditor } from './RecurrenceEditor'
 import type { RecurrenceRule } from '@/lib/tasks/recurrence'
 
-// Ordem operacional dos status (mesmo enum legado, D-004).
+// Status ESCOLHÍVEIS no dropdown (mesmo enum legado, D-004). ATRASADO fica FORA:
+// é um estado automático (markOverdueTasks) que a UI exibe, mas ninguém escolhe
+// manualmente — alinhado a STATUS_CHOICES/STATUS_OPTIONS (T-27). O badge continua
+// mostrando "Atrasado" como estado atual via currentStatusValue.
 const STATUS_ORDER: TaskStatus[] = [
   'A_FAZER', 'EM_ANDAMENTO', 'AGUARDANDO_CLIENTE', 'AGUARDANDO_GESTOR', 'AGUARDANDO_CS',
-  'EM_VALIDACAO', 'AJUSTES_SOLICITADOS', 'BLOQUEADO', 'ATRASADO', 'CONCLUIDO', 'CANCELADO',
+  'EM_VALIDACAO', 'AJUSTES_SOLICITADOS', 'BLOQUEADO', 'CONCLUIDO', 'CANCELADO',
 ]
 const STATUS_OPTIONS: StatusValue[] = STATUS_ORDER.map((s) => ({ kind: 'legacy', status: s }))
 
