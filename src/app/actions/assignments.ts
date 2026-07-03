@@ -113,7 +113,7 @@ export async function updateClientPrimaryManager(
   // Revalidate all pages that show manager/assignment data
   revalidatePath('/managers')
   revalidatePath('/managers/assignments')
-  revalidatePath('/dashboard')
+  revalidatePath('/cockpit')
   revalidatePath('/clients')
   revalidatePath('/team')
 

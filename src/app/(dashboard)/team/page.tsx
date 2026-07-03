@@ -6,7 +6,7 @@ import { redirect } from 'next/navigation'
 
 export default async function TeamPage() {
   const { userId, role } = await requireSession()
-  if (role !== 'ADMIN') redirect('/dashboard')
+  if (role !== 'ADMIN') redirect('/cockpit')
 
   const members = await getTeamMembers()
 

@@ -86,3 +86,9 @@
 - **B2B mede como NEGÓCIO LOCAL.** Os B2B da Arkza buscam leads: métrica-resultado na plataforma de anúncio, crescimento +20% na projeção do dia 1, saúde medida pelas plataformas de anúncio (não GA4), sem faturamentoEsperado/roasMinimo. Só ECOMMERCE segue faturamento GA4 (+15%).
 - **Meta com valor ≤ 0 = "sem meta".** Não grava; zeradas antigas (bug de cálculo) removíveis pelo botão "Limpar metas zeradas" em Configurações (AuditLog goals.limpezaZeradas).
 - **Consequência:** relatórios/digest de B2B ainda usam template e-commerce (exibição, não cálculo) — fatia futura se o dono quiser o relatório no formato local.
+
+## D-013 — Canais de investimento fixos e tela única (decisões do dono, 2026-07-03)
+
+- **Canais de investimento permanecem Meta/Google/TikTok (colunas fixas).** A agência é nichada e clientes novos são 100% e-commerce nesses canais — modelar canais extensíveis (Pinterest/LinkedIn/etc.) foi avaliado e DESCARTADO como engenharia antecipada. Se surgir cliente multicanal, reavaliar (alternativa barata: coluna "outros canais").
+- **Métricas de meta seguem no enum MetricType (não configuráveis por tabela).** Métrica nova sob demanda = migration aditiva rápida. Configuração por tabela só se o Performli virar produto multi-agência.
+- **Tela única = Cockpit.** O Painel Analítico (/dashboard) foi fundido no Cockpit (grid de saúde, oscilações, alertas recentes, selo de sync) e /dashboard virou redirect. Widgets não migrados (WeeklyChecklistCard pessoal, ManagerCards, DashboardAIChat) preservados no repo; o fluxo canônico de check-in vive em /check-ins.

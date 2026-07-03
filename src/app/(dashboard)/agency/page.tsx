@@ -20,7 +20,7 @@ function RoasBadge({ roas }: { roas: number | null }) {
 
 export default async function AgencyPage() {
   const session = await requireSession()
-  if (session.role !== 'ADMIN') redirect('/dashboard')
+  if (session.role !== 'ADMIN') redirect('/cockpit')
 
   const data = await getAgencyOverview()
   const total = data.health.otimo + data.health.regular + data.health.ruim + data.health.semMeta + data.health.aguardandoDados

@@ -39,7 +39,7 @@ async function getCrmData() {
 export default async function ComercialDashboardPage() {
   const session = await requireSession()
   // RBAC v2: Dashboard comercial é SÓ ADMIN (matriz).
-  if (!can(normalizeRole(session.role), 'view', 'comercial')) redirect('/dashboard')
+  if (!can(normalizeRole(session.role), 'view', 'comercial')) redirect('/cockpit')
   const leads = await getCrmData()
 
   // Funnel counts

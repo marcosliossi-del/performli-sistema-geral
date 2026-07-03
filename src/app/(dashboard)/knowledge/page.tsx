@@ -4,6 +4,6 @@ import { KnowledgeClient } from '@/components/knowledge/KnowledgeClient'
 
 export default async function KnowledgePage() {
   const session = await requireSession()
-  if (session.role !== 'ADMIN') redirect('/dashboard')
+  if (session.role !== 'ADMIN') redirect('/cockpit')
   return <KnowledgeClient />
 }

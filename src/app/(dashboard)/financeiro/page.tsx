@@ -277,7 +277,7 @@ async function getCashflowData() {
 
 export default async function FinanceiroPage({ searchParams }: PageProps) {
   const session = await requireSession()
-  if (session.role !== 'ADMIN') redirect('/dashboard')
+  if (session.role !== 'ADMIN') redirect('/cockpit')
 
   const params = await searchParams
 

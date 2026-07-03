@@ -17,7 +17,7 @@ export async function markAlertRead(alertId: string) {
 
   await prisma.alert.updateMany({ where: scope, data: { read: true } })
   revalidatePath('/alerts')
-  revalidatePath('/dashboard')
+  revalidatePath('/cockpit')
 }
 
 export async function markAllAlertsRead() {
@@ -31,5 +31,5 @@ export async function markAllAlertsRead() {
 
   await prisma.alert.updateMany({ where, data: { read: true } })
   revalidatePath('/alerts')
-  revalidatePath('/dashboard')
+  revalidatePath('/cockpit')
 }

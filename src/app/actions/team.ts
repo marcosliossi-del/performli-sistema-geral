@@ -78,5 +78,5 @@ export async function deleteUser(userId: string) {
   revalidatePath('/team')
   revalidatePath('/managers')
   revalidatePath('/managers/assignments')
-  revalidatePath('/dashboard')
+  revalidatePath('/cockpit')
 }

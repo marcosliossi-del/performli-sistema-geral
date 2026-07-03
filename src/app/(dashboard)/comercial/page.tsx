@@ -46,7 +46,7 @@ async function getLeads() {
 export default async function ComercialPage() {
   const session = await requireSession()
   // RBAC v2: Comercial/CRM é SÓ ADMIN (matriz). Demais papéis são redirecionados.
-  if (!can(normalizeRole(session.role), 'view', 'comercial')) redirect('/dashboard')
+  if (!can(normalizeRole(session.role), 'view', 'comercial')) redirect('/cockpit')
   const leads = await getLeads()
 
   const activeLeads = leads.filter(l => KANBAN_STAGES.includes(l.status as any))
