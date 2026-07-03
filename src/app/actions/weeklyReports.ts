@@ -83,6 +83,77 @@ export async function generateClientReport(
   }
 }
 
+export type MarkSentResult = { ok: true } | { error: string }
+
+/**
+ * FASE 1.2 — Marca o relatório semanal de um cliente como ENVIADO ao cliente.
+ *
+ * Fecha o elo "gerado → enviado" do funil de prestação de contas: sem isto o
+ * sistema nunca sabia se a prestação de contas chegou ao cliente (Bloco 5 da
+ * auditoria de churn silencioso). Grava sentAt=now / sentBy=userId.
+ *
+ * Auth: requireSession + assertClientMutationAccess (allowCS true — a CS também
+ * confirma envios). Gestor só na própria carteira.
+ *
+ * Idempotente: se já houver sentAt, NÃO sobrescreve o carimbo original (o envio
+ * verdadeiro foi o primeiro) — retorna { ok } sem tocar no registro.
+ */
+export async function markWeeklyReportSent(
+  clientId: string,
+  weekStartStr: string,
+  clientSlug?: string,
+): Promise<MarkSentResult> {
+  const session = await requireSession()
+
+  try {
+    await assertClientMutationAccess(session, clientId, { allowCS: true })
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Sem permissão.' }
+  }
+
+  // weekStart é @db.Date — Postgres/Prisma devolve MEIA-NOITE UTC; a busca usa
+  // UTC explícito ('...T00:00:00.000Z'). Parse local dependeria do fuso do
+  // runtime e poderia recuar 1 dia (bug de round-trip pego pelo guardião).
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStartStr)) return { error: 'Semana inválida.' }
+  const weekStart = new Date(`${weekStartStr}T00:00:00.000Z`)
+  if (Number.isNaN(weekStart.getTime())) return { error: 'Semana inválida.' }
+
+  try {
+    const report = await prisma.weeklyReport.findUnique({
+      where: { clientId_weekStart: { clientId, weekStart } },
+      select: { id: true, sentAt: true },
+    })
+    if (!report) return { error: 'Relatório desta semana ainda não foi gerado.' }
+
+    // Idempotência: já enviado → não sobrescreve o carimbo original.
+    if (report.sentAt) {
+      if (clientSlug) revalidatePath(`/clients/${clientSlug}`)
+      return { ok: true }
+    }
+
+    await prisma.weeklyReport.update({
+      where: { id: report.id },
+      data: { sentAt: new Date(), sentBy: session.userId },
+    })
+
+    await writeAuditLog({
+      actorId: session.userId,
+      actorRole: session.role,
+      action: 'weekly_report.marked_sent',
+      entityType: 'WeeklyReport',
+      entityId: report.id,
+      clientId,
+      metadata: { weekStart: weekStart.toISOString() },
+    })
+
+    if (clientSlug) revalidatePath(`/clients/${clientSlug}`)
+    revalidatePath('/reports')
+    return { ok: true }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
 export type CheckinInput = {
   problema: string
   oQueFoiFeito: string

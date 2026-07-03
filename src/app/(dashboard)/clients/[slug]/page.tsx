@@ -8,7 +8,7 @@ import {
   getClientCampaigns, getLatestCampaignInsight, metricLabels,
   getClientDailyRevenue, getClientMonthlyComparison, getClientInteractions,
   getHealthScoreHistory, getWeekScoreComparison, getClientSalesFunnel,
-  getClienteTarefas,
+  getClienteTarefas, getWeeklyReportFunnel,
 } from '@/lib/dal'
 import type { ClienteTarefas, ClienteTarefaRow } from '@/lib/dal'
 import { normalizeRole } from '@/lib/rbac'
@@ -38,6 +38,7 @@ import { MetricsChartsGrid } from '@/components/clients/MetricsChartsGrid'
 import { DateRangePicker } from '@/components/clients/DateRangePicker'
 import { ClientChatPanel } from '@/components/clients/ClientChatPanel'
 import { WeeklyReportCard } from '@/components/clients/WeeklyReportCard'
+import { WeeklyReportFunnel } from '@/components/clients/WeeklyReportFunnel'
 import { MonthlyReportCard } from '@/components/clients/MonthlyReportCard'
 import { ExportPdfButton } from '@/components/clients/ExportPdfButton'
 import { GoalPaceCard } from '@/components/clients/GoalPaceCard'
@@ -134,12 +135,13 @@ export default async function ClientDetailPage({
   const activeFrom = from ?? defaultFrom
   const activeTo = to ?? defaultTo
 
-  const [metricHistory, kpis, paceGoals, chat, weeklyReport, monthlyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel, activeContract, clienteTarefas, resultadoInfo, checkinInfo] = await Promise.all([
+  const [metricHistory, kpis, paceGoals, chat, weeklyReport, reportFunnel, monthlyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel, activeContract, clienteTarefas, resultadoInfo, checkinInfo] = await Promise.all([
     getClientMetricHistory(client.id, 14),
     getClientKPIs(client.id, activeFrom, activeTo),
     getGoalPaceMetrics(client.id),
     getClientChat(client.id),
     getClientWeeklyReport(client.id),
+    getWeeklyReportFunnel(client.id, { userId: session.userId, role: session.role }),
     getClientMonthlyReport(client.id),
     getClientCampaigns(client.id, 7),
     getLatestCampaignInsight(client.id),
@@ -814,6 +816,21 @@ export default async function ClientDetailPage({
           clientId={client.id}
           clientSlug={slug}
           existingReport={weeklyReport ? { content: weeklyReport.content, generatedAt: weeklyReport.generatedAt } : null}
+        />
+        <WeeklyReportFunnel
+          clientId={client.id}
+          clientSlug={slug}
+          fonteRespostaAusente={reportFunnel.fonteRespostaAusente}
+          canEdit={canGerarRelatorio}
+          rows={reportFunnel.rows.map((r) => ({
+            id: r.id,
+            weekStart: r.weekStart.toISOString().slice(0, 10), // 'YYYY-MM-DD' canônico (UTC) — evita recuo de dia no fuso BR
+            generatedAt: r.generatedAt.toISOString(),
+            sentAt: r.sentAt ? r.sentAt.toISOString() : null,
+            sentByName: r.sentByName,
+            deliveredAt: r.deliveredAt ? r.deliveredAt.toISOString() : null,
+            firstReplyAt: r.firstReplyAt ? r.firstReplyAt.toISOString() : null,
+          }))}
         />
         <MonthlyReportCard
           clientId={client.id}
