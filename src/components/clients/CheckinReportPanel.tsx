@@ -45,7 +45,7 @@ export function CheckinReportPanel({
   const [pending, startTransition] = useTransition()
   const [genPeriod, setGenPeriod] = useState<'weekly' | 'monthly' | null>(null)
 
-  const nicho = businessType === 'LOCAL' ? 'Negócio Local' : 'E-commerce'
+  const nicho = businessType === 'LOCAL' ? 'Negócio Local' : businessType === 'B2B' ? 'B2B (mede como local)' : 'E-commerce'
 
   function set<K extends keyof CheckinInput>(k: K, v: CheckinInput[K]) {
     setForm((f) => ({ ...f, [k]: v }))
