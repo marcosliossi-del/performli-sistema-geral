@@ -9,6 +9,15 @@
  *
  * Soma dos pesos = 100. Fonte de cada fator: Bloco 6 de
  * docs/AUDITORIA_CHURN_SILENCIOSO.md.
+ *
+ * CANDIDATO FUTURO — "downgrade de produto (60 dias)" (Fase 3 anti-churn):
+ * a partir desta fatia, ClientProductChange passa a acumular o histórico de
+ * remoções de produto (antes inexistente — `Client.produtos` nunca teve
+ * mutação). NÃO é fator do score AGORA: os pesos abaixo somam 100 e o backtest
+ * vigente os referencia — mexer aqui invalidaria a calibração. Este fator entra
+ * como candidato `uncalibrated` na REEXECUÇÃO do backtest em ~90 dias, quando já
+ * houver série temporal suficiente para medir o poder preditivo da remoção de
+ * produto sobre o churn. Até lá: nenhum código de score o consome.
  */
 
 export type ChurnFactorKey =
