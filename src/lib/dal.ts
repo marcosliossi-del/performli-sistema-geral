@@ -1704,6 +1704,12 @@ export type CheckinRow = {
     reviewNote: string | null
     submittedAt: Date | null
   } | null
+  // T-05: última semana FECHADA quando está REPROVADO — habilita o reenvio
+  // direcionado (janela de correção). weekStartStr no formato 'YYYY-MM-DD'.
+  pastReproved: {
+    weekStartStr: string
+    reviewNote: string | null
+  } | null
 }
 
 export type CheckinBoard = {
@@ -1719,6 +1725,7 @@ export type CheckinBoard = {
 export const getCheckinBoard = cache(
   async (userId: string, role: string): Promise<CheckinBoard> => {
     const { start: weekStart } = getWeekRange()
+    const prevWeekStart = new Date(weekStart.getTime() - 7 * 86_400_000)
     const where: Prisma.ClientWhereInput = canViewAll(role)
       ? { status: 'ACTIVE' }
       : { status: 'ACTIVE', assignments: { some: { userId } } }
@@ -1735,10 +1742,10 @@ export const getCheckinBoard = cache(
           take: 1,
         },
         weeklyCheckins: {
-          where: { weekStart },
-          take: 1,
+          where: { weekStart: { in: [weekStart, prevWeekStart] } },
           select: {
             id: true,
+            weekStart: true,
             status: true,
             resultadoSemana: true,
             oQueFoiFeito: true,
@@ -1751,23 +1758,34 @@ export const getCheckinBoard = cache(
       orderBy: { name: 'asc' },
     })
 
-    const rows: CheckinRow[] = clients.map((c) => ({
-      clientId: c.id,
-      clientName: c.name,
-      clientSlug: c.slug,
-      managerName: c.assignments[0]?.user?.name ?? null,
-      checkin: c.weeklyCheckins[0]
-        ? {
-            id: c.weeklyCheckins[0].id,
-            status: c.weeklyCheckins[0].status as CheckinStatusValue,
-            resultadoSemana: c.weeklyCheckins[0].resultadoSemana,
-            oQueFoiFeito: c.weeklyCheckins[0].oQueFoiFeito,
-            proximosPassos: c.weeklyCheckins[0].proximosPassos,
-            reviewNote: c.weeklyCheckins[0].reviewNote,
-            submittedAt: c.weeklyCheckins[0].submittedAt,
-          }
-        : null,
-    }))
+    const rows: CheckinRow[] = clients.map((c) => {
+      const current = c.weeklyCheckins.find((w) => w.weekStart.getTime() === weekStart.getTime())
+      const prev = c.weeklyCheckins.find((w) => w.weekStart.getTime() === prevWeekStart.getTime())
+      return {
+        clientId: c.id,
+        clientName: c.name,
+        clientSlug: c.slug,
+        managerName: c.assignments[0]?.user?.name ?? null,
+        checkin: current
+          ? {
+              id: current.id,
+              status: current.status as CheckinStatusValue,
+              resultadoSemana: current.resultadoSemana,
+              oQueFoiFeito: current.oQueFoiFeito,
+              proximosPassos: current.proximosPassos,
+              reviewNote: current.reviewNote,
+              submittedAt: current.submittedAt,
+            }
+          : null,
+        pastReproved:
+          prev && prev.status === 'REPROVADO'
+            ? {
+                weekStartStr: prev.weekStart.toISOString().slice(0, 10),
+                reviewNote: prev.reviewNote,
+              }
+            : null,
+      }
+    })
 
     return { weekStart, rows }
   },

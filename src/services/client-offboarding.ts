@@ -75,11 +75,18 @@ async function resolveOffboardingOwner(client: {
 export async function runClientOffboarding(
   clientId: string,
   opts?: { motivo?: string },
-): Promise<{ tasksClosed: number; offboardingTaskCreated: boolean }> {
+): Promise<{
+  tasksClosed: number
+  automationTasksClosed: number
+  protocolsClosed: number
+  offboardingTaskCreated: boolean
+}> {
   const now = new Date()
   const motivo = opts?.motivo ?? null
 
   let tasksClosed = 0
+  let automationTasksClosed = 0
+  let protocolsClosed = 0
   let offboardingTaskCreated = false
 
   const client = await prisma.client
@@ -97,7 +104,7 @@ export async function runClientOffboarding(
       clientId,
       metadata: { error: 'client_not_found' },
     })
-    return { tasksClosed: 0, offboardingTaskCreated: false }
+    return { tasksClosed: 0, automationTasksClosed: 0, protocolsClosed: 0, offboardingTaskCreated: false }
   }
 
   // Passo 1 — cancela as tarefas recorrentes abertas do cliente. NÃO apaga nada.
@@ -119,6 +126,90 @@ export async function runClientOffboarding(
           clientId: client.id,
           status: 'FALHA',
           reason: `Offboarding: falha ao cancelar tarefas recorrentes abertas: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        },
+      })
+      .catch(() => {})
+  }
+
+  // Passo 1b (T-07) — cancela as tarefas de AUTOMACAO abertas do cliente. São
+  // tarefas geradas por automações (anti-churn, 2ª semana sem check-in, War Room
+  // etc.) que viram RUÍDO ETERNO num cliente cancelado. NÃO tocamos tasks MANUAIS
+  // (decisão conservadora — podem ter pendência operacional real, ex.: acessos,
+  // fatura em aberto; encerrar automaticamente esconderia trabalho pendente).
+  try {
+    const openAutomationTasks = await prisma.task.findMany({
+      where: {
+        clientId: client.id,
+        origin: 'AUTOMACAO',
+        status: { notIn: TERMINAL_STATUSES },
+      },
+      select: { id: true },
+    })
+    if (openAutomationTasks.length > 0) {
+      const res = await prisma.task.updateMany({
+        where: { id: { in: openAutomationTasks.map((t) => t.id) } },
+        // Espelho statusId (D-004): mantém a FK coerente com o enum.
+        data: { status: 'CANCELADO', statusId: statusIdFor('CANCELADO') },
+      })
+      automationTasksClosed = res.count
+      await prisma.taskActivity.createMany({
+        data: openAutomationTasks.map((t) => ({
+          taskId: t.id,
+          actorId: null,
+          action: 'cancelled_by_offboarding',
+        })),
+      })
+    }
+  } catch (err) {
+    await prisma.automationLog
+      .create({
+        data: {
+          clientId: client.id,
+          status: 'FALHA',
+          reason: `Offboarding: falha ao cancelar tarefas de automação abertas: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        },
+      })
+      .catch(() => {})
+  }
+
+  // Passo 1c (T-07) — encerra a War Room (CriticalProtocol) ativa. Cliente
+  // cancelado com protocolo ATIVO segue sendo cobrado/escalado pelo monitor.
+  try {
+    const active = await prisma.criticalProtocol.findFirst({
+      where: { clientId: client.id, status: { not: 'ENCERRADO' } },
+      select: { id: true },
+    })
+    if (active) {
+      await prisma.criticalProtocol.update({
+        where: { id: active.id },
+        data: {
+          status: 'ENCERRADO',
+          closedAt: now,
+          closedOutcome: 'PERDIDO_CHURN',
+        },
+      })
+      protocolsClosed = 1
+      await writeAuditLog({
+        actorId: null,
+        actorRole: 'SYSTEM',
+        action: 'warroom.close',
+        entityType: 'CriticalProtocol',
+        entityId: active.id,
+        clientId: client.id,
+        metadata: { motivo: 'offboarding', outcome: 'PERDIDO_CHURN' },
+      })
+    }
+  } catch (err) {
+    await prisma.automationLog
+      .create({
+        data: {
+          clientId: client.id,
+          status: 'FALHA',
+          reason: `Offboarding: falha ao encerrar War Room ativa: ${
             err instanceof Error ? err.message : String(err)
           }`,
         },
@@ -217,8 +308,8 @@ export async function runClientOffboarding(
     entityType: 'Client',
     entityId: client.id,
     clientId: client.id,
-    metadata: { motivo, tasksClosed, offboardingTaskCreated },
+    metadata: { motivo, tasksClosed, automationTasksClosed, protocolsClosed, offboardingTaskCreated },
   })
 
-  return { tasksClosed, offboardingTaskCreated }
+  return { tasksClosed, automationTasksClosed, protocolsClosed, offboardingTaskCreated }
 }

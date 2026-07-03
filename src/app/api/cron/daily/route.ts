@@ -296,6 +296,7 @@ async function runDailySync() {
       staleRejectedAlerts: checkinResult.staleRejectedAlerts,
       reincidenciaTasks: checkinResult.reincidenciaTasks,
       reincidenciaAlerts: checkinResult.reincidenciaAlerts,
+      semValidacaoAlerts: checkinResult.semValidacaoAlerts,
     }
   } catch (err) {
     summary.checkins = {

@@ -18,9 +18,15 @@ export type CheckinContent = {
  * OPE-06 — Gestor preenche/atualiza o check-in semanal de um cliente.
  * Evidência mínima: os três campos são obrigatórios. Move para PREENCHIDO.
  */
+// Janela de correção pós-reprovação: o gestor pode reenviar a semana REPROVADA
+// por até 14 dias após a reprovação da CS (T-05). Depois disso, corrige na
+// semana atual — a passada fica no histórico.
+const CORRECTION_WINDOW_MS = 14 * 86_400_000
+
 export async function submitCheckin(
   clientId: string,
   content: CheckinContent,
+  weekStartStr?: string,
 ): Promise<ActionResult> {
   const session = await requireSession()
 
@@ -35,8 +41,36 @@ export async function submitCheckin(
     return { error: 'Preencha os três campos — o check-in só vale com evidência mínima.' }
   }
 
-  const { start: weekStart } = getWeekRange()
   const now = new Date()
+  let weekStart = getWeekRange().start
+  let correctingPastWeek = false
+
+  // T-05 — reenvio direcionado a uma semana passada REPROVADA (janela de correção).
+  if (weekStartStr !== undefined) {
+    // Validação de formato + parse UTC explícito. @db.Date volta como UTC-midnight;
+    // parse com 'T00:00:00.000Z' reproduz exatamente a chave da linha existente
+    // (lição do bug de fuso — não usar new Date('YYYY-MM-DD') cru).
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStartStr)) {
+      return { error: 'Semana de correção inválida.' }
+    }
+    const targetWeek = new Date(`${weekStartStr}T00:00:00.000Z`)
+
+    const rejected = await prisma.clientWeeklyCheckin.findUnique({
+      where: { clientId_weekStart: { clientId, weekStart: targetWeek } },
+      select: { status: true, reviewedAt: true },
+    })
+    if (!rejected || rejected.status !== 'REPROVADO' || !rejected.reviewedAt) {
+      return { error: 'Só é possível corrigir uma semana que a CS reprovou.' }
+    }
+    if (now.getTime() - rejected.reviewedAt.getTime() > CORRECTION_WINDOW_MS) {
+      return {
+        error:
+          'A janela de correção desta semana (14 dias após a reprovação) já encerrou. Faça o check-in da semana atual.',
+      }
+    }
+    weekStart = targetWeek
+    correctingPastWeek = true
+  }
 
   const data = {
     resultadoSemana: content.resultadoSemana.trim(),
@@ -63,7 +97,7 @@ export async function submitCheckin(
     entityType: 'ClientWeeklyCheckin',
     entityId: clientId,
     clientId,
-    metadata: { weekStart: weekStart.toISOString() },
+    metadata: { weekStart: weekStart.toISOString(), correctingPastWeek },
   })
 
   revalidatePath('/check-ins')
