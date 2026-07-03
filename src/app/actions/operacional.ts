@@ -307,7 +307,10 @@ export type TaskMeta = {
 export type TaskDetail = {
   status: string
   evidence: string | null
+  completionNotes: string | null
   requiredOpen: number
+  /** Task exige registro de "o que foi feito" p/ concluir (guard flag-gated). */
+  critical: boolean
   canSubmit: boolean
   canValidate: boolean
   meta: TaskMeta
@@ -326,6 +329,10 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
       id: true,
       status: true,
       evidence: true,
+      completionNotes: true,
+      requiresEvidence: true,
+      requiresReview: true,
+      riskScore: true,
       assignedTo: true,
       clientId: true,
       auxAssignees: { select: { userId: true } },
@@ -388,6 +395,11 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
   const nameMap = new Map(users.map((u) => [u.id, u.name]))
 
   const requiredOpen = task.checklist.filter((c) => c.required && !c.done).length
+  const critical =
+    task.requiresEvidence ||
+    task.requiresReview ||
+    (task.riskScore != null && task.riskScore >= 4) ||
+    task.priority === 'CRITICA'
   const isAssignee = task.assignedTo === session.userId
   const canValidate = session.role === 'CS' || session.role === 'ADMIN'
   const submittable = ['A_FAZER', 'EM_ANDAMENTO', 'AJUSTES_SOLICITADOS'].includes(task.status)
@@ -418,7 +430,9 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
   return {
     status: task.status,
     evidence: task.evidence,
+    completionNotes: task.completionNotes,
     requiredOpen,
+    critical,
     canSubmit,
     canValidate,
     meta,
@@ -440,7 +454,7 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
  * Exige evidência preenchida e todos os itens obrigatórios do checklist concluídos.
  * Só o responsável (ou ADMIN) envia. Cria registro de aprovação pendente.
  */
-export async function submitTaskForValidation(taskId: string, evidence: string): Promise<ActionResult> {
+export async function submitTaskForValidation(taskId: string, evidence: string, completionNotes?: string): Promise<ActionResult> {
   const session = await requireSession()
 
   const task = await prisma.task.findUnique({
@@ -467,10 +481,19 @@ export async function submitTaskForValidation(taskId: string, evidence: string):
     return { error: `Conclua os ${requiredOpen} item(ns) obrigatório(s) do checklist antes de enviar.` }
   }
 
+  // "O que foi feito" (completionNotes): o gestor registra o resumo ao enviar para
+  // a CS — trim + limite de 2000 chars. Opcional aqui; a CS lê antes de aprovar.
+  const notes = completionNotes?.trim().slice(0, 2000)
+
   await prisma.$transaction([
     prisma.task.update({
       where: { id: taskId },
-      data: { status: 'AGUARDANDO_CS', statusId: statusIdFor('AGUARDANDO_CS'), evidence: ev },
+      data: {
+        status: 'AGUARDANDO_CS',
+        statusId: statusIdFor('AGUARDANDO_CS'),
+        evidence: ev,
+        ...(notes && notes.length > 0 ? { completionNotes: notes } : {}),
+      },
     }),
     prisma.taskApproval.create({
       data: { taskId, approved: null },

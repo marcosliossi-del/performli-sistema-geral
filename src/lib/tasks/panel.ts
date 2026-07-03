@@ -42,6 +42,14 @@ export type PanelActivity = {
   createdAt: string
 }
 
+export type PanelApproval = {
+  id: string
+  approverName: string
+  approved: boolean | null
+  note: string | null
+  decidedAt: string | null
+}
+
 export type PanelChecklistItem = {
   id: string
   label: string
@@ -76,6 +84,15 @@ export type TaskPanelData = {
   blocking: PanelDependency[]
   requiresEvidence: boolean
   requiresReview: boolean
+  /** Registro de conclusão e evidência (T-01/T-03). */
+  evidence: string | null
+  completionNotes: string | null
+  /** Task exige "o que foi feito" p/ concluir (guard flag-gated). */
+  critical: boolean
+  /** Fluxo de validação da CS (mesmos gates das server actions). */
+  canSubmit: boolean
+  canValidate: boolean
+  approvals: PanelApproval[]
   isSupport: boolean
   supportCategory: SupportCategory | null
   origin: TaskOrigin
@@ -129,6 +146,9 @@ export async function loadTaskPanel(
       tags: true,
       requiresEvidence: true,
       requiresReview: true,
+      riskScore: true,
+      evidence: true,
+      completionNotes: true,
       isSupport: true,
       supportCategory: true,
       origin: true,
@@ -158,6 +178,11 @@ export async function loadTaskPanel(
       },
       blocks: {
         select: { dependent: { select: { id: true, title: true, status: true } } },
+      },
+      approvals: {
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: { id: true, approverId: true, approved: true, note: true, decidedAt: true },
       },
     },
   })
@@ -190,6 +215,7 @@ export async function loadTaskPanel(
       ...auxIds,
       ...task.comments.map((c) => c.authorId),
       ...task.activities.map((a) => a.actorId).filter((x): x is string => !!x),
+      ...task.approvals.map((a) => a.approverId).filter((x): x is string => !!x),
       session.userId,
     ]),
   )
@@ -261,6 +287,24 @@ export async function loadTaskPanel(
     blocking: task.blocks.map((d) => ({ id: d.dependent.id, title: d.dependent.title, status: d.dependent.status })),
     requiresEvidence: task.requiresEvidence,
     requiresReview: task.requiresReview,
+    evidence: task.evidence,
+    completionNotes: task.completionNotes,
+    critical:
+      task.requiresEvidence ||
+      task.requiresReview ||
+      (task.riskScore != null && task.riskScore >= 4) ||
+      task.priority === 'CRITICA',
+    canSubmit:
+      ['A_FAZER', 'EM_ANDAMENTO', 'AJUSTES_SOLICITADOS'].includes(task.status) &&
+      (task.assignedTo === session.userId || session.role === 'ADMIN'),
+    canValidate: session.role === 'CS' || session.role === 'ADMIN',
+    approvals: task.approvals.map((a) => ({
+      id: a.id,
+      approverName: a.approverId ? (nameMap.get(a.approverId) ?? '—') : '—',
+      approved: a.approved,
+      note: a.note,
+      decidedAt: a.decidedAt ? a.decidedAt.toISOString() : null,
+    })),
     isSupport: task.isSupport,
     supportCategory: task.supportCategory,
     origin: task.origin,
