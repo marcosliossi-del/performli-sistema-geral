@@ -27,6 +27,23 @@ type ReconcileResult = {
   erros: string[]
 }
 
+type BacktestReport = {
+  geradoEm: string
+  versaoPesos: string
+  limiarRisco: number
+  metricas: {
+    nChurned: number
+    nControle: number
+    coorteInsuficiente: boolean
+    recallByT: Record<string, number>
+    falsoPositivo: number
+    separacaoPorFator: { fator: string; label: string; separacao: number }[]
+  }
+  metasAtendidas: { recallT6: boolean; fp: boolean }
+  fatoresNaoReconstruiveis: { fator: string; label: string; motivo: string }[]
+  falhas: { id: string; nome: string; erro: string }[]
+}
+
 type SeedCounts = {
   usersCreated?: number
   usersUpdated?: number
@@ -49,6 +66,7 @@ export function SeedOperacaoCard() {
   const [reconcile, setReconcile] = useState<ReconcileResult | null>(null)
   const [vinculo, setVinculo] = useState<VinculoResult | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [backtest, setBacktest] = useState<BacktestReport | null>(null)
 
   async function post(qs: string) {
     const res = await fetch(`/api/admin/seed-operacao${qs}`, { method: 'POST' })
@@ -218,6 +236,27 @@ export function SeedOperacaoCard() {
       toast(`Metas zeradas removidas: ${res?.removidas ?? 0}.`, 'ok')
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Não foi possível limpar as metas zeradas.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function runChurnBacktest() {
+    setLoading(true)
+    setBacktest(null)
+    try {
+      const res = await post('?phase=churn-backtest')
+      const report: BacktestReport | null = res.report ?? null
+      setBacktest(report)
+      if (report) {
+        const recallT6 = report.metricas.recallByT['T-6'] ?? 0
+        toast(
+          `Backtest: ${report.metricas.nChurned} churned / ${report.metricas.nControle} controle · recall T-6 ${recallT6}% · FP ${report.metricas.falsoPositivo}%.`,
+          'ok',
+        )
+      }
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível rodar o backtest.', 'err')
     } finally {
       setLoading(false)
     }
@@ -570,6 +609,89 @@ export function SeedOperacaoCard() {
             {reconcile.erros.length > 0 && (
               <p className="text-[#EF4444]">Erros: {reconcile.erros.join(' | ')}</p>
             )}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 border-t border-[#38435C] pt-4">
+        <p className="text-xs font-semibold text-[#EBEBEB] mb-1">Anti-churn · Fase 0</p>
+        <p className="text-xs text-[#87919E] mb-3">
+          Backtest do Score de Risco de Churn v2. Reconstrói o score nas fotos T-2/T-4/T-6/T-8
+          semanas antes de cada churn real e compara com uma coorte de controle. Valida os pesos
+          <strong> propostos</strong> pela auditoria ANTES de o score virar produção. Leitura pura —
+          só grava o log da execução. Meta: recall T-6 ≥ 60% e falso-positivo ≤ 20%.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={runChurnBacktest}
+            disabled={loading}
+            className="flex items-center gap-2 text-xs text-[#EBEBEB] border border-[#38435C] rounded-lg px-3 py-2 transition-colors hover:bg-[#38435C]/40 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+            Backtest do score de churn (Fase 0)
+          </button>
+        </div>
+
+        {backtest && (
+          <div className="mt-4 text-xs text-[#87919E] space-y-1.5 border-t border-[#38435C]/60 pt-3">
+            <p>
+              Churned: <span className="text-[#EBEBEB]">{backtest.metricas.nChurned}</span>
+              {' · '}Controle: <span className="text-[#EBEBEB]">{backtest.metricas.nControle}</span>
+              {backtest.metricas.coorteInsuficiente && (
+                <span className="text-[#F59E0B]"> · coorte insuficiente (&lt;8) — resultado indicativo</span>
+              )}
+            </p>
+            <p>
+              Recall:{' '}
+              {['T-2', 'T-4', 'T-6', 'T-8'].map((t, i) => (
+                <span key={t}>
+                  {i > 0 && ' · '}
+                  {t} <span className="text-[#EBEBEB]">{backtest.metricas.recallByT[t] ?? 0}%</span>
+                </span>
+              ))}
+            </p>
+            <p>
+              Falso-positivo (controle ≥ {backtest.limiarRisco}):{' '}
+              <span className="text-[#EBEBEB]">{backtest.metricas.falsoPositivo}%</span>
+            </p>
+            <p>
+              Metas: recall T-6 ≥ 60%{' '}
+              <span className={backtest.metasAtendidas.recallT6 ? 'text-[#34c97a]' : 'text-[#ff5e6a]'}>
+                {backtest.metasAtendidas.recallT6 ? '✅' : '❌'}
+              </span>
+              {' · '}FP ≤ 20%{' '}
+              <span className={backtest.metasAtendidas.fp ? 'text-[#34c97a]' : 'text-[#ff5e6a]'}>
+                {backtest.metasAtendidas.fp ? '✅' : '❌'}
+              </span>
+            </p>
+            <p>
+              Top-3 fatores que separam:{' '}
+              <span className="text-[#EBEBEB]">
+                {backtest.metricas.separacaoPorFator
+                  .slice(0, 3)
+                  .map((f: { label: string; separacao: number }) => `${f.label} (+${f.separacao})`)
+                  .join(' · ') || '—'}
+              </span>
+            </p>
+            {backtest.fatoresNaoReconstruiveis.length > 0 && (
+              <p className="text-[#F59E0B]">
+                Fatores não reconstruíveis (entram como 0):{' '}
+                {backtest.fatoresNaoReconstruiveis.map((f: { label: string }) => f.label).join(' · ')}
+              </p>
+            )}
+            {backtest.falhas.length > 0 && (
+              <p className="text-[#ff5e6a]">
+                Clientes com dados quebrados (fora do cálculo):{' '}
+                {backtest.falhas.map((f: { nome: string }) => f.nome).join(' · ')}
+              </p>
+            )}
+            <details className="mt-2">
+              <summary className="cursor-pointer text-[#95BBE2]">JSON completo (copiar para o doc)</summary>
+              <pre className="mt-2 max-h-96 overflow-auto rounded-lg bg-[#0A1E2C] p-3 text-[11px] text-[#EBEBEB]">
+                {JSON.stringify(backtest, null, 2)}
+              </pre>
+            </details>
           </div>
         )}
       </div>

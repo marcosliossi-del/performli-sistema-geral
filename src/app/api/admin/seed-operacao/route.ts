@@ -12,6 +12,7 @@ import { migrarMetasRoasParaFaturamento } from '@/services/migrar-metas-faturame
 import { limparMetasZeradas } from '@/services/limpar-metas-zeradas'
 import { reconciliarBusinessTypeB2B } from '@/services/reconciliar-business-type'
 import { backfillEtapaFromResultado } from '@/services/client-etapa-backfill'
+import { runChurnBacktest } from '@/services/churn-backtest'
 import { writeAuditLog } from '@/lib/audit'
 
 // Backfill pode processar vários clientes — dá folga ao tempo de execução.
@@ -142,6 +143,14 @@ export async function POST(req: NextRequest) {
       // ponto cego do ClickUp). Idempotente; o serviço grava o AuditLog.
       const result = await backfillEtapaFromResultado({ actorId: session.userId, actorRole: session.role })
       return NextResponse.json({ ok: true, phase, ...result })
+    }
+
+    if (phase === 'churn-backtest') {
+      // FASE 0 anti-churn: valida os pesos PROPOSTOS do score v2 contra churns
+      // reais ANTES de qualquer código de score entrar em produção. Leitura pura
+      // (só grava o AuditLog da execução, via serviço).
+      const report = await runChurnBacktest({ actorId: session.userId, actorRole: session.role })
+      return NextResponse.json({ ok: true, phase, report })
     }
 
     if (phase === 'vincular-asaas') {
