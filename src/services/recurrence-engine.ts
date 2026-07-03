@@ -210,6 +210,7 @@ type RuleRef = {
 type TemplateWithSteps = {
   id: string
   name: string
+  description: string | null
   active: boolean
   defaultAssigneeRole: string | null
   defaultType: TaskType
@@ -220,7 +221,6 @@ type TemplateWithSteps = {
   areaId: string | null
   popId: string | null
   enforceChecklist: boolean
-  tags: string[]
   steps: { label: string; required: boolean; order: number }[]
 }
 
@@ -267,7 +267,12 @@ async function createTaskForClientRule(
 
     const task = await prisma.task.create({
       data: {
-        title: `${tpl.name} — ${client.name}`,
+        // O título NÃO leva o nome do cliente — a tarefa já é vinculada ao cliente
+        // (clientId) e mostrada com o cliente na coluna própria (regra 4.1).
+        title: tpl.name,
+        // Descrição completa do template (SOP) — antes não era copiada, então as
+        // recorrentes nasciam sem descrição. Migração ClickUp exige a SOP na tarefa.
+        description: tpl.description,
         type: tpl.defaultType,
         priority: tpl.defaultPriority,
         status: tpl.defaultStatus,
@@ -283,9 +288,8 @@ async function createTaskForClientRule(
         dueDate: due,
         requestedAt: now,
         idempotencyKey,
-        // Migração ClickUp: checklist bloqueante (regra 4.5) + etiquetas do template.
+        // Migração ClickUp: checklist obrigatório TRAVA a conclusão (regra 4.5).
         enforceChecklist: tpl.enforceChecklist,
-        tags: tpl.tags,
         ...(tpl.steps.length
           ? { checklist: { create: tpl.steps.map((s) => ({ label: s.label, required: s.required, order: s.order })) } }
           : {}),

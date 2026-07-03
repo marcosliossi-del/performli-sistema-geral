@@ -238,20 +238,28 @@ export async function POST(req: NextRequest) {
       if (!lalluzi) {
         return NextResponse.json({ error: 'Cliente Lalluzi (ativo) não encontrado.' }, { status: 404 })
       }
-      const ecomRules = await prisma.taskRecurrenceRule.findMany({
-        where: { template: { code: { startsWith: 'REC-ECOM-' } } },
-        select: { id: true },
+      const ecomTemplates = await prisma.taskTemplate.findMany({
+        where: { code: { startsWith: 'REC-ECOM-' } },
+        select: { id: true, recurrence: { select: { id: true } } },
       })
-      const result = await materializeRulesForClient(lalluzi.id, ecomRules.map((r) => r.id))
+      const templateIds = ecomTemplates.map((t) => t.id)
+      const ruleIds = ecomTemplates.map((t) => t.recurrence?.id).filter((id): id is string => !!id)
+      // Re-run limpo: apaga as recorrentes ECOM já materializadas na Lalluzi (de
+      // uma auditoria anterior) para refletir a versão atual dos templates
+      // (descrição, título, checklist). Só toca tarefas destes templates + Lalluzi.
+      const removed = await prisma.task.deleteMany({
+        where: { clientId: lalluzi.id, templateId: { in: templateIds } },
+      })
+      const result = await materializeRulesForClient(lalluzi.id, ruleIds)
       await writeAuditLog({
         actorId: session.userId,
         actorRole: session.role,
         action: 'recurrence.materializeLalluziEcom',
         entityType: 'Client',
         entityId: lalluzi.id,
-        metadata: { cliente: lalluzi.name, regras: ecomRules.length, ...result },
+        metadata: { cliente: lalluzi.name, regras: ruleIds.length, removidas: removed.count, ...result },
       })
-      return NextResponse.json({ ok: true, phase, cliente: lalluzi.name, regras: ecomRules.length, ...result })
+      return NextResponse.json({ ok: true, phase, cliente: lalluzi.name, regras: ruleIds.length, removidas: removed.count, ...result })
     }
 
     if (phase === 'ativar-ecom-recorrencias') {
