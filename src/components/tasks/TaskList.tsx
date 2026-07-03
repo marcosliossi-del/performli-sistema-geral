@@ -5,6 +5,7 @@ import { CheckCircle2, Circle, Loader2 } from 'lucide-react'
 import { cn, timeAgo } from '@/lib/utils'
 import { updateTaskStatus } from '@/app/actions/tasks'
 import { TaskStatus } from '@prisma/client'
+import { toast } from '@/lib/toast'
 import Link from 'next/link'
 
 const priorityColors: Record<'BAIXA' | 'MEDIA' | 'ALTA' | 'CRITICA', string> = {
@@ -39,9 +40,16 @@ function TaskRow({ task }: { task: Task }) {
   const isOverdue = !isDone && task.dueDate !== null && task.dueDate < new Date()
 
   function toggle() {
-    startTransition(() =>
-      updateTaskStatus(task.id, isDone ? 'A_FAZER' : 'CONCLUIDO')
-    )
+    // updateTaskStatus pode LANÇAR (guard de conclusão, automação, etc.).
+    // Sem try/catch a rejeição virava o erro genérico de Server Component em
+    // produção — captura e mostra em toast operacional.
+    startTransition(async () => {
+      try {
+        await updateTaskStatus(task.id, isDone ? 'A_FAZER' : 'CONCLUIDO')
+      } catch (e) {
+        toast(e instanceof Error && e.message ? e.message : 'Não foi possível alterar o status da tarefa.', 'err')
+      }
+    })
   }
 
   return (

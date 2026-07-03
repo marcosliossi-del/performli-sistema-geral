@@ -66,7 +66,15 @@ export function TaskDrawer({
       setStatusResetKey((k) => k + 1) // devolve o select ao valor atual
       return
     }
-    startTransition(async () => { await updateTaskStatus(task!.id, status as TaskStatus); await reload() })
+    startTransition(async () => {
+      try {
+        await updateTaskStatus(task!.id, status as TaskStatus)
+        await reload()
+      } catch (e) {
+        toast(e instanceof Error && e.message ? e.message : 'Não foi possível alterar o status da tarefa.', 'err')
+        setStatusResetKey((k) => k + 1)
+      }
+    })
   }
   function handleComment() {
     if (!comment.trim()) return
@@ -95,7 +103,15 @@ export function TaskDrawer({
     })
   }
   function handleComplete() {
-    startTransition(async () => { await updateTaskStatus(task!.id, 'CONCLUIDO' as TaskStatus); await reload(); toast('Tarefa concluída') })
+    startTransition(async () => {
+      try {
+        await updateTaskStatus(task!.id, 'CONCLUIDO' as TaskStatus)
+        await reload()
+        toast('Tarefa concluída')
+      } catch (e) {
+        toast(e instanceof Error && e.message ? e.message : 'Não foi possível concluir a tarefa.', 'err')
+      }
+    })
   }
 
   const m = detail?.meta
