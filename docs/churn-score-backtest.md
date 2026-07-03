@@ -83,17 +83,45 @@ essa limitação junto aos fatores não reconstruíveis.
 `coorteInsuficiente: true` (menos de 8 churned) → tratar QUALQUER resultado como
 indicativo, nunca como aprovação de spec; reexecutar quando houver mais casos.
 
-## Resultados
+## Resultados — execução de 2026-07-03 (versão de pesos `v2-proposta-2026-07-03`)
 
-> **PENDENTE — rodar o botão "Backtest do score de churn" em
-> Configurações → Operação e colar o resultado aqui.**
+Executado em produção pelo ADMIN via Configurações → Operação (AuditLog
+`churn.backtest.run`, geradoEm 2026-07-03T17:41:50Z).
 
-```json
-(colar aqui o JSON completo do relatório)
-```
+| Métrica | Resultado | Meta |
+|---------|-----------|------|
+| Coorte churned | **4** (controle: 15) | ≥ 8 → **coorte insuficiente, resultado só indicativo** |
+| Recall T-2 / T-4 / T-6 / T-8 | **0% / 0% / 0% / 0%** | T-6 ≥ 60% ❌ |
+| Falso-positivo (controle ≥ 65) | **0%** | ≤ 20% ✅ |
 
-**Veredito:** _pendente_
-- recall T-6: _—_ (meta ≥ 60%)
-- falso-positivo: _—_ (meta ≤ 20%)
-- coorte suficiente (≥ 8 churned): _—_
-- decisão: _spec / faixas provisórias + reexecução em 90 dias_
+Scores dos churned ficaram em ~15-17 pontos (ex.: Skaebne, churn 2026-07-01:
+T-2 17 · T-4 15 · T-6 15 · T-8 15) — muito abaixo do limiar 65. Duas causas
+estruturais, ambas previstas no protocolo:
+
+1. **Metade do peso entrou zerada**: `fichaCs` (12), `stalenessFicha` (5),
+   `feedbackReincidencia` (7) não são reconstruíveis (sem histórico versionado)
+   e `inadimplencia` (8) tem look-ahead — 32 pontos do score indisponíveis na
+   foto retroativa.
+2. **Coorte de 4 casos** não tem poder estatístico.
+
+**Top-3 fatores que separam churned de controle (T-6):**
+`performanceRecente` **+1.13** · `idadeContrato` **+0.63** ·
+`cronicoRegularRuim` **+0.15**. Os demais fatores reconstruíveis mostraram
+separação ~0 nesta coorte.
+
+**Veredito: FAIXAS PROVISÓRIAS.**
+- recall T-6: 0% (meta ≥ 60%) ❌
+- falso-positivo: 0% (meta ≤ 20%) ✅
+- coorte suficiente (≥ 8 churned): NÃO
+- **decisão: manter `uncalibrated: true`; score v2 entra no Cockpit APENAS
+  informativo (ordenação/Índice de Exposição, sem disparar Alert/task/War
+  Room); reexecutar em ~90 dias** (2026-10-01), quando o histórico de ficha,
+  feedback, downgrades e transições de pagamento — que começou a acumular em
+  2026-07-03 — permitir reconstruir os fatores hoje zerados e a coorte tiver
+  mais casos. A reexecução é agendada como TASK no próprio sistema (criada
+  automaticamente pelo cron — mecanismo, não intenção).
+- Sinal para a recalibração: `performanceRecente` e `idadeContrato` são os
+  candidatos a ganhar peso; fatores com separação ~0 nesta coorte só devem
+  perder peso APÓS uma reexecução com dados completos (a separação baixa de
+  hoje é explicada pela indisponibilidade retroativa, não necessariamente por
+  baixo poder preditivo).

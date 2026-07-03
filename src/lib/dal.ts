@@ -2358,6 +2358,85 @@ export const getClientChurnHistory = cache(async (clientId: string, weeks = 12):
   })
 })
 
+// ─── Exposição a churn (score v2 PROVISÓRIO — informativo) ─────────────────────
+
+/**
+ * Linha da tabela "Exposição a churn (provisório)" do Cockpit.
+ * `indiceExposicao` = feeAmount × score/100. Serve APENAS para ORDENAR e, se
+ * exibido em reais, é rotulado "Índice de Exposição" — NUNCA somado nem tratado
+ * como "R$ em risco" (não é previsão de receita perdida).
+ */
+export type ChurnExposureRow = {
+  clientId: string
+  clientName: string
+  clientSlug: string | null
+  curva: string | null
+  scoreV2: number
+  faixa: string
+  feeAmount: number
+  indiceExposicao: number
+}
+
+export type ChurnExposure = {
+  /** true quando NENHUM cliente tem v2 ainda (cron semanal não rodou). */
+  aguardandoPrimeiroCalculo: boolean
+  rows: ChurnExposureRow[]
+}
+
+type ChurnV2Factor = {
+  score?: unknown
+  faixa?: unknown
+  provisional?: unknown
+}
+
+/**
+ * Top 8 clientes por Índice de Exposição (feeAmount × v2/100) DESC, lendo o v2
+ * gravado dentro de ChurnRiskScore.factors na semana corrente. Gate: papéis de
+ * visão ampla (mesmo das seções de saúde). Retorna null para papel restrito.
+ */
+export const getCockpitChurnExposure = cache(
+  async (role: string): Promise<ChurnExposure | null> => {
+    if (!canViewAll(role)) return null
+
+    const { start: weekStart } = getWeekRange()
+    const scores = await prisma.churnRiskScore.findMany({
+      where: { weekStart, client: { status: 'ACTIVE' } },
+      select: {
+        factors: true,
+        client: { select: { id: true, name: true, slug: true, curva: true, feeAmount: true } },
+      },
+    })
+
+    const rows: ChurnExposureRow[] = []
+    for (const s of scores) {
+      const factors =
+        s.factors && typeof s.factors === 'object' && !Array.isArray(s.factors)
+          ? (s.factors as Record<string, unknown>)
+          : null
+      const v2raw = factors?.v2
+      if (!v2raw || typeof v2raw !== 'object') continue
+      const v2 = v2raw as ChurnV2Factor
+      if (typeof v2.score !== 'number' || typeof v2.faixa !== 'string') continue
+
+      const fee = s.client.feeAmount != null ? Number(s.client.feeAmount) : 0
+      rows.push({
+        clientId: s.client.id,
+        clientName: s.client.name,
+        clientSlug: s.client.slug,
+        curva: s.client.curva,
+        scoreV2: v2.score,
+        faixa: v2.faixa,
+        feeAmount: fee,
+        indiceExposicao: Math.round((fee * v2.score) / 100),
+      })
+    }
+
+    rows.sort((a, b) => b.indiceExposicao - a.indiceExposicao)
+
+    return { aguardandoPrimeiroCalculo: rows.length === 0, rows: rows.slice(0, 8) }
+  },
+)
+
 // ─── Weekly checklist ─────────────────────────────────────────────────────────
 
 export const getWeeklyChecklist = cache(async (managerId: string) => {
