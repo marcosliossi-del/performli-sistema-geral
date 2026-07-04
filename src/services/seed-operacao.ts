@@ -48,6 +48,7 @@ type SeedTemplate = {
   steps?: string[]
   tags?: string[]
   enforceChecklist?: boolean
+  formType?: string
   businessType?: 'ECOMMERCE' | 'LOCAL' | 'B2B'
   activeRule?: boolean
   recurrence: {
@@ -421,7 +422,7 @@ const TEMPLATES_ECOM: SeedTemplate[] = [
   },
   {
     code: 'REC-ECOM-CHECKIN-SEMANAL', name: 'Checkin Semanal', role: 'GESTOR', area: 'TRAFEGO', priority: 'CRITICA',
-    description: SOP_ECOM_03, steps: STEPS_ECOM_03, enforceChecklist: true,
+    description: SOP_ECOM_03, steps: STEPS_ECOM_03, enforceChecklist: false, formType: 'CHECKIN_SEMANAL',
     businessType: 'ECOMMERCE', activeRule: false,
     recurrence: { frequency: 'SEMANAL', dayOfWeek: 1, hour: 12 },
   },
@@ -439,7 +440,7 @@ const TEMPLATES_ECOM: SeedTemplate[] = [
   },
   {
     code: 'REC-ECOM-CHECKIN-MENSAL', name: 'Checkin Mensal', role: 'GESTOR', area: 'TRAFEGO', priority: 'CRITICA',
-    description: SOP_ECOM_06, steps: STEPS_ECOM_06, enforceChecklist: true,
+    description: SOP_ECOM_06, steps: STEPS_ECOM_06, enforceChecklist: false, formType: 'CHECKIN_MENSAL',
     businessType: 'ECOMMERCE', activeRule: false,
     recurrence: { frequency: 'DIA_DO_MES', dayOfMonth: 1, rollToBusinessDay: true, hour: 12 },
   },
@@ -666,6 +667,7 @@ export async function seedOperacaoArkza(): Promise<{
         defaultPriority: t.priority,
         defaultAssigneeRole: t.role,
         enforceChecklist: t.enforceChecklist ?? false,
+        formType: t.formType ?? null,
         tags: t.tags ?? [],
         active: true,
       },
@@ -679,6 +681,7 @@ export async function seedOperacaoArkza(): Promise<{
         defaultStatus: 'A_FAZER',
         defaultAssigneeRole: t.role,
         enforceChecklist: t.enforceChecklist ?? false,
+        formType: t.formType ?? null,
         tags: t.tags ?? [],
         active: true,
       },

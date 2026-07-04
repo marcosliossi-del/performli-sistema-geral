@@ -231,6 +231,24 @@ export function TaskDrawer({
           <div className="p-5 md:border-r border-[#38435C]/50 space-y-1">
             {loading && <p className="text-[11px] text-[#87919E]">Carregando…</p>}
 
+            {m?.formType && m?.clientSlug && (
+              <div className="mb-3 rounded-lg border border-[#95BBE2]/40 bg-[#95BBE2]/10 p-3">
+                <p className="text-[12px] text-[#EBEBEB] font-semibold mb-1.5">
+                  {m.formType === 'CHECKIN_MENSAL' ? 'Check-in mensal do cliente' : 'Check-in semanal do cliente'}
+                </p>
+                <p className="text-[11px] text-[#9fb0c0] mb-2.5">
+                  Preencha as 6 etapas e gere o relatório. Ao gerar, ele é postado no chat do cliente
+                  mencionando a CS para validação e envio.
+                </p>
+                <Link
+                  href={`/clients/${m.clientSlug}#sec-visao-geral`}
+                  className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#0A1E2C] bg-[#95BBE2] rounded-lg px-3 py-1.5 hover:bg-[#95BBE2]/90"
+                >
+                  Abrir formulário de check-in <ExternalLink size={12} />
+                </Link>
+              </div>
+            )}
+
             {m?.description && (
               <>
                 <Sec>Descrição</Sec>

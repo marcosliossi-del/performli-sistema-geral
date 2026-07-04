@@ -70,6 +70,7 @@ export type TaskPanelData = {
   recurrenceRule: RecurrenceRule | null
   clientId: string | null
   client: { name: string; razaoSocial: string | null; slug: string } | null
+  formType: string | null
   assignedTo: string
   assignee: PanelUser | null
   auxAssignees: PanelUser[]
@@ -142,6 +143,7 @@ export async function loadTaskPanel(
       startDate: true,
       recurrenceRule: true,
       clientId: true,
+      formType: true,
       assignedTo: true,
       tags: true,
       requiresEvidence: true,
@@ -263,6 +265,7 @@ export async function loadTaskPanel(
     recurrenceRule: parseRecurrenceRule(task.recurrenceRule),
     clientId: task.clientId,
     client: task.client ? { name: task.client.name, razaoSocial: task.client.razaoSocial, slug: task.client.slug } : null,
+    formType: task.formType,
     assignedTo: task.assignedTo,
     assignee: task.user ? { id: task.user.id, name: task.user.name } : null,
     auxAssignees: auxIds.map((id) => ({ id, name: nameMap.get(id) ?? '—' })),
