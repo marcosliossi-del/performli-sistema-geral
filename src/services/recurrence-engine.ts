@@ -221,6 +221,7 @@ type TemplateWithSteps = {
   areaId: string | null
   popId: string | null
   enforceChecklist: boolean
+  formType: string | null
   steps: { label: string; required: boolean; order: number }[]
 }
 
@@ -290,6 +291,8 @@ async function createTaskForClientRule(
         idempotencyKey,
         // Migração ClickUp: checklist obrigatório TRAVA a conclusão (regra 4.5).
         enforceChecklist: tpl.enforceChecklist,
+        // Tarefa-formulário (ex.: check-in) — o drawer mostra o CTA p/ o formulário.
+        formType: tpl.formType,
         ...(tpl.steps.length
           ? { checklist: { create: tpl.steps.map((s) => ({ label: s.label, required: s.required, order: s.order })) } }
           : {}),

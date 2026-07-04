@@ -959,6 +959,9 @@ model Task {
   // Checklist obrigatório TRAVA a conclusão mesmo em tarefa não-crítica (regra 4.5
   // da migração ClickUp). Propagado de TaskTemplate.enforceChecklist.
   enforceChecklist    Boolean  @default(false)
+  // Tarefa-formulário (ex.: 'CHECKIN_SEMANAL'/'CHECKIN_MENSAL'): o drawer mostra
+  // um CTA que leva ao formulário do cliente. Propagado de TaskTemplate.formType.
+  formType            String?
   qualityScore        Int?
   riskScore           Int?
   completionNotes     String?
@@ -1135,6 +1138,10 @@ model TaskTemplate {
   // Etiquetas do template (campo aditivo, opcional). Hoje as recorrentes NÃO
   // propagam tags para a Task (decisão de produto: sem etiquetas nas tarefas).
   tags                String[]     @default([])
+  // Tarefa-formulário: quando setado, a tarefa gerada abre um formulário/ação
+  // específica em vez de ser só checklist (ex.: 'CHECKIN_SEMANAL'/'CHECKIN_MENSAL'
+  // → formulário de check-in do cliente). Propagado p/ Task.formType.
+  formType            String?
   active              Boolean      @default(true)
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
@@ -1330,6 +1337,8 @@ model ClientChatMessage {
   chatId    String
   userId    String
   content   String
+  // Usuários mencionados (@) na mensagem — ex.: handoff do relatório para a CS.
+  mentions  String[] @default([])
   createdAt DateTime @default(now())
 
   chat ClientChat @relation(fields: [chatId], references: [id], onDelete: Cascade)

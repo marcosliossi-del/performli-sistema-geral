@@ -6,6 +6,7 @@ import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { getWeekRange } from '@/lib/utils'
 import { generateWeeklyReportForClient, generateMonthlyReportForClient } from '@/services/weekly-report-generator'
+import { resolveClientCs, postClientChatMessage } from '@/services/client-chat'
 
 export type ReportState = {
   error?: string
@@ -226,6 +227,25 @@ export async function saveCheckinAndGenerate(
         : await generateWeeklyReportForClient(clientId)
 
     if (!content) return { error: 'Relatório vazio — cliente não encontrado.' }
+
+    // Handoff automático: posta o relatório no canal interno do cliente
+    // mencionando a CS (@), que valida e envia. Best-effort — nunca derruba a
+    // geração. A CS já aparece na fila /check-ins (status PREENCHIDO); o chat é
+    // o aviso ativo + a entrega do conteúdo pronto para envio.
+    try {
+      const cs = await resolveClientCs(clientId)
+      const periodoLabel = period === 'monthly' ? 'mensal' : 'semanal'
+      const mencao = cs ? `@${cs.name} ` : ''
+      const cabecalho = `📊 Relatório ${periodoLabel} gerado — pronto para validação e envio. ${mencao}`.trim()
+      await postClientChatMessage(
+        clientId,
+        session.userId,
+        `${cabecalho}\n\n${content}`,
+        cs ? [cs.id] : [],
+      )
+    } catch {
+      // handoff é best-effort — não bloqueia a geração do relatório.
+    }
 
     if (clientSlug) revalidatePath(`/clients/${clientSlug}`)
     revalidatePath('/check-ins')

@@ -303,6 +303,7 @@ export type TaskMeta = {
   requesterName: string | null
   watcherNames: string[]
   tags: string[]
+  formType: string | null
 }
 
 export type TaskDetail = {
@@ -348,6 +349,7 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
       slaBreached: true,
       requesterId: true,
       tags: true,
+      formType: true,
       area: { select: { name: true } },
       list: { select: { name: true } },
       pop: { select: { code: true, name: true } },
@@ -426,6 +428,7 @@ export async function loadTaskDetail(taskId: string): Promise<TaskDetail | null>
     requesterName: task.requesterId ? (nameMap.get(task.requesterId) ?? null) : null,
     watcherNames: task.watchers.map((w) => nameMap.get(w.userId) ?? '—').filter((n) => n !== '—'),
     tags: task.tags,
+    formType: task.formType,
   }
 
   return {

@@ -607,6 +607,25 @@ function PanelSections({
           )}
         </section>
 
+        {/* Tarefa-formulário: check-in do cliente */}
+        {data.formType && data.client?.slug && (
+          <section className="rounded-lg border border-info/40 bg-info/10 p-3">
+            <p className="text-[13px] font-semibold text-text-hi mb-1">
+              {data.formType === 'CHECKIN_MENSAL' ? 'Check-in mensal do cliente' : 'Check-in semanal do cliente'}
+            </p>
+            <p className="text-[12px] text-text-mid mb-2.5">
+              Preencha as 6 etapas e gere o relatório. Ao gerar, ele é postado no chat do cliente
+              mencionando a CS para validação e envio.
+            </p>
+            <Link
+              href={`/clients/${data.client.slug}#sec-visao-geral`}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-info px-3 py-1.5 text-[12px] font-semibold text-[#0A1E2C] hover:opacity-90"
+            >
+              Abrir formulário de check-in
+            </Link>
+          </section>
+        )}
+
         {/* Checklist */}
         {data.checklist.length > 0 && (
           <section>
