@@ -114,6 +114,7 @@ const navigation: NavSection[] = [
           { name: 'Funil de Vendas (Leads)', href: '/comercial',          icon: Target,    module: 'comercial' },
           { name: 'Estágio da Carteira',     href: '/pipeline',           icon: Kanban,    module: 'comercial' },
           { name: 'Dashboard Comercial',     href: '/comercial/dashboard', icon: BarChart3, module: 'comercial' },
+          { name: 'Gerador de Proposta',     href: '/comercial/proposta',  icon: FileText,  module: 'comercial' },
         ],
       },
       {
