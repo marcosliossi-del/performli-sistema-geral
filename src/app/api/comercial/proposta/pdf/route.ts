@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import chromium from '@sparticuz/chromium'
+import chromium from '@sparticuz/chromium-min'
 import puppeteer from 'puppeteer-core'
 import { getSession } from '@/lib/session'
 import { normalizeRole, can } from '@/lib/rbac'
 import { buildTokens, fillTemplate, normalizeVals } from '@/lib/comercial/proposta'
+
+// Pack completo do Chromium (inclui libnss3 e demais libs) baixado em runtime —
+// versão casada com @sparticuz/chromium-min. Cacheado em /tmp após o 1º download.
+const CHROMIUM_PACK =
+  'https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar'
 
 // Geração de PDF exige o runtime Node (Chromium headless), não Edge.
 export const runtime = 'nodejs'
@@ -44,7 +49,7 @@ export async function POST(req: NextRequest) {
 
     browser = await puppeteer.launch({
       args: chromium.args,
-      executablePath: await chromium.executablePath(),
+      executablePath: await chromium.executablePath(CHROMIUM_PACK),
       headless: chromium.headless,
       defaultViewport: chromium.defaultViewport,
     })

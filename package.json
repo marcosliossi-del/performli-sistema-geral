@@ -16,7 +16,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@hello-pangea/dnd": "^18.0.1",
-    "@sparticuz/chromium": "^131.0.0",
+    "@sparticuz/chromium-min": "131.0.1",
     "@prisma/adapter-pg": "^7.5.0",
     "@prisma/client": "^7.5.0",
     "@radix-ui/react-avatar": "^1.1.11",

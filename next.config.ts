@@ -15,17 +15,14 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   compress: true,
   poweredByHeader: false,
-  // Chromium headless (gerador de proposta): NÃO empacotar — o Next quebraria a
-  // localização do binário do Chromium. Externaliza p/ resolver em node_modules.
-  serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
-  // Garante que o template E o PACOTE INTEIRO do Chromium acompanhem a função.
-  // Só `bin/**` não basta: as libs (libnss3 etc.) vêm nos packs brotli
-  // (al2023.tar.br) que o tracer do Next não segue — por isso incluímos tudo.
+  // Chromium headless (gerador de proposta): usa @sparticuz/chromium-min (sem
+  // binário local) e baixa o pack completo (com libnss3) em runtime — evita o
+  // problema do tracer do Next não empacotar os packs brotli. Externaliza p/
+  // resolver em node_modules.
+  serverExternalPackages: ['@sparticuz/chromium-min', 'puppeteer-core'],
+  // Só o template precisa ser rastreado para a função (o Chromium vem por download).
   outputFileTracingIncludes: {
-    '/api/comercial/proposta/pdf': [
-      './public/comercial/proposta-template.html',
-      './node_modules/@sparticuz/chromium/**',
-    ],
+    '/api/comercial/proposta/pdf': ['./public/comercial/proposta-template.html'],
   },
   experimental: {
     optimizePackageImports: ['lucide-react', '@anthropic-ai/sdk'],
