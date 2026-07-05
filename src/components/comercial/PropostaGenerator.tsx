@@ -3,7 +3,20 @@
 import { useState } from 'react'
 import { FileText, Loader2, ChevronDown } from 'lucide-react'
 import { toast } from '@/lib/toast'
-import { DEFAULTS, fmt, type Vals } from '@/lib/comercial/proposta'
+import { DEFAULTS, fmt, buildTokens, fillTemplate, type Vals } from '@/lib/comercial/proposta'
+
+// Injetado no template antes de imprimir: força as cores/fundos no PDF (mesmo com
+// "gráficos de segundo plano" off), garante A4 sem margem e auto-dispara a impressão.
+function printInjection(titulo: string): string {
+  return (
+    `<title>${titulo}</title>` +
+    `<style>` +
+    `@media print{@page{size:A4;margin:0}html,body{margin:0}}` +
+    `*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}` +
+    `</style>` +
+    `<script>window.addEventListener('load',function(){setTimeout(function(){window.print()},400)})<\/script>`
+  )
+}
 
 export function PropostaGenerator() {
   const [loja, setLoja] = useState('')
@@ -23,28 +36,30 @@ export function PropostaGenerator() {
       return
     }
     setLoading(true)
+    // Abre a janela JÁ no clique (gesto do usuário) p/ não cair no popup blocker.
+    const win = window.open('', '_blank')
+    if (!win) {
+      setLoading(false)
+      toast('Permita pop-ups para gerar a proposta.', 'err')
+      return
+    }
+    win.document.write('<!doctype html><meta charset="utf-8"><title>Gerando proposta…</title><body style="background:#05060D;color:#AAB3C6;font-family:sans-serif;padding:40px">Gerando proposta…</body>')
     try {
-      const res = await fetch('/api/comercial/proposta/pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ loja: nome, vals }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.error || 'Falha ao gerar o PDF.')
-      }
-      const blob = await res.blob()
+      const res = await fetch('/comercial/proposta-template.html', { cache: 'force-cache' })
+      if (!res.ok) throw new Error('template')
+      let html = await res.text()
+      html = fillTemplate(html, buildTokens(nome, vals))
+      html = html.replace('</head>', `${printInjection(`Proposta ARKZA - ${nome}`)}</head>`)
+
+      const blob = new Blob([html], { type: 'text/html' })
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `Proposta ARKZA - ${nome}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-      toast('Proposta gerada e baixada em PDF.', 'ok')
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Não foi possível gerar a proposta.', 'err')
+      win.location.href = url
+      // Revoga depois que a janela já carregou o documento.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      toast('Proposta aberta — escolha "Salvar como PDF" (A4, com fundo).', 'ok')
+    } catch {
+      win.close()
+      toast('Não foi possível gerar a proposta. Tente novamente.', 'err')
     } finally {
       setLoading(false)
     }
@@ -58,7 +73,7 @@ export function PropostaGenerator() {
           <h1 className="text-[17px] font-bold text-[#EBEBEB]">Gerador de Proposta</h1>
         </div>
         <p className="text-xs text-[#87919E] mb-5">
-          Preencha o nome da loja e baixe a proposta em PDF, idêntica ao modelo da Arkza
+          Preencha o nome da loja e gere a proposta em PDF, idêntica ao modelo da Arkza
           (com cores e design originais), já personalizada. Os valores seguem o padrão do
           template — só mude se precisar.
         </p>
@@ -117,10 +132,11 @@ export function PropostaGenerator() {
           className="flex items-center gap-2 text-sm font-semibold text-[#0A1E2C] bg-[#95BBE2] rounded-lg px-4 py-2.5 transition-colors hover:bg-[#95BBE2]/90 disabled:opacity-40"
         >
           {loading ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}
-          {loading ? 'Gerando PDF…' : 'Baixar proposta em PDF'}
+          Gerar proposta em PDF
         </button>
         <p className="text-[11px] text-[#576070] mt-2">
-          O PDF é gerado no servidor (colorido, A4, fiel ao template) e baixado direto no seu computador.
+          Abre a proposta pronta e o diálogo de impressão. Escolha <b>Salvar como PDF</b> — o fundo
+          e as cores já saem forçados, e o layout é A4 sem margem.
         </p>
       </div>
     </div>
