@@ -18,12 +18,13 @@ const nextConfig: NextConfig = {
   // Chromium headless (gerador de proposta): NÃO empacotar — o Next quebraria a
   // localização do binário do Chromium. Externaliza p/ resolver em node_modules.
   serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
-  // Garante que o template E os binários do Chromium (libnss3 etc., carregados via
-  // fs pela lib — o tracer do Next não os detecta) acompanhem a função serverless.
+  // Garante que o template E o PACOTE INTEIRO do Chromium acompanhem a função.
+  // Só `bin/**` não basta: as libs (libnss3 etc.) vêm nos packs brotli
+  // (al2023.tar.br) que o tracer do Next não segue — por isso incluímos tudo.
   outputFileTracingIncludes: {
     '/api/comercial/proposta/pdf': [
       './public/comercial/proposta-template.html',
-      './node_modules/@sparticuz/chromium/bin/**',
+      './node_modules/@sparticuz/chromium/**',
     ],
   },
   experimental: {

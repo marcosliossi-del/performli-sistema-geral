@@ -39,6 +39,9 @@ export async function POST(req: NextRequest) {
     const template = await readFile(tplPath, 'utf8')
     const html = fillTemplate(template, buildTokens(loja, vals))
 
+    // PDF não usa WebGL/canvas — desliga o swiftshader (menos memória, mais rápido).
+    chromium.setGraphicsMode = false
+
     browser = await puppeteer.launch({
       args: chromium.args,
       executablePath: await chromium.executablePath(),
