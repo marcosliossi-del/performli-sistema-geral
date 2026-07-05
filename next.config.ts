@@ -15,6 +15,13 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   compress: true,
   poweredByHeader: false,
+  // Chromium headless (gerador de proposta): NÃO empacotar — o Next quebraria a
+  // localização do binário do Chromium. Externaliza p/ resolver em node_modules.
+  serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
+  // Garante que o template da proposta acompanhe a função serverless (lido via fs).
+  outputFileTracingIncludes: {
+    '/api/comercial/proposta/pdf': ['./public/comercial/proposta-template.html'],
+  },
   experimental: {
     optimizePackageImports: ['lucide-react', '@anthropic-ai/sdk'],
   },
