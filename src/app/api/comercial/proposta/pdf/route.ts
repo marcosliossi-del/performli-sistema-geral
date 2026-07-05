@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import chromium from '@sparticuz/chromium'
 import puppeteer from 'puppeteer-core'
 import { getSession } from '@/lib/session'
@@ -32,12 +34,10 @@ export async function POST(req: NextRequest) {
 
   let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null
   try {
-    // Template estático servido pela própria origem (public/comercial/...).
-    const tplRes = await fetch(`${req.nextUrl.origin}/comercial/proposta-template.html`, {
-      cache: 'force-cache',
-    })
-    if (!tplRes.ok) throw new Error('template indisponível')
-    const html = fillTemplate(await tplRes.text(), buildTokens(loja, vals))
+    // Template lido do bundle (outputFileTracingIncludes garante o arquivo na função).
+    const tplPath = path.join(process.cwd(), 'public', 'comercial', 'proposta-template.html')
+    const template = await readFile(tplPath, 'utf8')
+    const html = fillTemplate(template, buildTokens(loja, vals))
 
     browser = await puppeteer.launch({
       args: chromium.args,
@@ -67,7 +67,13 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     console.error('[proposta/pdf] falha:', err)
-    return NextResponse.json({ error: 'Não foi possível gerar o PDF. Tente novamente.' }, { status: 500 })
+    // Diagnóstico temporário (rota ADMIN-only): expõe a causa real p/ ajustar o
+    // runtime do Chromium na Vercel. Remover após validar a geração.
+    const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+    return NextResponse.json(
+      { error: `Não foi possível gerar o PDF. [${detail.slice(0, 500)}]` },
+      { status: 500 },
+    )
   } finally {
     if (browser) await browser.close().catch(() => {})
   }
