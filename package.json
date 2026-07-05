@@ -16,7 +16,6 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@hello-pangea/dnd": "^18.0.1",
-    "@sparticuz/chromium-min": "131.0.1",
     "@prisma/adapter-pg": "^7.5.0",
     "@prisma/client": "^7.5.0",
     "@radix-ui/react-avatar": "^1.1.11",
@@ -43,7 +42,6 @@
     "pdf-parse": "^2.4.5",
     "pg": "^8.20.0",
     "prisma": "^7.5.0",
-    "puppeteer-core": "^23.11.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.8.0",
