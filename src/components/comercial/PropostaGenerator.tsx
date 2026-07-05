@@ -13,11 +13,13 @@ function printInjection(titulo: string): string {
     `<style>` +
     `@media print{@page{size:A4;margin:0}html,body{margin:0}}` +
     `*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}` +
-    // Desliga o blur de vidro (backdrop-filter) na geração do PDF: num fundo em
-    // gradiente liso ele é visualmente irrelevante, mas rasteriza áreas enormes em
-    // alta resolução — deixa o PDF pesadíssimo e trava leitores no celular. Os
-    // painéis mantêm o fundo translúcido, então o visual fica praticamente idêntico.
-    `*{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}` +
+    // Neutraliza os efeitos que rasterizam áreas enormes em alta resolução na
+    // geração do PDF — a causa do arquivo pesado que travava no celular e do
+    // "borrão" azul sobre a página: backdrop-filter (vidro), filter:blur (glows
+    // decorativos) e box-shadow. Os fundos/gradientes dos painéis permanecem, então
+    // o visual fica praticamente idêntico, mas o PDF fica leve e abre no mobile.
+    `*{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;` +
+    `filter:none!important;box-shadow:none!important}` +
     `</style>` +
     `<script>window.addEventListener('load',function(){setTimeout(function(){window.print()},400)})<\/script>`
   )
