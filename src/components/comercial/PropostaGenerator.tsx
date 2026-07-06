@@ -52,7 +52,10 @@ export function PropostaGenerator() {
     }
     win.document.write('<!doctype html><meta charset="utf-8"><title>Gerando proposta…</title><body style="background:#05060D;color:#AAB3C6;font-family:sans-serif;padding:40px">Gerando proposta…</body>')
     try {
-      const res = await fetch('/comercial/proposta-template.html', { cache: 'force-cache' })
+      // no-cache: revalida com o servidor a cada geração — 'force-cache' fazia o
+      // navegador reutilizar o template ANTIGO (pesado) indefinidamente, mesmo com
+      // o corrigido já em produção (regressão do bug do iPhone).
+      const res = await fetch('/comercial/proposta-template.html', { cache: 'no-cache' })
       if (!res.ok) throw new Error('template')
       let html = await res.text()
       html = fillTemplate(html, buildTokens(nome, vals))
