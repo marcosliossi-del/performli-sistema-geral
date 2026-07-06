@@ -16,6 +16,7 @@ import { runChurnBacktest } from '@/services/churn-backtest'
 import { generateAllWeeklyChecklists } from '@/services/weekly-checklist-generator'
 import { runClientOnboarding } from '@/services/client-onboarding'
 import { wipeAllTasks } from '@/services/wipe-all-tasks'
+import { atualizarInvestimentosLote } from '@/services/atualizar-investimentos-lote'
 import { writeAuditLog } from '@/lib/audit'
 
 // Backfill pode processar vários clientes — dá folga ao tempo de execução.
@@ -225,6 +226,18 @@ export async function POST(req: NextRequest) {
         select: { name: true, slug: true },
       })
       return NextResponse.json({ ok: true, phase, semGestor: clients })
+    }
+
+    if (phase === 'atualizar-investimentos-lote') {
+      // Planilha 06/07/2026: investimento por plataforma + ROAS mínimo dos 9
+      // clientes; deriva faturamento esperado, upserta metas do mês, sincroniza
+      // semanais e recalcula a saúde. O serviço grava o AuditLog e devolve o
+      // resumo de validação (realizado vs esperado pró-rata).
+      const result = await atualizarInvestimentosLote({
+        actorId: session.userId,
+        actorRole: session.role,
+      })
+      return NextResponse.json({ ok: true, phase, ...result })
     }
 
     if (phase === 'materializar-lalluzi-ecom') {

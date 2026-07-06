@@ -351,6 +351,37 @@ export function SeedOperacaoCard() {
     }
   }
 
+  type LoteRow = {
+    cliente: string
+    encontrado: boolean
+    investimentoMeta: number
+    investimentoGoogle: number
+    investimentoTiktok: number
+    investimentoTotal: number
+    roasMinimo: number
+    faturamentoEsperado: number
+    realizadoMes: number | null
+    esperadoProRata: number | null
+    status: string
+    observacao: string | null
+  }
+  const [loteRows, setLoteRows] = useState<LoteRow[] | null>(null)
+
+  async function runAtualizarInvestimentos() {
+    setLoading(true)
+    setLoteRows(null)
+    try {
+      const res = await post('?phase=atualizar-investimentos-lote')
+      setLoteRows(res.rows ?? [])
+      const ok = (res.rows ?? []).filter((r: LoteRow) => r.encontrado).length
+      toast(`Investimentos atualizados: ${ok}/${(res.rows ?? []).length} cliente(s); metas do mês + semanais sincronizadas.`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Não foi possível atualizar os investimentos.', 'err')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function runWipeAllTasks() {
     setLoading(true)
     setWipeResult(null)
@@ -888,6 +919,71 @@ export function SeedOperacaoCard() {
               {' · '}já existiam: <span className="text-[#EBEBEB]">{ecomAtivar.skipped}</span>
               {ecomAtivar.failed > 0 && <> · falhas: <span className="text-[#EF4444]">{ecomAtivar.failed}</span></>}
             </p>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 border-t border-[#38435C] pt-4">
+        <p className="text-xs font-semibold text-[#EBEBEB] mb-1">Investimentos & metas · Lote 06/07</p>
+        <p className="text-xs text-[#87919E] mb-3">
+          Aplica a planilha (9 clientes): investimento Meta/Google/TikTok + ROAS mínimo,
+          deriva o <strong>faturamento esperado</strong> (investimento × ROAS), atualiza as metas do mês,
+          sincroniza as semanais e recalcula a saúde. Idempotente — pode rodar de novo.
+        </p>
+        <button
+          type="button"
+          onClick={runAtualizarInvestimentos}
+          disabled={loading}
+          className="flex items-center gap-2 text-xs font-semibold text-[#0A1E2C] bg-[#95BBE2] rounded-lg px-3 py-2 transition-colors hover:bg-[#95BBE2]/90 disabled:opacity-50"
+        >
+          {loading ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />}
+          Atualizar investimentos + recalcular (9 clientes)
+        </button>
+
+        {loteRows && (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-[11px] text-[#87919E]">
+              <thead>
+                <tr className="text-left border-b border-[#38435C]">
+                  <th className="py-1.5 pr-3">Cliente</th>
+                  <th className="py-1.5 pr-3">Meta</th>
+                  <th className="py-1.5 pr-3">Google</th>
+                  <th className="py-1.5 pr-3">TikTok</th>
+                  <th className="py-1.5 pr-3">Total</th>
+                  <th className="py-1.5 pr-3">ROAS mín.</th>
+                  <th className="py-1.5 pr-3">Fat. esperado</th>
+                  <th className="py-1.5 pr-3">Realizado (mês)</th>
+                  <th className="py-1.5 pr-3">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loteRows.map((r) => (
+                  <tr key={r.cliente} className="border-b border-[#38435C]/40">
+                    <td className="py-1.5 pr-3 text-[#EBEBEB]">{r.cliente}</td>
+                    <td className="py-1.5 pr-3">R$ {r.investimentoMeta.toLocaleString('pt-BR')}</td>
+                    <td className="py-1.5 pr-3">R$ {r.investimentoGoogle.toLocaleString('pt-BR')}</td>
+                    <td className="py-1.5 pr-3">R$ {r.investimentoTiktok.toLocaleString('pt-BR')}</td>
+                    <td className="py-1.5 pr-3">R$ {r.investimentoTotal.toLocaleString('pt-BR')}</td>
+                    <td className="py-1.5 pr-3">{r.roasMinimo}</td>
+                    <td className="py-1.5 pr-3 text-[#EBEBEB]">R$ {r.faturamentoEsperado.toLocaleString('pt-BR')}</td>
+                    <td className="py-1.5 pr-3">{r.realizadoMes != null ? `R$ ${Math.round(r.realizadoMes).toLocaleString('pt-BR')}` : '—'}</td>
+                    <td className={`py-1.5 pr-3 font-semibold ${
+                      r.status === 'ACIMA' ? 'text-[#34c97a]'
+                      : r.status === 'DENTRO' ? 'text-[#95BBE2]'
+                      : r.status === 'ABAIXO' ? 'text-[#F59E0B]'
+                      : 'text-[#EF4444]'
+                    }`}>{r.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="mt-2 space-y-0.5">
+              {loteRows.filter((r) => r.observacao).map((r) => (
+                <p key={r.cliente} className="text-[11px] text-[#87919E]">
+                  <span className="text-[#EBEBEB]">{r.cliente}:</span> {r.observacao}
+                </p>
+              ))}
+            </div>
           </div>
         )}
       </div>
