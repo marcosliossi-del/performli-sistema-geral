@@ -67,6 +67,8 @@ function ClientBlock({ client }: { client: ClientRow }) {
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  // Senha opcional: em branco → sistema gera. Preenchida → credencial combinada.
+  const [password, setPassword] = useState('')
   // Senha temporária exibida UMA vez após criar/resetar (por usuário/novo acesso).
   const [tempPassword, setTempPassword] = useState<{ label: string; value: string } | null>(null)
 
@@ -74,15 +76,21 @@ function ClientBlock({ client }: { client: ClientRow }) {
     e.preventDefault()
     if (!name.trim() || !email.trim()) return
     startTransition(async () => {
-      const res = await createPortalAccess(client.id, email.trim(), name.trim())
+      const res = await createPortalAccess(
+        client.id,
+        email.trim(),
+        name.trim(),
+        password.trim() || undefined,
+      )
       if ('error' in res) {
         toast(res.error, 'err')
         return
       }
-      toast('Acesso criado. Copie a senha temporária.', 'ok')
+      toast('Acesso criado. Copie a senha para enviar ao cliente.', 'ok')
       setTempPassword({ label: email.trim(), value: res.tempPassword })
       setName('')
       setEmail('')
+      setPassword('')
       setShowForm(false)
       router.refresh()
     })
@@ -141,7 +149,7 @@ function ClientBlock({ client }: { client: ClientRow }) {
       {showForm && (
         <form
           onSubmit={handleCreate}
-          className="mb-4 grid gap-2.5 rounded-xl border border-[#38435C] bg-[#05141C] p-3.5 sm:grid-cols-[1fr_1fr_auto]"
+          className="mb-4 grid gap-2.5 rounded-xl border border-[#38435C] bg-[#05141C] p-3.5 sm:grid-cols-2"
         >
           <div className="space-y-1">
             <label htmlFor={`name-${client.id}`} className="text-[11px] font-medium text-[#87919E]">
@@ -170,7 +178,24 @@ function ClientBlock({ client }: { client: ClientRow }) {
               className="h-9 w-full rounded-lg border border-[#38435C] bg-[#0A1E2C] px-2.5 text-sm text-[#EBEBEB] placeholder-[#647488] focus:border-[#95BBE2] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#95BBE2]/50"
             />
           </div>
-          <div className="flex items-end">
+          <div className="space-y-1 sm:col-span-2">
+            <label htmlFor={`password-${client.id}`} className="text-[11px] font-medium text-[#87919E]">
+              Senha (opcional)
+            </label>
+            <input
+              id={`password-${client.id}`}
+              type="text"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Deixe em branco para o sistema gerar uma senha forte"
+              autoComplete="off"
+              className="h-9 w-full rounded-lg border border-[#38435C] bg-[#0A1E2C] px-2.5 text-sm text-[#EBEBEB] placeholder-[#647488] focus:border-[#95BBE2] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#95BBE2]/50"
+            />
+            <p className="text-[11px] text-[#647488]">
+              Use para entregar uma credencial já combinada com o cliente. Mínimo 8 caracteres.
+            </p>
+          </div>
+          <div className="flex items-end sm:col-span-2">
             <button
               type="submit"
               disabled={pending}
