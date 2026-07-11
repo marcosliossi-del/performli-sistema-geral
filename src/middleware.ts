@@ -10,7 +10,7 @@ const STAFF_AUDIENCE = 'performli-staff'
 const PORTAL_AUDIENCE = 'performli-portal'
 
 const PUBLIC_ROUTES = ['/login']
-const PROTECTED_PREFIX = ['/cockpit', '/operacional', '/meu-dia', '/minha-semana', '/validacoes', '/aceite', '/check-ins', '/processos', '/dashboard', '/clients', '/canais', '/tasks', '/t/', '/operations', '/reports', '/anti-churn', '/ai-agents', '/alerts', '/team', '/agency', '/managers', '/pipeline', '/comercial', '/financeiro', '/knowledge', '/settings']
+const PROTECTED_PREFIX = ['/cockpit', '/operacional', '/meu-dia', '/minha-semana', '/validacoes', '/aceite', '/check-ins', '/processos', '/dashboard', '/clients', '/canais', '/tasks', '/t/', '/operations', '/reports', '/anti-churn', '/ai-agents', '/alerts', '/team', '/agency', '/managers', '/pipeline', '/comercial', '/financeiro', '/knowledge', '/settings', '/portal-acessos']
 
 function getSecretKey() {
   const secret = process.env.SESSION_SECRET
@@ -22,9 +22,11 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // ── Portal do cliente (namespace de auth SEPARADO do staff) ────────────────
-  // /portal NUNCA cai na lógica interna de /login abaixo. Público: /portal/login.
-  // Demais rotas /portal exigem cookie do portal válido (mesmo secret HS256).
-  if (pathname.startsWith('/portal')) {
+  // Só o portal EXTERNO (`/portal` e `/portal/*`) cai aqui. Rotas internas de
+  // staff que só COMEÇAM com "portal" (ex.: `/portal-acessos`) NÃO entram —
+  // senão o admin sem cookie de portal é jogado para /portal/login.
+  // /portal nunca cai na lógica interna de /login abaixo. Público: /portal/login.
+  if (pathname === '/portal' || pathname.startsWith('/portal/')) {
     if (pathname === '/portal/login') return NextResponse.next()
 
     const portalToken = request.cookies.get(PORTAL_COOKIE)?.value
