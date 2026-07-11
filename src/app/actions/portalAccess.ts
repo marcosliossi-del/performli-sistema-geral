@@ -36,20 +36,33 @@ async function requireAdmin(): Promise<{ userId: string; role: string } | null> 
   return { userId: session.userId, role: session.role }
 }
 
-/** Cria um acesso do portal para um cliente. Retorna a senha temporária (1x). */
+/**
+ * Cria um acesso do portal para um cliente. Retorna a senha (1x).
+ *
+ * `password` é opcional: em branco, o sistema gera uma senha temporária forte.
+ * Quando o admin informa uma senha (ex.: entregar uma credencial já combinada
+ * com o cliente), ela é usada — mínimo de 8 caracteres. Como o portal ainda não
+ * tem fluxo de troca de senha pelo cliente, a senha definida aqui é a senha de
+ * acesso efetiva; a escolha de reutilizar uma senha conhecida é do admin.
+ */
 export async function createPortalAccess(
   clientId: string,
   email: string,
   name: string,
+  password?: string,
 ): Promise<AccessWithPassword> {
   const admin = await requireAdmin()
   if (!admin) return { error: 'Sem permissão para gerenciar acessos do portal.' }
 
   const cleanEmail = String(email ?? '').trim().toLowerCase()
   const cleanName = String(name ?? '').trim()
+  const customPassword = String(password ?? '').trim()
 
   if (!EMAIL_RE.test(cleanEmail)) return { error: 'E-mail inválido.' }
   if (cleanName.length < 2) return { error: 'Nome obrigatório.' }
+  if (customPassword && customPassword.length < 8) {
+    return { error: 'A senha definida precisa ter ao menos 8 caracteres.' }
+  }
 
   try {
     const client = await prisma.client.findUnique({ where: { id: clientId }, select: { id: true } })
@@ -61,7 +74,8 @@ export async function createPortalAccess(
     })
     if (existing) return { error: 'Este e-mail já possui acesso ao portal.' }
 
-    const tempPassword = generateTempPassword()
+    // Senha definida pelo admin, ou gerada quando o campo vem em branco.
+    const tempPassword = customPassword || generateTempPassword()
     const passwordHash = await bcrypt.hash(tempPassword, 12)
 
     const user = await prisma.clientPortalUser.create({
@@ -75,7 +89,8 @@ export async function createPortalAccess(
       entityType: 'ClientPortalUser',
       entityId: user.id,
       clientId,
-      metadata: { email: cleanEmail, name: cleanName }, // NUNCA a senha
+      // NUNCA a senha em si — só se foi definida pelo admin ou gerada.
+      metadata: { email: cleanEmail, name: cleanName, customPassword: Boolean(customPassword) },
     })
 
     return { ok: true, tempPassword }
