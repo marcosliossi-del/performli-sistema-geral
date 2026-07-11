@@ -31,6 +31,7 @@ import {
   Repeat,
   Headset,
   Settings,
+  KeyRound,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useNav } from './nav-context'
@@ -95,6 +96,7 @@ const navigation: NavSection[] = [
           { name: 'Validação da CS',        href: '/validacoes', icon: ShieldCheck,     countKey: 'validacoes', alert: true, module: 'clientes' },
           { name: 'Central de Comunicação', href: '/canais',     icon: MessagesSquare,  module: 'clientes' },
           { name: 'Relatórios',             href: '/reports',    icon: BarChart3,       module: 'clientes' },
+          { name: 'Acessos do Portal',      href: '/portal-acessos', icon: KeyRound,    module: 'gestaoEquipeEquipe' },
         ],
       },
       {
