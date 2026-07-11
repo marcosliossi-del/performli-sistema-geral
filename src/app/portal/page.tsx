@@ -14,6 +14,8 @@ import { KpiCardSkeleton } from '@/components/portal/KpiCardSkeleton'
 import { ProjectionCard } from '@/components/portal/ProjectionCard'
 import { FunnelSection } from '@/components/portal/FunnelSection'
 import { ComingSoonNote } from '@/components/portal/ComingSoonNote'
+import { BreakdownsSection } from '@/components/portal/BreakdownsSection'
+import { BreakdownsSkeleton } from '@/components/portal/BreakdownsSkeleton'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,6 +71,22 @@ export default async function PortalDashboardPage({
       <Suspense fallback={<DashboardSkeleton />}>
         <DashboardSection clientId={client.id} period={period} />
       </Suspense>
+
+      {/*
+        Quebras de e-commerce (GA4Sync) em Suspense SEPARADO: o adapter é "live"
+        e pode ser mais lento que os KPIs. Assim os 10 cards + funil aparecem sem
+        esperar as análises da loja. clientId SEMPRE da sessão (getAuthorizedClient).
+      */}
+      <Suspense fallback={<BreakdownsSkeleton />}>
+        <BreakdownsSection clientId={client.id} period={period} />
+      </Suspense>
+
+      {/*
+        "Em breve" agora cobre APENAS quebras que a API ainda não expõe
+        (faixa etária/gênero). Canais, produtos, categorias e regiões saíram do
+        "em breve" — vêm com dado real na BreakdownsSection acima.
+      */}
+      <ComingSoonNote />
     </div>
   )
 }
@@ -116,8 +134,6 @@ async function DashboardSection({
       </div>
 
       <FunnelSection funnel={funnel} />
-
-      <ComingSoonNote />
 
       {/* Regra 10 do CLAUDE.md: tela com dado crítico mostra última atualização. */}
       <p className="text-right text-xs text-[#647488]">Atualizado em {updatedAt}</p>

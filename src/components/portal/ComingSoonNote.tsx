@@ -1,12 +1,13 @@
 import { Sparkles } from 'lucide-react'
 
 /**
- * Nota honesta sobre análises que AINDA não têm dado no schema (quebras por
- * idade, canal, categoria, região, top produtos — pendências registradas em
- * kpi-registry.ts). NÃO renderiza gráfico falso nem número inventado: apenas
- * comunica que virão em breve.
+ * Nota honesta sobre análises que AINDA não têm dado disponível. Canais,
+ * categorias, regiões e produtos JÁ saíram daqui — são renderizados com dado
+ * real pela BreakdownsSection (adapter GA4Sync). Sobram aqui apenas as quebras
+ * que a API ainda NÃO expõe (ex.: perfil por faixa etária/gênero). NÃO renderiza
+ * gráfico falso nem número inventado: apenas comunica que virão em breve.
  */
-const BREAKDOWNS = ['Faixa etária', 'Canais', 'Categorias', 'Região', 'Produtos mais vendidos']
+const BREAKDOWNS = ['Faixa etária', 'Gênero do público']
 
 export function ComingSoonNote() {
   return (
