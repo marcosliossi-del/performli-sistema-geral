@@ -33,6 +33,55 @@ export type KpiData = {
   series: KpiPoint[]
 }
 
+/**
+ * Snapshot do portal: `AggregatableSnapshot` (fonte única de cálculo) + os
+ * campos crus GA4 que NÃO são MetricType e o portal soma à parte
+ * (`newUsers`, `addToCarts`, `checkoutsStarted`) + `date` para o bucketing.
+ * `conversions`/`clicks` já vêm de `AggregatableSnapshot`.
+ */
+type PortalSnapshot = AggregatableSnapshot & {
+  date: Date
+  newUsers: number | null
+  addToCarts: number | null
+  checkoutsStarted: number | null
+}
+
+/** Uma etapa do funil de vendas (valor absoluto no período). */
+export type FunnelStage = { key: string; label: string; value: number }
+
+/**
+ * Funil de vendas do período: 4 etapas GA4 + taxas de conversão etapa→etapa e
+ * taxa geral. Todas as taxas em PERCENTUAL (0–100); divisão por zero → 0.
+ */
+export type PortalFunnel = {
+  stages: FunnelStage[]
+  /** carrinho ÷ sessões (%). */
+  cartRate: number
+  /** checkout ÷ carrinho (%). */
+  checkoutRate: number
+  /** compras ÷ checkout (%). */
+  purchaseRate: number
+  /** compras ÷ sessões (%) — conversão geral do funil. */
+  overallRate: number
+}
+
+/**
+ * Projeção do faturamento do MÊS CORRENTE (parede SP) por run-rate. Card
+ * informativo — INDEPENDE do seletor de período (é sempre o mês em andamento).
+ */
+export type PortalProjection = {
+  /** Projeção de fechamento do mês (null se não há realizado/dia decorrido). */
+  value: number | null
+  /** Faturamento acumulado do mês até hoje (dia-parede SP). */
+  accumulated: number | null
+  /** Dias decorridos no mês (inclui hoje). */
+  daysElapsed: number
+  /** Total de dias do mês corrente. */
+  daysInMonth: number
+  /** Mês de referência 'YYYY-MM' (parede SP). */
+  month: string
+}
+
 const VALID_PERIODS: readonly PortalPeriod[] = ['7d', '14d', '30d', 'mes_atual', 'mes_anterior']
 
 /** Whitelist manual (zod não está no repo). Default '30d'. */
@@ -112,22 +161,46 @@ function resolveWindows(period: PortalPeriod, now: Date = new Date()): Window {
 
 // ── Cálculo ───────────────────────────────────────────────────────────────────
 
-/** Sessões GA4 = soma do campo `clicks` dos snapshots de plataforma GA4. */
-function sumGa4Sessions(snaps: AggregatableSnapshot[]): number | null {
+/**
+ * Soma de um campo cru GA4 (`clicks`=sessões, `newUsers`=clientes novos, etc.)
+ * dos snapshots de plataforma GA4. Retorna null quando não há snapshot GA4 ou o
+ * total é 0 (sem dado no período), coerente com `aggregateSnapshots`.
+ */
+function sumGa4Field(
+  snaps: PortalSnapshot[],
+  field: 'clicks' | 'newUsers' | 'addToCarts' | 'checkoutsStarted' | 'conversions',
+): number | null {
   const ga4 = snaps.filter((s) => s.platformAccount.platform === 'GA4')
   if (ga4.length === 0) return null
-  const total = ga4.reduce((acc, s) => acc + (s.clicks != null ? Number(s.clicks) : 0), 0)
+  const total = ga4.reduce((acc, s) => {
+    const v = s[field]
+    return acc + (v != null ? Number(v) : 0)
+  }, 0)
   return total > 0 ? total : null
 }
 
-/** Valor de um KPI para um conjunto de snapshots (roteia SESSOES à parte). */
+/**
+ * Valor de um KPI para um conjunto de snapshots. Roteia à parte os casos que
+ * NÃO são MetricType do Prisma (somas de campos crus GA4); o resto vai à fonte
+ * única `aggregateSnapshots`.
+ */
 function computeValue(
   metric: string,
-  snaps: AggregatableSnapshot[],
+  snaps: PortalSnapshot[],
   businessType: BusinessType,
 ): number | null {
-  if (metric === 'SESSOES') return sumGa4Sessions(snaps)
+  if (metric === 'SESSOES') return sumGa4Field(snaps, 'clicks')
+  if (metric === 'NEW_USERS') return sumGa4Field(snaps, 'newUsers')
   return aggregateSnapshots(snaps, metric as MetricType, businessType)
+}
+
+/** Divisão em % protegida contra zero/NaN/Infinity (numerador,denominador). */
+function safePct(num: number | null, den: number | null): number {
+  const n = Number(num ?? 0)
+  const d = Number(den ?? 0)
+  if (!(d > 0) || !Number.isFinite(n)) return 0
+  const pct = (n / d) * 100
+  return Number.isFinite(pct) ? pct : 0
 }
 
 async function loadKpis(clientId: string, period: PortalPeriod): Promise<Array<[string, KpiData]>> {
@@ -147,12 +220,12 @@ async function loadKpis(clientId: string, period: PortalPeriod): Promise<Array<[
     },
     include: { platformAccount: { select: { platform: true } } },
   })
-  const snaps = rows as unknown as Array<AggregatableSnapshot & { date: Date }>
+  const snaps = rows as unknown as PortalSnapshot[]
 
   // Particiona em memória: por janela e por dia (bucket = dia-parede UTC).
-  const current: AggregatableSnapshot[] = []
-  const previous: AggregatableSnapshot[] = []
-  const byDay = new Map<string, AggregatableSnapshot[]>()
+  const current: PortalSnapshot[] = []
+  const previous: PortalSnapshot[] = []
+  const byDay = new Map<string, PortalSnapshot[]>()
 
   for (const s of snaps) {
     const day = utcDateString(s.date)
@@ -168,7 +241,9 @@ async function loadKpis(clientId: string, period: PortalPeriod): Promise<Array<[
 
   const currentDays = dayRange(win.start, win.end)
 
-  const entries: Array<[string, KpiData]> = KPI_REGISTRY.map((def) => {
+  // KPIs standalone (ex.: projeção do mês) NÃO seguem o período nem geram série
+  // — são servidos por função dedicada. Aqui só entram os KPIs de série.
+  const entries: Array<[string, KpiData]> = KPI_REGISTRY.filter((d) => !d.standalone).map((def) => {
     const value = computeValue(def.metric, current, businessType)
     const previousValue = computeValue(def.metric, previous, businessType)
 
@@ -206,4 +281,119 @@ export async function getPortalKpis(
   )
   const entries = await cached()
   return new Map(entries)
+}
+
+// ── Funil de vendas ─────────────────────────────────────────────────────────
+
+async function loadFunnel(clientId: string, period: PortalPeriod): Promise<PortalFunnel> {
+  const win = resolveWindows(period)
+
+  // UMA query, filtrando clientId (defesa em profundidade), só da janela ATUAL
+  // (o funil não compara com período anterior). Só GA4 tem as etapas.
+  const rows = await prisma.metricSnapshot.findMany({
+    where: {
+      clientId,
+      date: { gte: utcDayStart(win.start), lte: utcDayStart(win.end) },
+      platformAccount: { platform: 'GA4' },
+    },
+    select: { clicks: true, addToCarts: true, checkoutsStarted: true, conversions: true },
+  })
+
+  let sessoes = 0
+  let carrinho = 0
+  let checkout = 0
+  let compras = 0
+  for (const r of rows) {
+    sessoes += r.clicks != null ? Number(r.clicks) : 0
+    carrinho += r.addToCarts != null ? Number(r.addToCarts) : 0
+    checkout += r.checkoutsStarted != null ? Number(r.checkoutsStarted) : 0
+    compras += r.conversions != null ? Number(r.conversions) : 0
+  }
+
+  const stages: FunnelStage[] = [
+    { key: 'sessoes', label: 'Visitas', value: sessoes },
+    { key: 'carrinho', label: 'Adicionaram ao carrinho', value: carrinho },
+    { key: 'checkout', label: 'Iniciaram o checkout', value: checkout },
+    { key: 'compras', label: 'Compraram', value: compras },
+  ]
+
+  return {
+    stages,
+    cartRate: safePct(carrinho, sessoes),
+    checkoutRate: safePct(checkout, carrinho),
+    purchaseRate: safePct(compras, checkout),
+    overallRate: safePct(compras, sessoes),
+  }
+}
+
+/**
+ * Funil de vendas do portal (cliente, período). Cache próprio com clientId +
+ * period na chave e MESMO TTL/tag dos KPIs (revalidate 900s).
+ */
+export async function getPortalFunnel(
+  clientId: string,
+  period: PortalPeriod,
+): Promise<PortalFunnel> {
+  const cached = unstable_cache(
+    () => loadFunnel(clientId, period),
+    ['portal-funnel', clientId, period],
+    { revalidate: 900, tags: [`portal-kpis:${clientId}`] },
+  )
+  return cached()
+}
+
+// ── Projeção do mês (run-rate) ──────────────────────────────────────────────
+
+async function loadProjection(clientId: string): Promise<PortalProjection> {
+  const today = saoPauloDateString() // 'YYYY-MM-DD' parede SP
+  const month = today.slice(0, 7)
+  const monthStart = `${month}-01`
+  const daysElapsed = Number(today.slice(8, 10)) // dia do mês (inclui hoje)
+  const year = Number(month.slice(0, 4))
+  const monthNum = Number(month.slice(5, 7)) // 1-based
+  const daysInMonth = new Date(Date.UTC(year, monthNum, 0)).getUTCDate()
+
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { businessType: true },
+  })
+  const businessType: BusinessType = client?.businessType ?? 'ECOMMERCE'
+
+  // Faturamento acumulado do mês corrente até hoje. Query filtra clientId; a
+  // janela usa utcDayStart (mesma convenção @db.Date do restante do módulo).
+  const rows = await prisma.metricSnapshot.findMany({
+    where: {
+      clientId,
+      date: { gte: utcDayStart(monthStart), lte: utcDayStart(today) },
+    },
+    include: { platformAccount: { select: { platform: true } } },
+  })
+  const snaps = rows as unknown as PortalSnapshot[]
+
+  const accumulated = aggregateSnapshots(snaps, 'FATURAMENTO', businessType)
+
+  // Run-rate simples: acumulado ÷ dias decorridos × dias do mês. NÃO reusa
+  // `projetarAlvo` (@/lib/metas/projection): aquele é crescimento MoM (+15%
+  // e-commerce) do fechamento do mês ANTERIOR, não a projeção intra-mês do
+  // ritmo atual pedida aqui. Guarda contra divisão por zero (dia 1 antes do
+  // primeiro sync → daysElapsed>0 sempre, mas defensivo).
+  const value =
+    accumulated != null && daysElapsed > 0
+      ? Math.round((accumulated / daysElapsed) * daysInMonth * 100) / 100
+      : null
+
+  return { value, accumulated, daysElapsed, daysInMonth, month }
+}
+
+/**
+ * Projeção do faturamento do mês corrente (run-rate). Independe do período do
+ * dashboard — chave de cache só com clientId. TTL/tag iguais aos KPIs.
+ */
+export async function getPortalProjection(clientId: string): Promise<PortalProjection> {
+  const cached = unstable_cache(
+    () => loadProjection(clientId),
+    ['portal-projection', clientId],
+    { revalidate: 900, tags: [`portal-kpis:${clientId}`] },
+  )
+  return cached()
 }

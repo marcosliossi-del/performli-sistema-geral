@@ -9,12 +9,19 @@ interface KpiCardProps {
   data: KpiData | undefined
   /**
    * Semântica de cor invertida: para métricas onde MENOR é melhor (ex.: custo
-   * por venda). Nenhuma do conjunto provisório usa isso, mas fica preparado.
+   * por visita/CPS). Sobe = ruim (vermelho), cai = bom (verde).
    */
   lowerIsBetter?: boolean
+  /**
+   * Delta sem juízo de valor: mostra a variação e a seta, mas SEMPRE em cinza
+   * neutro. Para métricas onde subir/cair não é intrinsecamente bom nem ruim
+   * (ex.: Investimento — gastar mais ou menos depende da estratégia). Tem
+   * precedência sobre `lowerIsBetter`.
+   */
+  neutralDelta?: boolean
 }
 
-export function KpiCard({ def, data, lowerIsBetter = false }: KpiCardProps) {
+export function KpiCard({ def, data, lowerIsBetter = false, neutralDelta = false }: KpiCardProps) {
   const hasData = data && data.value !== null
   const deltaPct = data?.deltaPct ?? null
   const deltaLabel = formatDeltaPct(deltaPct)
@@ -23,7 +30,7 @@ export function KpiCard({ def, data, lowerIsBetter = false }: KpiCardProps) {
   const isUp = deltaPct !== null && deltaPct > 0
   const isDown = deltaPct !== null && deltaPct < 0
   const isGood =
-    deltaPct === null || deltaPct === 0
+    neutralDelta || deltaPct === null || deltaPct === 0
       ? null
       : lowerIsBetter
         ? deltaPct < 0
