@@ -70,7 +70,7 @@ async function KpiSection({
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {KPI_REGISTRY.map((def) => (
           <Suspense key={def.key} fallback={<KpiCardSkeleton />}>
-            <KpiCard def={def} data={data.get(def.metric)} />
+            <KpiCard def={def} data={data.get(def.key)} />
           </Suspense>
         ))}
       </div>

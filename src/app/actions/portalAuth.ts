@@ -15,6 +15,12 @@ const LOCK_MINUTES = 15
 // "e-mail não existe" de "senha errada" de "conta bloqueada" (evita enumeração).
 const GENERIC_ERROR = 'Credenciais inválidas ou acesso bloqueado. Tente mais tarde.'
 
+// Hash bcrypt descartável (custo 12, mesmo dos reais) usado como "dummy compare"
+// quando o usuário não existe / está inativo / bloqueado. Mantém o tempo de
+// resposta constante — sem ele, um atacante mede a diferença entre "sem bcrypt"
+// e "com bcrypt" para enumerar e-mails cadastrados.
+const DUMMY_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEeO3f1uK5C1V0N.9sT6bF7l0Kx0zP8yQe.'
+
 /**
  * Login do portal do cliente. Rate limit serverless-safe por contadores no
  * banco (failedAttempts/lockedUntil). Em sucesso, cria sessão, audita e
@@ -33,11 +39,16 @@ export async function portalLogin(_prevState: LoginState, formData: FormData): P
       where: { email: { equals: email, mode: 'insensitive' } },
     })
 
-    // Usuário inexistente ou inativo → mesma resposta genérica.
-    if (!user || !user.active) return { error: GENERIC_ERROR }
+    // Usuário inexistente ou inativo → resposta genérica, MAS com um bcrypt
+    // descartável antes para não vazar por tempo que o e-mail não existe.
+    if (!user || !user.active) {
+      await bcrypt.compare(password, DUMMY_HASH)
+      return { error: GENERIC_ERROR }
+    }
 
-    // Lockout ativo.
+    // Lockout ativo → mesmo tratamento de tempo constante.
     if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+      await bcrypt.compare(password, DUMMY_HASH)
       return { error: GENERIC_ERROR }
     }
 
@@ -64,13 +75,17 @@ export async function portalLogin(_prevState: LoginState, formData: FormData): P
 
     await createPortalSession(user)
 
+    // actorId FICA null: AuditLog.actorId é FK para User (staff interno) com
+    // onDelete SetNull — gravar um ClientPortalUser.id viola a FK e a auditoria
+    // some silenciosamente. O ator externo vai em metadata.
     await writeAuditLog({
       action: 'portal.login',
-      actorId: user.id,
+      actorId: null,
       actorRole: 'CLIENT_PORTAL',
       entityType: 'ClientPortalUser',
       entityId: user.id,
       clientId: user.clientId,
+      metadata: { portalUserId: user.id, email: user.email },
     })
 
     shouldRedirect = true

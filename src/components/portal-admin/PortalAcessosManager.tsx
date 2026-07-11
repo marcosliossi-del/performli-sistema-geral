@@ -75,14 +75,12 @@ function ClientBlock({ client }: { client: ClientRow }) {
     if (!name.trim() || !email.trim()) return
     startTransition(async () => {
       const res = await createPortalAccess(client.id, email.trim(), name.trim())
-      if (res.error) {
+      if ('error' in res) {
         toast(res.error, 'err')
         return
       }
       toast('Acesso criado. Copie a senha temporária.', 'ok')
-      if (res.tempPassword) {
-        setTempPassword({ label: email.trim(), value: res.tempPassword })
-      }
+      setTempPassword({ label: email.trim(), value: res.tempPassword })
       setName('')
       setEmail('')
       setShowForm(false)
@@ -93,14 +91,12 @@ function ClientBlock({ client }: { client: ClientRow }) {
   function handleReset(user: PortalUser) {
     startTransition(async () => {
       const res = await resetPortalPassword(user.id)
-      if (res.error) {
+      if ('error' in res) {
         toast(res.error, 'err')
         return
       }
       toast('Senha redefinida. Envie a nova senha ao cliente.', 'ok')
-      if (res.tempPassword) {
-        setTempPassword({ label: user.email, value: res.tempPassword })
-      }
+      setTempPassword({ label: user.email, value: res.tempPassword })
       router.refresh()
     })
   }
@@ -108,7 +104,7 @@ function ClientBlock({ client }: { client: ClientRow }) {
   function handleToggle(user: PortalUser) {
     startTransition(async () => {
       const res = await setPortalAccessActive(user.id, !user.active)
-      if (res.error) {
+      if ('error' in res) {
         toast(res.error, 'err')
         return
       }

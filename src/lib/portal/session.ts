@@ -26,6 +26,9 @@ type PortalJwtPayload = PortalSession & { expiresAt: string }
 
 const PORTAL_COOKIE = 'performli_portal'
 const EXPIRES_IN = 7 * 24 * 60 * 60 * 1000 // 7 dias
+// Claim discriminador (audience): impede que um token interno (mesmo
+// SESSION_SECRET) seja aceito como sessão de portal e vice-versa.
+export const PORTAL_AUDIENCE = 'performli-portal'
 
 function getSecretKey() {
   const secret = process.env.SESSION_SECRET
@@ -46,6 +49,7 @@ export async function createPortalSession(user: ClientPortalUser): Promise<void>
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
+    .setAudience(PORTAL_AUDIENCE)
     .setExpirationTime(expiresAt)
     .sign(getSecretKey())
 
@@ -68,7 +72,16 @@ export async function getPortalSession(): Promise<PortalSession | null> {
   try {
     const { payload } = await jwtVerify(token, getSecretKey(), {
       algorithms: ['HS256'],
+      audience: PORTAL_AUDIENCE,
     })
+    // Validação de shape: um token válido de outro namespace (mesmo segredo)
+    // nunca deve ser aceito como sessão de portal sem os campos esperados.
+    if (
+      typeof payload.portalUserId !== 'string' ||
+      typeof payload.clientId !== 'string'
+    ) {
+      return null
+    }
     const p = payload as unknown as PortalJwtPayload
     return {
       portalUserId: p.portalUserId,

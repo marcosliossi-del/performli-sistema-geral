@@ -26,6 +26,9 @@ export type SessionPayload = {
 
 const SESSION_COOKIE = 'performli_session'
 const EXPIRES_IN = 7 * 24 * 60 * 60 * 1000 // 7 days
+// Claim discriminador (audience): impede que um token do PORTAL externo
+// (mesmo SESSION_SECRET) seja aceito como sessão interna e vice-versa.
+export const STAFF_AUDIENCE = 'performli-staff'
 
 function getSecretKey() {
   const secret = process.env.SESSION_SECRET
@@ -39,6 +42,7 @@ export async function createSession(payload: Omit<SessionPayload, 'expiresAt'>) 
   const token = await new SignJWT({ ...payload, expiresAt: expiresAt.toISOString() })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
+    .setAudience(STAFF_AUDIENCE)
     .setExpirationTime(expiresAt)
     .sign(getSecretKey())
 
@@ -61,7 +65,13 @@ export async function getSession(): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getSecretKey(), {
       algorithms: ['HS256'],
+      audience: STAFF_AUDIENCE,
     })
+    // Validação de shape: um token válido de outro namespace (mesmo segredo)
+    // nunca deve ser aceito como sessão interna sem os campos esperados.
+    if (typeof payload.userId !== 'string' || typeof payload.role !== 'string') {
+      return null
+    }
     return payload as unknown as SessionPayload
   } catch {
     return null

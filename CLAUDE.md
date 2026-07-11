@@ -184,6 +184,27 @@ clareza o que o ClickUp não mostra:
 
 ---
 
+## ÁREA DE CLIENTES (portal externo)
+
+Portal do lojista em `/portal` (docs completas: `docs/AREA_CLIENTES.md`).
+Convenções INEGOCIÁVEIS desta área:
+
+1. **Namespace de auth separado.** NUNCA adicionar `CLIENT` ao enum `Role`.
+   Auth do portal usa cookie próprio `performli_portal` + model
+   `ClientPortalUser` (`src/lib/portal/session.ts`).
+2. **Guard obrigatório.** Toda página/action do portal chama
+   `getAuthorizedClient()` no topo. O middleware é a primeira barreira, não a
+   única. `clientId` JAMAIS vem de param/body/header — só da sessão assinada.
+3. **Toda query do portal filtra `clientId` explicitamente** (defesa em
+   profundidade, mesmo com o guard).
+4. **Cache sempre com `clientId` na chave** (padrão: `unstable_cache` com
+   `['portal-kpis', clientId, period]`).
+5. **KPIs só via `src/lib/portal/kpi-registry.ts`.** Nunca hardcode KPI em
+   componente; dado que não existe no schema NÃO é inventado — vira pendência
+   documentada em `docs/AREA_CLIENTES.md`.
+
+---
+
 ## FLUXO DE AGENTES (orquestração)
 
 ```
