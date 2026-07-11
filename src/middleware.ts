@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
 const SESSION_COOKIE = 'performli_session'
+const PORTAL_COOKIE = 'performli_portal'
 
 const PUBLIC_ROUTES = ['/login']
 const PROTECTED_PREFIX = ['/cockpit', '/operacional', '/meu-dia', '/minha-semana', '/validacoes', '/aceite', '/check-ins', '/processos', '/dashboard', '/clients', '/canais', '/tasks', '/t/', '/operations', '/reports', '/anti-churn', '/ai-agents', '/alerts', '/team', '/agency', '/managers', '/pipeline', '/comercial', '/financeiro', '/knowledge', '/settings']
@@ -14,6 +15,25 @@ function getSecretKey() {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+
+  // ── Portal do cliente (namespace de auth SEPARADO do staff) ────────────────
+  // /portal NUNCA cai na lógica interna de /login abaixo. Público: /portal/login.
+  // Demais rotas /portal exigem cookie do portal válido (mesmo secret HS256).
+  if (pathname.startsWith('/portal')) {
+    if (pathname === '/portal/login') return NextResponse.next()
+
+    const portalToken = request.cookies.get(PORTAL_COOKIE)?.value
+    if (portalToken) {
+      try {
+        await jwtVerify(portalToken, getSecretKey(), { algorithms: ['HS256'] })
+        return NextResponse.next()
+      } catch {
+        // token inválido → cai no redirect abaixo
+      }
+    }
+    return NextResponse.redirect(new URL('/portal/login', request.url))
+  }
+
   const isPublic = PUBLIC_ROUTES.includes(pathname)
   const isProtected = PROTECTED_PREFIX.some((p) => pathname.startsWith(p))
 

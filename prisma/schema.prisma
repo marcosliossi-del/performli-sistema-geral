@@ -254,11 +254,37 @@ model Client {
   weeklyCheckins      ClientWeeklyCheckin[]
   taskLists           TaskList[]
   productChanges      ClientProductChange[]
+  portalUsers         ClientPortalUser[]
 
   @@index([status])
   @@index([pipelineStage])
   @@index([gestorId])
   @@index([csId])
+}
+
+// ─── PORTAL DO CLIENTE (área externa — acesso do próprio cliente) ────────────
+//
+// Namespace de autenticação SEPARADO do staff (User): cookie próprio
+// `performli_portal`, sessão própria. NÃO reusa o enum Role nem o model User —
+// isolamento duro entre staff interno e cliente externo (decisão §2.1 do
+// diagnóstico). Rate limit serverless-safe por contadores no banco
+// (failedAttempts/lockedUntil), sem estado em memória.
+model ClientPortalUser {
+  id            String    @id @default(cuid())
+  clientId      String
+  email         String    @unique
+  name          String
+  passwordHash  String
+  active        Boolean   @default(true)
+  failedAttempts Int      @default(0)
+  lockedUntil   DateTime?
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
 }
 
 model ClientInteraction {
