@@ -3,8 +3,9 @@ import { ProfileForm }     from '@/components/settings/ProfileForm'
 import { PasswordForm }    from '@/components/settings/PasswordForm'
 import { WhatsAppConnect } from '@/components/settings/WhatsAppConnect'
 import { AsaasStatus }     from '@/components/settings/AsaasStatus'
+import { Ga4SyncStatus }   from '@/components/settings/Ga4SyncStatus'
 import { SeedOperacaoCard } from '@/components/settings/SeedOperacaoCard'
-import { User, Lock, MessageCircle, Landmark, ListChecks } from 'lucide-react'
+import { User, Lock, MessageCircle, Landmark, ListChecks, LineChart } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -80,6 +81,19 @@ export default async function SettingsPage() {
               Cole sua API Key do Asaas para sincronização financeira automática.
             </p>
             <AsaasStatus />
+          </div>
+
+          {/* GA4Sync — KPIs de e-commerce Nuvemshop (portal do cliente) */}
+          <div className="bg-[#0A1E2C] border border-[#38435C] rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-2">
+              <LineChart size={16} className="text-[#95BBE2]" />
+              <h2 className="text-sm font-semibold text-[#EBEBEB]">GA4Sync</h2>
+            </div>
+            <p className="text-xs text-[#87919E] mb-5">
+              Cole a API Key do GA4Sync para alimentar as análises de e-commerce
+              (canais, produtos, categorias, regiões e retenção) no portal do cliente.
+            </p>
+            <Ga4SyncStatus />
           </div>
 
           {/* WhatsApp */}
