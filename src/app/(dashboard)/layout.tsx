@@ -1,10 +1,12 @@
 export const dynamic = 'force-dynamic'
 
+import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { getSession } from '@/lib/session'
 import { getSidebarCounts } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { homeForUser } from '@/lib/home'
+import { assertPathAccess } from '@/lib/nav-access'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 
 export default async function DashboardLayout({
@@ -16,6 +18,16 @@ export default async function DashboardLayout({
 }) {
   const session = await getSession()
   if (!session) redirect('/login')
+
+  // Enforcement de ACESSO REAL da ACL de navegação por espaço (choke point).
+  // O pathname vem do header `x-pathname` propagado pelo middleware (o edge não
+  // tem Prisma). Se algum espaço custom do path bloqueia o usuário → /cockpit.
+  // ADMIN passa sempre (assertPathAccess trata internamente).
+  const pathname = (await headers()).get('x-pathname') ?? ''
+  const FALLBACK = '/cockpit'
+  if (pathname && pathname !== FALLBACK && !(await assertPathAccess(session, pathname))) {
+    redirect(FALLBACK)
+  }
 
   const counts = await getSidebarCounts(session.userId, session.role)
 
