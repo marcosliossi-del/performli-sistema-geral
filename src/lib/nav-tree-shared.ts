@@ -1,3 +1,4 @@
+import type { Module } from '@/lib/rbac'
 /**
  * Tipos PUROS + transformações client-safe da árvore de navegação editável
  * (decisão do Marcos, 2026-07-13 — "sidebar como no ClickUp").
@@ -103,7 +104,7 @@ export type SeedLeaf = {
   label: string
   href: string
   spaceKey: string
-  module: string | null
+  module: Module | null
   icon: string
   countKey?: NavCountKey
   alert?: boolean
