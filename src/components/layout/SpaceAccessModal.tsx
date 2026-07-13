@@ -56,8 +56,8 @@ export function SpaceAccessModal({
     setLoadError(null)
     getSpaceAccessAdmin().then((res) => {
       if (!alive) return
-      if (!res.ok) {
-        setLoadError(res.error)
+      if (!res.ok || !res.data) {
+        setLoadError(!res.ok ? res.error : 'Não foi possível carregar os dados de acesso.')
         setLoading(false)
         return
       }
