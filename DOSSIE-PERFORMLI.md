@@ -726,6 +726,33 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-13 — Validação zod permissiva de INPUT em rotas internas (AL-6, parcial)
+- Adicionado `z.safeParse` **permissivo** (aceita exatamente o que já era aceito;
+  rejeita só malformado com `400 { error: <pt-BR string> }`, sem `flatten()` cru —
+  respeita F-04) nas rotas: `clients/[clientId]/budget` (PATCH, `value` coercível ≥0),
+  `admin/contract-fee` (POST formData, `id`+`feeValue` coercível ≥0),
+  `ai/chat` (POST, `agentType`+`messages[]`+`clientId?`),
+  `ai/dashboard-chat` (POST, `question`+`context?` nullish),
+  `sync/ga4|meta|google-ads|nuvemshop` (POST, `platformAccountId?`+`clientId?` opcionais),
+  `sync/health` (POST, `clientId?`), `nuvemshop/reconciliation` (POST, `clientId`+`since?`+`until?`).
+- **NÃO** tocado: auth/RBAC/posse, `isCronAuthorized`, comportamento de sucesso.
+- **Pulado:** `admin/seed-operacao` — não lê JSON body; só query params (`phase`/`cursor`/
+  `batch`/`lote`/`confirm`) já validados defensivamente (whitelist, clamp, fallthrough
+  para `seed`). Apertar com enum mudaria o comportamento aceito (phase desconhecida hoje
+  cai em `seed`). Webhooks/crons/financeiro fora de escopo desta fatia.
+- Achado AL-6 permanece **parcial**: faltam as actions ADMIN (`goals.ts`, `updateClient.ts`).
+
+### 2026-07-13 — Perf financeiro: cashflow e summary (ME-9)
+- **`src/app/api/financeiro/cashflow/route.ts`**: `prisma.client.count({ ACTIVE })`
+  era invariante mas rodava dentro do loop de meses — movido para 1× após o loop.
+  O loop de N meses (pares de `aggregate` em série) foi paralelizado com
+  `Promise.all` sobre os meses (ordem preservada via `map`/índice). Saída idêntica.
+- **`src/app/api/financeiro/summary/route.ts`**: 5 queries independentes que rodavam
+  em série (inadimplentes, inadimplenciaValue, entradasPrevistas, saidasPrevistas,
+  churnedThisPeriod) agrupadas em um `Promise.all`. `prevPayments`/`prevExpenses`
+  trocados de `findMany`+`reduce` por `aggregate({_sum:{value}})`. Removido `include`
+  morto (`customer.name`) das `subscriptions`. ZERO mudança de números/shape.
+
 ### 2026-07-13 — DAL consome `aggregateSnapshots` para receita/ROAS (AL-2/F-01, fatia 2/2)
 - **`src/lib/dal.ts`** deixou de recomputar receita/ROAS GA4-only inline. Todos os
   pontos de **FATURAMENTO/ROAS canônicos** passaram a chamar a fonte única

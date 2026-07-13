@@ -4,6 +4,12 @@ import { prisma } from '@/lib/prisma'
 import { recalculateClientHealth } from '@/services/health-scorer'
 import { dispatchAlertsForClient } from '@/services/alert-dispatcher'
 import { getSession } from '@/lib/session'
+import { z } from 'zod'
+
+// Permissivo: clientId opcional (corpo vazio {} = recalcula todos, ADMIN/CRON).
+const bodySchema = z.object({
+  clientId: z.string().optional(),
+})
 
 /**
  * POST /api/sync/health
@@ -38,7 +44,14 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}))
-  const { clientId } = body as { clientId?: string }
+  const parsed = bodySchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Corpo inválido: clientId, quando presente, deve ser texto.' },
+      { status: 400 },
+    )
+  }
+  const { clientId } = parsed.data
 
   // Determine which clients to process
   let clientIds: string[]

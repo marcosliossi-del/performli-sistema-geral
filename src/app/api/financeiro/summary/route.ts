@@ -45,12 +45,13 @@ export async function GET(request: NextRequest) {
       },
       include: { customer: { select: { name: true, clientId: true } } },
     }),
-    // Previous period payments
-    prisma.asaasPayment.findMany({
+    // Previous period payments (só soma — aggregate em vez de findMany+reduce)
+    prisma.asaasPayment.aggregate({
       where: {
         status: { in: ['RECEIVED', 'CONFIRMED'] },
         paymentDate: { gte: prevFrom, lte: prevTo },
       },
+      _sum: { value: true },
     }),
     // Saídas realizadas do período: despesas (Expense) — inclui débitos do extrato
     // do Asaas (source=ASAAS) + lançamentos manuais. Fonte única, sem dupla contagem.
@@ -58,15 +59,14 @@ export async function GET(request: NextRequest) {
       where: { date: { gte: from, lte: to } },
       select: { value: true, category: true },
     }),
-    // Previous period expenses
-    prisma.expense.findMany({
+    // Previous period expenses (só soma — aggregate em vez de findMany+reduce)
+    prisma.expense.aggregate({
       where: { date: { gte: prevFrom, lte: prevTo } },
-      select: { value: true },
+      _sum: { value: true },
     }),
-    // Active subscriptions for MRR
+    // Active subscriptions for MRR (include morto removido — name nunca é usado)
     prisma.asaasSubscription.findMany({
       where: { status: 'ACTIVE' },
-      include: { customer: { select: { name: true } } },
     }),
     // Active clients for LTV / tempo médio
     prisma.client.findMany({
@@ -77,11 +77,11 @@ export async function GET(request: NextRequest) {
 
   // ── Entradas ──────────────────────────────────────────────────────────────
   const entradas     = payments.reduce((s, p) => s + Number(p.value), 0)
-  const prevEntradas = prevPayments.reduce((s, p) => s + Number(p.value), 0)
+  const prevEntradas = Number(prevPayments._sum.value ?? 0)
 
   // ── Saídas realizadas (despesas: extrato Asaas + manuais) ───────────────────
   const saidas     = expenses.reduce((s, e) => s + Number(e.value), 0)
-  const prevSaidas = prevExpenses.reduce((s, e) => s + Number(e.value), 0)
+  const prevSaidas = Number(prevExpenses._sum.value ?? 0)
 
   // ── Lucro ─────────────────────────────────────────────────────────────────
   const lucro     = entradas - saidas
@@ -98,16 +98,37 @@ export async function GET(request: NextRequest) {
 
   // ── Clientes recorrentes / inadimplentes ──────────────────────────────────
   const clientesRecorrentes = subscriptions.length
-  const inadimplentes = await prisma.asaasPayment.findMany({
-    where: { status: 'OVERDUE', dueDate: { lte: today } },
-    distinct: ['customerId'],
-    select: { customerId: true },
-  })
+
+  // Queries independentes agrupadas (antes rodavam em série)
+  const [
+    inadimplentes,
+    inadimplenciaValue,
+    entradasPrevistas,
+    saidasPrevistas,
+    churnedThisPeriod,
+  ] = await Promise.all([
+    prisma.asaasPayment.findMany({
+      where: { status: 'OVERDUE', dueDate: { lte: today } },
+      distinct: ['customerId'],
+      select: { customerId: true },
+    }),
+    prisma.asaasPayment.aggregate({
+      where: { status: 'OVERDUE', dueDate: { lte: today } },
+      _sum: { value: true },
+    }),
+    prisma.asaasPayment.aggregate({
+      where: { status: 'PENDING', dueDate: { gte: today } },
+      _sum: { value: true },
+    }),
+    prisma.asaasTransfer.aggregate({
+      where: { status: 'PENDING', scheduleDate: { gte: today } },
+      _sum: { value: true },
+    }),
+    prisma.client.count({
+      where: { status: 'CHURNED', updatedAt: { gte: from, lte: to } },
+    }),
+  ])
   const clientesInadimplentes = inadimplentes.length
-  const inadimplenciaValue = await prisma.asaasPayment.aggregate({
-    where: { status: 'OVERDUE', dueDate: { lte: today } },
-    _sum: { value: true },
-  })
 
   // ── Receita média por cliente ─────────────────────────────────────────────
   const receitaMediaPorCliente = clientesRecorrentes > 0
@@ -124,14 +145,7 @@ export async function GET(request: NextRequest) {
   const ltv = receitaMediaPorCliente * Math.max(tempoMedioMeses, 1)
 
   // ── Entradas / Saídas previstas ───────────────────────────────────────────
-  const entradasPrevistas = await prisma.asaasPayment.aggregate({
-    where: { status: 'PENDING', dueDate: { gte: today } },
-    _sum: { value: true },
-  })
-  const saidasPrevistas = await prisma.asaasTransfer.aggregate({
-    where: { status: 'PENDING', scheduleDate: { gte: today } },
-    _sum: { value: true },
-  })
+  // (entradasPrevistas / saidasPrevistas agregados no Promise.all acima)
 
   // ── Distribuição entradas por cliente (para donut) ────────────────────────
   const entradaByCustomer = new Map<string, number>()
@@ -162,9 +176,7 @@ export async function GET(request: NextRequest) {
   } catch { /* use 0 if API unavailable */ }
 
   // ── Churn rate (clientes churned / total no período) ─────────────────────
-  const churnedThisPeriod = await prisma.client.count({
-    where: { status: 'CHURNED', updatedAt: { gte: from, lte: to } },
-  })
+  // (churnedThisPeriod contado no Promise.all acima)
   const churnRate = allClients.length > 0 ? (churnedThisPeriod / allClients.length) * 100 : 0
 
   return NextResponse.json({

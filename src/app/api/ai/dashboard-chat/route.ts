@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getSession } from '@/lib/session'
+import { z } from 'zod'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+// Permissivo: `question` string não-vazia (já era obrigatória); `context`
+// objeto opcional de campos livres (o handler lê números opcionais dele).
+const bodySchema = z.object({
+  question: z.string().min(1),
+  context: z.record(z.string(), z.unknown()).nullish(),
+})
 
 export async function POST(request: NextRequest) {
   const session = await getSession()
@@ -11,21 +19,21 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.json()
-    const { question, context } = body as {
-      question: string
-      context: {
-        totalClients?: number
-        criticalClients?: number
-        warningClients?: number
-        healthyClients?: number
-        [key: string]: unknown
-      }
+    const raw = await request.json().catch(() => null)
+    const parsed = bodySchema.safeParse(raw)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Informe a pergunta a ser respondida.' }, { status: 400 })
     }
-
-    if (!question || typeof question !== 'string') {
-      return NextResponse.json({ error: 'question is required' }, { status: 400 })
-    }
+    const { question } = parsed.data
+    const context = parsed.data.context as
+      | {
+          totalClients?: number
+          criticalClients?: number
+          warningClients?: number
+          healthyClients?: number
+          [key: string]: unknown
+        }
+      | undefined
 
     const contextSummary = context
       ? `Total de clientes ativos: ${context.totalClients ?? '?'}. Saudáveis: ${context.healthyClients ?? '?'}. Em atenção: ${context.warningClients ?? '?'}. Críticos: ${context.criticalClients ?? '?'}.`
