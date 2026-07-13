@@ -50,23 +50,23 @@ Inteligência ▾     Agentes IA · Base de Conhecimento
 Inteligência dentro de Administrativo esconderia os Agentes IA dos papéis
 operacionais que os usam. Decisão nativa do Performli > referência (regra 6).
 
-### SUPERVISOR_TRAFEGO / ANALISTA_TRAFEGO (6)
+### SUPERVISOR_TRAFEGO / ANALISTA_TRAFEGO / CS (7)
 ```
-Meu Dia · Cockpit · Clientes ▾* · Operação ▾* · Risco ▾ · Inteligência ▾
-(+ Visão Gestor dentro de um grupo "Gestão" enxuto quando aplicável)
-```
-
-### CS (6)
-```
-Meu Dia · Cockpit · Clientes ▾* (Check-ins, Validação da CS, Suporte em
-destaque) · Operação ▾* · Risco ▾ · Inteligência ▾
+Meu Dia · Cockpit · Clientes ▾* · Operação ▾* · Risco ▾ ·
+Administrativo ▾ (só Metas da Agência + Visão Gestor) · Inteligência ▾
 ```
 
-### GESTOR_TRAFEGO (6)
+### GESTOR_TRAFEGO (7)
 ```
 Meu Dia · Cockpit · Clientes ▾* (só carteira própria — scoping já existente) ·
-Operação ▾* · Risco ▾ · Inteligência ▾
+Operação ▾* · Risco ▾ · Administrativo ▾ (só Visão Gestor) · Inteligência ▾
 ```
+
+> Nota (verificação Fase 3): o grupo Administrativo aparece para os papéis
+> operacionais porque `gestaoEquipeVisaoGestor`/`gestaoEquipeMetas` são
+> VIEW_ONLY na matriz — as leaves administrativas (DRE, Jurídico, Equipe,
+> Atribuições, Visão CEO) continuam ADMIN-only. 7 grupos por papel, derivado
+> 100% da matriz (redação original dizia 6; corrigido conforme o computado).
 
 Diferenças internas (leaves ADMIN-only: Acessos do Portal, Recorrências,
 Equipe, Atribuições, Visão CEO, Base de Conhecimento) continuam saindo da

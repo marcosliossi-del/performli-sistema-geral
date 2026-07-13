@@ -1063,3 +1063,16 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
   `src/app/(dashboard)/tasks/` (eram só redirects). `/minha-semana` e `/tasks`
   saíram do `PROTECTED_PREFIX` do middleware; `revalidatePath('/tasks')` órfão
   removido de `actions/tasks.ts` (regra 12 — remoção registrada na proposta §4).
+
+### 2026-07-13 — Redesign de IA (Fases 2–3 concluídas)
+- Fase 2 em 4 fatias, todas com QA guardião APROVADO: (1) sidebar reagrupada
+  (fixos Meu Dia+Cockpit; grupos Clientes/Operação/Risco/Comercial/
+  Administrativo/Inteligência; badges somados em grupo fechado; NAV_LINKS
+  exportado) + ⌘K cobrindo todo o menu + órfãs /minha-semana e /tasks
+  removidas; (2) Client 360 com abas (?tab=, hash mapeado) + Breadcrumbs;
+  (3) agrupamento visual 11 status→6 grupos no Kanban + filtro/‌view por
+  Categoria (AreaCode); (4) onboarding 1 clique (reusa runClientOnboarding)
+  + EmptyState padronizado.
+- Fase 3: verificação estática por papel em docs/checklist-redesign-ia.md;
+  1 divergência cosmética (7 grupos, não 6, para não-ADMIN) corrigida na
+  proposta. Zero migration em todo o redesign; portal intocado.
