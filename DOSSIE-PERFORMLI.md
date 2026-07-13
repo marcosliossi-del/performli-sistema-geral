@@ -753,6 +753,92 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-13 — Navegação editável (sidebar como no ClickUp) — backend
+- **Decisão do Marcos:** a sidebar deixa de ser hardcoded e vira uma ÁRVORE
+  PERSISTIDA e GLOBAL (uma só p/ a agência) que o ADMIN organiza como no ClickUp
+  — arrastar p/ reordenar/mover, renomear grupos, ocultar itens ("excluir aba" =
+  ocultar da navegação; a PÁGINA continua existindo), criar grupos. Profundidade
+  máx = 3 níveis (setor → subpasta → item), espelhando o print do ClickUp.
+- **Migration ADITIVA `20260713170000_nav_tree`:** 1 enum `NavNodeKind`
+  (GROUP|LEAF) + 1 model novo `NavNode` (self-relation `parentId` onDelete
+  Cascade; `spaceKey @unique`; índice `[parentId, order]`). Justificativa de
+  model novo: nenhum model representa ÁRVORE de navegação editável —
+  NavSpaceMode/Access são ACL (quem vê), não ESTRUTURA/ordem/hierarquia.
+- **`src/lib/nav-tree-shared.ts` (puro, client-safe):** tipos (`NavTree`,
+  `NavTreeNode`, `NavCountKey`, `NavLink`), `navTreeToNavLinks()` (achata só
+  LEAF visível p/ o ⌘K, pulando ocultos) e o `NAV_TREE_SEED` (organização do
+  ClickUp → rotas reais; countKey/alert/module/spaceKey IDÊNTICOS aos da Sidebar
+  atual). `NAV_TREE_SEED_EXCLUDED` = itens do ClickUp deixados de fora c/ motivo.
+- **`src/lib/nav-tree.ts` (server-only):** `ensureNavTree()` (semeia SE vazia —
+  idempotente, NÃO é migração de dados) e `getNavTree()` (árvore recursiva
+  ordenada, INCLUI ocultos p/ o gerenciador; `cache()` por request;
+  serializável). Re-exporta os tipos/transformações puras.
+- **Actions ADMIN `src/app/actions/nav-tree.ts`:** `moveNavNode`
+  (valida profundidade: GROUP só raiz ou subpasta de grupo de raiz e sem
+  subpastas próprias; LEAF em qualquer grupo/raiz; reordena irmãos em
+  transação), `renameNavNode` (1–40), `setNavNodeHidden`, `createNavGroup`,
+  `deleteNavGroup` (só se vazio; leaves nunca são deletadas), `resetNavTree`
+  (escape hatch). requireSession + ADMIN estrito + `AuditLog`
+  (`nav_tree.move/rename/hide/unhide/create_group/delete_group/reset`) +
+  `revalidatePath('/', 'layout')`.
+- **ACL preservada:** a árvore fornece só ESTRUTURA + RÓTULOS. A visibilidade
+  por papel (`can()`) e a ACL por espaço (NavSpaceMode/Access) continuam POR
+  CIMA via `spaceKey` das LEAVES (o grupo-ACL é resolvido por nav-spaces,
+  independente da estrutura visual). Subpastas/grupos da árvore NÃO recebem
+  spaceKey (não inventam espaços novos). `permissions.ts`/`nav-spaces.ts` NÃO
+  foram tocados.
+- **Fora do seed (evidência/decisão de produto):** "Encontros & Rituais" (sem
+  rota própria — não vira link morto) e as listas por cargo do ClickUp (Tarefas
+  Head/Supervisor/CS/Gestores = mesma Central de Tarefas filtrada, não abas
+  duplicadas). Registrados em `NAV_TREE_SEED_EXCLUDED`.
+- **Fatia de UI (2026-07-13, ver bloco abaixo):** ENTREGUE — Sidebar/⌘K agora
+  data-driven pela árvore; `navigation[]`/`NAV_LINKS`/`ALL_NAV_HREFS` hardcoded
+  REMOVIDOS.
+
+### 2026-07-13 — Navegação editável (sidebar como no ClickUp) — UI
+- **Sidebar data-driven:** `src/app/(dashboard)/layout.tsx` chama `getNavTree()`
+  (server) e passa `tree` serializada + `navLinks` (`navTreeToNavLinks`, já sem
+  ocultos) via `DashboardShell` → `Sidebar` e `CommandPalette`. Removidos do
+  `Sidebar.tsx`: array `navigation[]`, `NAV_LINKS`, `NavLink` (local),
+  `ALL_NAV_HREFS`, `NavItemDef`/`NavSection`, os mapas `LEAF/GROUP_SPACE_BY_HREF`
+  e `spaceKeyFor*Href`. MANTIDO o export `navHrefVisible` (agora recebe
+  `spaceKey` explícito da LEAF em vez de derivar por href) — reusado pelo ⌘K.
+- **Render recursivo:** `NodeList`→`NavNode`→`NavGroup`/`NavLeaf`. GROUP raiz =
+  setor; GROUP filho = subpasta (indentação + chevron, ícone menor); LEAF em
+  qualquer nível. Filtra `hidden` + `navHrefVisible` POR LEAF; grupo/subpasta
+  visível se ≥1 descendente visível. Badge de grupo FECHADO = soma dos
+  descendentes LEAF visíveis (`descendantCount`); aberto zera (leaves mostram o
+  próprio). `defaultOpen` respeitado. `icon:string`→LucideIcon por
+  `src/components/layout/nav-icons.tsx` (`navIcon`, fallback Folder/Circle).
+  Active-state: `ALL_NAV_HREFS` reconstruído da árvore em runtime (`useMemo`).
+- **Modo de drag — DECISÃO:** dnd aninhado de 3 níveis com um só `type` é
+  frágil no @hello-pangea/dnd (detecção do droppable interno vacila com grupos
+  colapsados). Escolhido o **"modo organizar"** (toggle no rodapé, SÓ ADMIN
+  real): ao ligar, TODOS os grupos abrem (todos os Droppables montados), as
+  linhas viram estáticas com handle `GripVertical` e o kebab fica sempre
+  visível. `DragDropContext` só envolve a árvore NESSE modo (fora dele, e no
+  mobile via drawer, zero wrappers de dnd → navegação normal sólida). Um só
+  `type="NAV"`; `droppableId` = 'ROOT' (raiz) ou id do grupo. O índice do dnd é
+  relativo à lista VISÍVEL e é traduzido p/ o índice REAL entre TODOS os irmãos
+  (âncora = vizinho visível de destino) antes de chamar `moveNavNode`. Update
+  OTIMISTA no estado local (`structuredClone` + splice) com rollback + toast em
+  erro; movimentos ilegais (profundidade) são barrados pelo backend → rollback.
+- **Kebab (⋯) por nó (ADMIN real):** popover com click-outside. "Gerenciar
+  acesso" só em LEAF com `spaceKey` (abre `SpaceAccessModal`); "Renomear"
+  (input inline → `renameNavNode`); "Ocultar da navegação" (`confirm` curto
+  explicando que a tela continua acessível/restaurável → `setNavNodeHidden`
+  true); "Excluir pasta" só em GROUP vazio (`deleteNavGroup`).
+- **Rodapé ADMIN:** "Nova pasta" (modal → `createNavGroup`), toggle "Organizar
+  navegação", "Itens ocultos" (modal lista os `hidden` com "Restaurar" →
+  `setNavNodeHidden` false + "Restaurar navegação padrão" com `confirm` forte →
+  `resetNavTree`). Todas as ações fazem `router.refresh()` (actions já
+  `revalidatePath('/','layout')`) → prop `tree` ressincroniza o estado local.
+- **⌘K:** consome `navLinks` por prop (derivados da árvore, sem ocultos),
+  mesma resolução `navHrefVisible` (agora com `spaceKey` no `NavLink` — campo
+  adicionado em `nav-tree-shared.ts`), ícone string→componente por `navIcon`.
+- **Sem deps novas** (reusa @hello-pangea/dnd e `lib/toast`); sem tocar
+  schema/actions/permissions/nav-spaces/nav-access/portal.
+
 ### 2026-07-13 — Atribuição de acesso por espaço (ACL de navegação) — backend
 - **Decisão do Marcos:** como no ClickUp, o ADMIN escolhe QUAIS usuários veem
   cada "espaço" (grupo da sidebar ou leaf). Semântica: espaço SEM lista custom →
