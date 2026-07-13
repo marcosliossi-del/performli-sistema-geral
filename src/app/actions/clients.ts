@@ -1,6 +1,7 @@
 'use server'
 
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { slugify } from '@/lib/utils'
@@ -128,6 +129,11 @@ export async function createClient(
       console.error('[onboarding] falha ao rodar runClientOnboarding:', err)
     }
   }
+
+  // A-06 — invalida o cache da lista (getClientsList usa unstable_cache) para o
+  // cliente novo aparecer em /clients e /cockpit sem esperar o TTL.
+  revalidatePath('/clients')
+  revalidatePath('/cockpit')
 
   redirect(`/clients/${client.slug}`)
 }

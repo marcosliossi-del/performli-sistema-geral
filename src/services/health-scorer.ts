@@ -293,9 +293,16 @@ function applyTrend(
 
 // ── Core processing ───────────────────────────────────────────────────────────
 
-function computeAchievementPct(actual: number, target: number, lowerIsBetter: boolean): number {
+function computeAchievementPct(actual: number, target: number, lowerIsBetter: boolean): number | null {
   if (target === 0) return 0
-  return lowerIsBetter ? (target / actual) * 100 : (actual / target) * 100
+  // ME-3: métricas lowerIsBetter (CPL/CPA/CAC/CPC/SPEND/CPS/CPM) dividem target/actual.
+  // Com actual <= 0 (sem dado real de custo) isso gerava Infinity persistido em
+  // HealthScore.achievementPct. Retornar null = indeterminado (sem dado).
+  if (lowerIsBetter) {
+    if (actual <= 0) return null
+    return (target / actual) * 100
+  }
+  return (actual / target) * 100
 }
 
 export type ScoredMetric = {
@@ -346,6 +353,10 @@ async function processGoals(
       : rawTarget
 
     const pct       = computeAchievementPct(actual, target, lowerIsBetter)
+    // ME-3: achievement indeterminado (métrica de custo com actual<=0) — não
+    // persiste HealthScore com valor enganoso (antes gravava Infinity). Mesmo
+    // tratamento de "sem dado" da linha acima; achievementPct segue não-nulável.
+    if (pct === null) continue
     const mtdStatus = classifyHealth(lowerIsBetter ? target : actual, lowerIsBetter ? actual : target)
 
     // Trend: only for MONTHLY scores; weekly already reflects the recent window

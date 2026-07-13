@@ -81,15 +81,22 @@ export async function syncGA4Account(
 
       await prisma.metricSnapshot.upsert({
         where: { platformAccountId_date: { platformAccountId, date: snapshot.date } },
+        // ME-10: o bloco update precisa ter paridade com o create — antes
+        // omitia spend/cpc/roas/cpl, então re-sincronizar um dia existente não
+        // corrigia esses campos. Adicionados aqui para paridade create↔update.
         update: {
+          spend:            snapshot.spend,
           impressions:      snapshot.impressions,
           clicks:           snapshot.clicks,
           reach:            snapshot.reach,
           newUsers:         snapshot.newUsers,
           frequency:        snapshot.frequency,
           ctr:              snapshot.ctr,
+          cpc:              snapshot.cpc,
           conversions:      snapshot.conversions,
           conversionValue:  snapshot.conversionValue,
+          roas:             snapshot.roas,
+          cpl:              snapshot.cpl,
           addToCarts:       snapshot.addToCarts,
           checkoutsStarted: snapshot.checkoutsStarted,
           rawData:          snapshot.rawData as object,
