@@ -3,6 +3,13 @@ import { prisma } from '@/lib/prisma'
 import { syncGoogleAdsAccount, syncAllGoogleAdsAccounts } from '@/services/google-ads/sync'
 import { getSession } from '@/lib/session'
 import { isCronAuthorized } from '@/lib/cron-auth'
+import { z } from 'zod'
+
+// Permissivo: ambos opcionais (o corpo vazio {} continua válido = sync geral).
+const bodySchema = z.object({
+  platformAccountId: z.string().optional(),
+  clientId: z.string().optional(),
+})
 
 export async function POST(request: NextRequest) {
   const cronSecret = request.headers.get('x-cron-secret')
@@ -25,7 +32,14 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}))
-  const { platformAccountId, clientId } = body as { platformAccountId?: string; clientId?: string }
+  const parsed = bodySchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Corpo inválido: platformAccountId e clientId, quando presentes, devem ser texto.' },
+      { status: 400 },
+    )
+  }
+  const { platformAccountId, clientId } = parsed.data
 
   const url   = new URL(request.url)
   const since = url.searchParams.get('since') ?? undefined

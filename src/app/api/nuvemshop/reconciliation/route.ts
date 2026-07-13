@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { reconcileClientData, matchOrdersWithGA4 } from '@/services/nuvemshop/reconciliation'
+import { z } from 'zod'
+
+// Permissivo: clientId obrigatório (já era); since/until opcionais (default
+// calculado no handler quando ausentes).
+const postSchema = z.object({
+  clientId: z.string().min(1, 'clientId é obrigatório'),
+  since: z.string().optional(),
+  until: z.string().optional(),
+})
 
 /**
  * GET /api/nuvemshop/reconciliation?clientId=xxx&since=YYYY-MM-DD&until=YYYY-MM-DD
@@ -51,10 +60,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   }
 
-  const { clientId, since, until } = await request.json()
-  if (!clientId) {
-    return NextResponse.json({ error: 'clientId é obrigatório' }, { status: 400 })
+  const raw = await request.json().catch(() => null)
+  const parsed = postSchema.safeParse(raw)
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'clientId é obrigatório e deve ser texto.' }, { status: 400 })
   }
+  const { clientId, since, until } = parsed.data
 
   if (session.role !== 'ADMIN') {
     const assignment = await prisma.clientAssignment.findFirst({

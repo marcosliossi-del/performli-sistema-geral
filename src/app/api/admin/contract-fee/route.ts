@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/session'
+import { z } from 'zod'
+
+// Permissivo: mesmos campos do formData atual. `id` obrigatório (trim > 0);
+// `feeValue` opcional (default '0', como antes) e coercível para número >= 0.
+const schema = z.object({
+  id: z.string().trim().min(1),
+  feeValue: z.coerce.number().min(0),
+})
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
@@ -9,11 +17,18 @@ export async function POST(req: NextRequest) {
   }
 
   const fd  = await req.formData()
-  const id  = (fd.get('id')       as string)?.trim()
-  const fee = parseFloat((fd.get('feeValue') as string) || '0')
-
-  if (!id)       return NextResponse.json({ error: 'id required' }, { status: 400 })
-  if (isNaN(fee))return NextResponse.json({ error: 'invalid fee' }, { status: 400 })
+  const parsed = schema.safeParse({
+    id: fd.get('id'),
+    feeValue: fd.get('feeValue') ?? '0',
+  })
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Dados do fee inválidos. Informe o contrato e um valor numérico maior ou igual a zero.' },
+      { status: 400 },
+    )
+  }
+  const id  = parsed.data.id
+  const fee = parsed.data.feeValue
 
   const updated = await prisma.contract.update({
     where:  { id },

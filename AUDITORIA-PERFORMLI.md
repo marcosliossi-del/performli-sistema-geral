@@ -129,7 +129,13 @@ Quebram funcionalidade, vazam dados entre tenants ou corrompem métricas.
 - Só recalcula o snapshot quando `paymentStatus === 'PAID'`; eventos `cancelled`/`updated→REFUNDED/VOIDED` pulam o recálculo. A receita do pedido cancelado permanece até o full-sync diário; estorno de pedido de dia anterior nunca dispara recálculo daquele dia.
 - **Correção:** recalcular o dia também em cancelamento/refund (ou recomputar sempre, não só em PAID).
 
-### AL-6 — Validação de input desigual: 14 rotas + actions ADMIN sem zod
+### AL-6 — Validação de input desigual: 14 rotas + actions ADMIN sem zod — 🟡 PARCIAL (2026-07-13)
+- **Corrigido (rotas internas):** `budget` (PATCH), `admin/contract-fee`, `ai/chat`,
+  `ai/dashboard-chat`, `sync/ga4|meta|google-ads|nuvemshop|health`,
+  `nuvemshop/reconciliation` — zod permissivo `.safeParse` + `400 { error: <pt-BR> }`.
+  `admin/seed-operacao` pulado (só query params já validados defensivamente).
+  Webhooks/crons validam por token/HMAC; financeiro é outra tarefa.
+- **Pendente:** actions ADMIN (`goals.ts:48-70`, `updateClient.ts`).
 - **Arquivos:** `sync/*`, `nuvemshop/reconciliation`, `clients/[clientId]/budget`, `ai/*`, `admin/contract-fee`, webhooks; actions `goals.ts:48-70` (`upsertMonthlyGoals` — `metric`/`clientId` crus ao Prisma), `updateClient.ts`. **Confiança:** CONFIRMADO.
 - Metade do `api/*` usa zod (`comercial`, `financeiro/expenses`, `settings`, `leads/capture`), a outra metade confia no payload. Em actions ADMIN a "proteção" vira "só ADMIN chega aqui", não validação de dado.
 - **Correção:** exigir schema (zod) em toda rota/action que lê body/params.
@@ -236,7 +242,7 @@ Ordem = impacto ÷ esforço. **Nenhuma correção foi aplicada** — cada item v
 3. **CR-2** — filtrar plataforma no `warroom/prefill` (1 where). *Número crítico dobrado.*
 4. **AL-1** — mensagem específica de "sem meta de ROAS" (não "sem meta"). *Mentira operacional.*
 5. **AL-3** — trocar `saoPauloDayStart` por bound UTC em `realizado.ts`. *Dia 1 do mês.*
-6. **ME-9** — `financeiro/cashflow` (count fora do loop) + `financeiro/summary` (Promise.all + aggregate). *Latência.*
+6. **ME-9** — ✅ CORRIGIDO (2026-07-13) `financeiro/cashflow` (count fora do loop + meses em Promise.all) + `financeiro/summary` (Promise.all das 5 queries seriais + aggregate no lugar de findMany+reduce + include morto removido). *Latência.*
 7. **ME-13** — padronizar `isCronAuthorized` em `sync/ga4` e `sync/google-ads`. *Timing-safe.*
 8. **AL-5** — recalcular snapshot em cancelamento/refund no webhook Nuvemshop.
 

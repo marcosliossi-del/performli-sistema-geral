@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { syncNuvemshopAccount, syncAllNuvemshopAccounts } from '@/services/nuvemshop/sync'
+import { z } from 'zod'
+
+// Permissivo: ambos opcionais (o corpo vazio {} continua válido = sync geral).
+const bodySchema = z.object({
+  platformAccountId: z.string().optional(),
+  clientId: z.string().optional(),
+})
 
 /**
  * POST /api/sync/nuvemshop
@@ -27,10 +34,14 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}))
-  const { platformAccountId, clientId } = body as {
-    platformAccountId?: string
-    clientId?: string
+  const parsed = bodySchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Corpo inválido: platformAccountId e clientId, quando presentes, devem ser texto.' },
+      { status: 400 },
+    )
   }
+  const { platformAccountId, clientId } = parsed.data
 
   const since = request.nextUrl.searchParams.get('since') ?? undefined
   const until = request.nextUrl.searchParams.get('until') ?? undefined

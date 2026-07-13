@@ -4,6 +4,14 @@ import { getSession } from '@/lib/session'
 import { assertClientMutationAccess } from '@/lib/audit'
 import { normalizeRole, can } from '@/lib/rbac'
 import { getMonthRange } from '@/lib/utils'
+import { z } from 'zod'
+
+// Permissivo: aceita `value` como número OU string numérica (comportamento
+// atual, que usava parseFloat). z.coerce rejeita NaN e negativos, igual à
+// validação manual anterior.
+const bodySchema = z.object({
+  value: z.coerce.number().min(0),
+})
 
 export async function PATCH(
   request: NextRequest,
@@ -25,11 +33,15 @@ export async function PATCH(
     return NextResponse.json({ error: 'Sem acesso a este cliente' }, { status: 403 })
   }
 
-  const body = await request.json()
-  const value = typeof body.value === 'number' ? body.value : parseFloat(body.value)
-  if (isNaN(value) || value < 0) {
-    return NextResponse.json({ error: 'Invalid value' }, { status: 400 })
+  const body = await request.json().catch(() => null)
+  const parsed = bodySchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Valor de budget inválido. Informe um número maior ou igual a zero.' },
+      { status: 400 },
+    )
   }
+  const { value } = parsed.data
 
   const today = new Date()
   const { start: monthStart, end: monthEnd } = getMonthRange(today)

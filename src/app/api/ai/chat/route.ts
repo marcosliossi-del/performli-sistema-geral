@@ -5,6 +5,16 @@ import { prisma } from '@/lib/prisma'
 import { getClientAIContext, getSeasonalityContext } from '@/lib/ai-client-context'
 import { normalizeRole } from '@/lib/rbac'
 import { searchKnowledge, formatKnowledgeContext } from '@/lib/knowledge-search'
+import { z } from 'zod'
+
+// Permissivo: mesma forma que o handler já lia. `agentType` string não-vazia,
+// `messages` array (elementos livres — o filtro abaixo já trata role/content),
+// `clientId` opcional. Só barra payload claramente malformado.
+const bodySchema = z.object({
+  agentType: z.string().min(1),
+  messages: z.array(z.unknown()),
+  clientId: z.string().optional().nullable(),
+})
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -103,11 +113,16 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const { agentType, messages, clientId } = await request.json()
-
-    if (!agentType || !messages || !Array.isArray(messages)) {
-      return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+    const raw = await request.json().catch(() => null)
+    const parsed = bodySchema.safeParse(raw)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Requisição inválida: informe o tipo de agente e a lista de mensagens.' },
+        { status: 400 },
+      )
     }
+    const { agentType, clientId } = parsed.data
+    const messages = parsed.data.messages as { role: string; content: string }[]
 
     // Filter to only user/assistant messages for Anthropic API
     const anthropicMessages = messages
