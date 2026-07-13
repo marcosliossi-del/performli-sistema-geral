@@ -622,6 +622,55 @@ model NavSpaceAccess {
   @@index([spaceKey])
 }
 
+// ─── ÁRVORE DE NAVEGAÇÃO EDITÁVEL (sidebar como no ClickUp — 2026-07-13) ──────
+// Decisão do Marcos: a sidebar deixa de ser hardcoded e vira uma árvore
+// PERSISTIDA e GLOBAL (uma só para a agência) que o ADMIN organiza como no
+// ClickUp — arrastar p/ reordenar/mover entre grupos, renomear grupos, ocultar
+// itens ("excluir aba" = ocultar da navegação; a PÁGINA continua existindo) e
+// criar grupos novos. A árvore fornece só ESTRUTURA + RÓTULOS; a visibilidade
+// por papel (matriz RBAC via `can()`) e a ACL por espaço (NavSpaceMode/Access)
+// continuam aplicadas POR CIMA — a ponte é `spaceKey` (idêntico ao nav-spaces).
+//
+// Justificativa de model novo (CLAUDE.md — "nenhum model novo sem justificativa"):
+// nenhum model existente representa uma ÁRVORE de navegação editável. NavSpaceMode/
+// NavSpaceAccess são ACL (quem vê cada espaço), não a ESTRUTURA/ordem/hierarquia
+// da sidebar. ClientAssignment é posse de cliente. Workspace/StatusSet são
+// tenancy/pipeline de tarefas. Nenhum modela "grupos e itens ordenáveis da
+// navegação". Exit strategy ClickUp: substitui a organização de Spaces/Lists que
+// hoje o Marcos arruma no ClickUp; o estado canônico passa a viver no Postgres.
+
+enum NavNodeKind {
+  GROUP  // pasta colapsável da sidebar (só no nível raiz — 1 nível de pastas)
+  LEAF   // link individual (carrega href + spaceKey + module)
+}
+
+/// Nó da árvore de navegação editável (GLOBAL — não há coluna de escopo por
+/// usuário/workspace; é uma árvore única para a agência). Self-relation por
+/// `parentId` (GROUP → LEAF). `spaceKey` é único e é a PONTE p/ a ACL de
+/// navegação (src/lib/nav-spaces.ts); `module` é o módulo do policy engine que
+/// governa a visibilidade por papel. Semeada por `ensureNavTree()` (idempotente,
+/// não é migração de dados) espelhando a organização do ClickUp do Marcos.
+model NavNode {
+  id          String      @id @default(cuid())
+  parentId    String?
+  parent      NavNode?    @relation("NavNodeChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children    NavNode[]   @relation("NavNodeChildren")
+  kind        NavNodeKind
+  label       String
+  href        String?     // null em GROUP; rota real em LEAF
+  spaceKey    String?     @unique // ponte p/ ACL (nav-spaces) — único, só em LEAF
+  module      String?     // módulo do policy engine (visibilidade por papel)
+  countKey    String?     // chave do badge de pendências (meuDia, abertas, ...)
+  alert       Boolean     @default(false) // badge em cor de alerta quando > 0
+  icon        String?     // nome do ícone lucide (string) — a UI mapeia p/ componente
+  order       Int         // ordem entre irmãos (0-based, contíguo)
+  hidden      Boolean     @default(false) // "excluir aba" = ocultar da navegação
+  defaultOpen Boolean     @default(false) // grupo abre expandido por padrão
+  updatedAt   DateTime    @updatedAt
+
+  @@index([parentId, order])
+}
+
 // ─── HISTÓRICO DE PRODUTOS DO CLIENTE (downgrade anti-churn — Fase 3) ─────────
 
 /**
