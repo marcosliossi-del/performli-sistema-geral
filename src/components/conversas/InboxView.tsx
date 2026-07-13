@@ -130,9 +130,12 @@ export function InboxView({
                         {contactLabel(it.contact)}
                       </p>
                       {it.lastMessageAt && (
-                        {/* suppressHydrationWarning: relativo a new Date() — pode
-                            divergir do SSR na virada de minuto (QA, menor) */}
-                        <span className="text-[10px] text-[#647488] flex-shrink-0" suppressHydrationWarning>
+                        <span
+                          // suppressHydrationWarning: fmtRelative usa new Date() e
+                          // pode divergir do SSR na virada de minuto (QA, menor)
+                          className="text-[10px] text-[#647488] flex-shrink-0"
+                          suppressHydrationWarning
+                        >
                           {fmtRelative(it.lastMessageAt)}
                         </span>
                       )}
