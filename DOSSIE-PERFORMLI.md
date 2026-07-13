@@ -782,6 +782,20 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
   de verdade (ver §12.3). AL-2/AL-3/AL-4 (fuso e divergência DAL) e demais
   achados médios/dívida seguem em aberto na auditoria.
 
+### 2026-07-13 — AL-4: fronteira de semana/mês no fuso America/Sao_Paulo
+- `getWeekRange`/`getMonthRange` (`src/lib/utils.ts`) passaram a derivar a
+  fronteira do **dia-parede SP** (`saoPauloDateString`) e construir os bounds em
+  **UTC-midnight** (casa com `@db.Date`). Antes usavam o fuso do runtime (UTC na
+  Vercel), então entre 21:00–23:59 SP a semana/mês "virava" cedo: check-in de
+  sábado à noite caía na semana seguinte, cliente aparecia falsamente "sem meta/
+  sem check-in", MTD no mês errado. Fora dessa janela, resultado idêntico ao
+  anterior. Fecha a raiz de AL-3 (SEMANA_FECHADA) e do bug "cliente sem check-in".
+- `health-scorer.processGoals`: `today` do pro-rata ancorado no UTC-midnight do
+  dia SP (consistente com periodStart), removendo drift de 1 dia na mesma janela.
+- QA adversarial APROVADO (percorreu todos os consumidores: weekly-goals-sync,
+  health-scorer, resultado-engine, checkin, realizado, dal). Resíduo B-04 (~5
+  `new Date(y,m,1)` inline no dal.ts) fica para a onda de limpeza.
+
 ### 2026-07-13 — Onda média de correções da auditoria (7 achados)
 - **AL-3**: `realizado.ts` MTD passou a usar bound UTC-midnight (`-01T00:00:00Z`)
   em vez de `saoPauloDayStart` (03:00Z) — o dia 1 do mês volta ao MTD. Ramo
