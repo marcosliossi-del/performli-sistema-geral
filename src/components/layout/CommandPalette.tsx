@@ -4,22 +4,26 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, ListTodo, Users, Activity, CornerDownLeft, ArrowUp, ArrowDown } from 'lucide-react'
 import { globalSearch, type SearchResult } from '@/app/actions/search'
-import { NAV_LINKS, navHrefVisible } from './Sidebar'
-import { normalizeRole } from '@/lib/rbac'
+import { navHrefVisible } from './Sidebar'
+import { navIcon } from './nav-icons'
+import { normalizeRole, type Module } from '@/lib/rbac'
 import type { SessionPayload } from '@/lib/session'
+import type { NavLink } from '@/lib/nav-tree-shared'
 
 type SessionRole = SessionPayload['role']
 
 type Flat = { key: string; group: string; label: string; sub?: string; href: string; icon: React.ElementType }
 
 export function CommandPalette({
-  open, onClose, role, navOverrides = {},
+  open, onClose, role, navOverrides = {}, navLinks,
 }: {
   open: boolean
   onClose: () => void
   role: SessionRole
   /** Overrides da ACL por espaço (mesma resolução da Sidebar). */
   navOverrides?: Record<string, boolean>
+  /** Links planos (só LEAF visível) derivados da árvore de navegação editável. */
+  navLinks: NavLink[]
 }) {
   const router = useRouter()
 
@@ -28,10 +32,10 @@ export function CommandPalette({
   // de espaço primeiro (a lista manda), senão a matriz de permissões do backend.
   const QUICK: Flat[] = useMemo(() => {
     const r = normalizeRole(role)
-    return NAV_LINKS
-      .filter((l) => navHrefVisible(l.href, l.module, r, navOverrides))
-      .map((l) => ({ key: `q-${l.href}`, group: 'Ir para', label: l.name, href: l.href, icon: l.icon }))
-  }, [role, navOverrides])
+    return navLinks
+      .filter((l) => navHrefVisible(l.href, (l.module ?? undefined) as Module | undefined, r, navOverrides, l.spaceKey))
+      .map((l) => ({ key: `q-${l.href}`, group: 'Ir para', label: l.name, href: l.href, icon: navIcon(l.icon, 'leaf') }))
+  }, [role, navOverrides, navLinks])
 
   const inputRef = useRef<HTMLInputElement>(null)
   const [q, setQ] = useState('')

@@ -7,6 +7,7 @@ import { getSidebarCounts } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { homeForUser } from '@/lib/home'
 import { assertPathAccess, getNavOverrides, serializeOverrides } from '@/lib/nav-access'
+import { getNavTree, navTreeToNavLinks } from '@/lib/nav-tree'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 
 export default async function DashboardLayout({
@@ -72,8 +73,13 @@ export default async function DashboardLayout({
   // real do acesso vive no `assertPathAccess` acima — isto é só UX de menu.
   const navOverrides = serializeOverrides(await getNavOverrides(session.userId))
 
+  // Árvore de navegação editável (GLOBAL, semeada na 1ª leitura). Serializada
+  // via props para o client; `navTreeToNavLinks` já exclui ocultos p/ o ⌘K.
+  const tree = await getNavTree()
+  const navLinks = navTreeToNavLinks(tree)
+
   return (
-    <DashboardShell session={session} counts={counts} unreadAlerts={counts.alertas} homeHref={homeHref} navOverrides={navOverrides} modal={modal}>
+    <DashboardShell session={session} counts={counts} unreadAlerts={counts.alertas} homeHref={homeHref} navOverrides={navOverrides} tree={tree} navLinks={navLinks} modal={modal}>
       {children}
     </DashboardShell>
   )

@@ -65,6 +65,8 @@ export type NavLink = {
   href: string
   module: string | null
   icon: string | null
+  /** Ponte ACL por espaço (idêntica à da LEAF) — o ⌘K filtra com a mesma resolução da Sidebar. */
+  spaceKey: string | null
 }
 
 /**
@@ -78,7 +80,7 @@ export function navTreeToNavLinks(tree: NavTree): NavLink[] {
     for (const n of nodes) {
       if (n.hidden) continue
       if (n.kind === 'LEAF' && n.href) {
-        out.push({ name: n.label, href: n.href, module: n.module, icon: n.icon })
+        out.push({ name: n.label, href: n.href, module: n.module, icon: n.icon, spaceKey: n.spaceKey })
       } else if (n.kind === 'GROUP') {
         walk(n.children)
       }
