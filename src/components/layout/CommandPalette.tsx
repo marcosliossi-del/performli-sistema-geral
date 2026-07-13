@@ -4,25 +4,34 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, ListTodo, Users, Activity, CornerDownLeft, ArrowUp, ArrowDown } from 'lucide-react'
 import { globalSearch, type SearchResult } from '@/app/actions/search'
-import { NAV_LINKS } from './Sidebar'
-import { can, normalizeRole } from '@/lib/rbac'
+import { NAV_LINKS, navHrefVisible } from './Sidebar'
+import { normalizeRole } from '@/lib/rbac'
 import type { SessionPayload } from '@/lib/session'
 
 type SessionRole = SessionPayload['role']
 
 type Flat = { key: string; group: string; label: string; sub?: string; href: string; icon: React.ElementType }
 
-export function CommandPalette({ open, onClose, role }: { open: boolean; onClose: () => void; role: SessionRole }) {
+export function CommandPalette({
+  open, onClose, role, navOverrides = {},
+}: {
+  open: boolean
+  onClose: () => void
+  role: SessionRole
+  /** Overrides da ACL por espaço (mesma resolução da Sidebar). */
+  navOverrides?: Record<string, boolean>
+}) {
   const router = useRouter()
 
   // Quick-links = TODAS as páginas do menu (derivadas do registry da Sidebar,
-  // sem lista duplicada), filtradas pela MESMA matriz de permissões do backend.
+  // sem lista duplicada), filtradas pela MESMA resolução da Sidebar: overrides
+  // de espaço primeiro (a lista manda), senão a matriz de permissões do backend.
   const QUICK: Flat[] = useMemo(() => {
     const r = normalizeRole(role)
     return NAV_LINKS
-      .filter((l) => !l.module || can(r, 'view', l.module))
+      .filter((l) => navHrefVisible(l.href, l.module, r, navOverrides))
       .map((l) => ({ key: `q-${l.href}`, group: 'Ir para', label: l.name, href: l.href, icon: l.icon }))
-  }, [role])
+  }, [role, navOverrides])
 
   const inputRef = useRef<HTMLInputElement>(null)
   const [q, setQ] = useState('')

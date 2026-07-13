@@ -792,6 +792,29 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
   passar o `Record<spaceKey,boolean>` + o modal de 3 pontinhos consumindo as
   actions.
 
+### 2026-07-13 — Atribuição de acesso por espaço — UI (padrão ClickUp)
+- **Wiring das overrides:** `src/app/(dashboard)/layout.tsx` calcula
+  `navOverrides = serializeOverrides(await getNavOverrides(session.userId))` e
+  passa via `DashboardShell` (prop `navOverrides?: Record<string,boolean>`) para
+  `Sidebar` e `CommandPalette`. Fecha a pendência da fatia anterior.
+- **Resolução client-side (Sidebar):** mapas `LEAF_SPACE_BY_HREF`/
+  `GROUP_SPACE_BY_HREF` derivados 1:1 de `NAV_SPACES`. `navHrefVisible(href,
+  module,role,overrides)` (exportado, reusado pelo CommandPalette) ESPELHA o
+  `assertPathAccess`: leaf custom decide → senão grupo custom decide → senão
+  `can()`. Um override `true` mostra o item mesmo que a matriz negue o módulo.
+  Grupo aparece se ≥1 filha visível.
+- **Prévia "ver como GESTOR":** simula GESTOR_TRAFEGO SEM overrides
+  (`effectiveOverrides = isPreview ? {} : navOverrides`) — mostra o default por
+  papel, não a lista do ADMIN. Kebab/cadeado só p/ ADMIN real (`showKebab`).
+- **Kebab (⋯) + modal:** `SpaceAccessModal.tsx` (novo, client). Kebab aparece no
+  hover (opacity 0→100, sem deslocar layout) em grupos, leaves de 1º nível,
+  leaves aninhadas e fixos (meu-dia/cockpit). Modal: toggle "Acesso
+  personalizado" (`setSpaceAccessMode`), lista de staff ativo com checkbox +
+  papel + busca (>8), salvar (`setSpaceAccessUsers`), avisos pt-BR, estados
+  loading/vazio/erro. Cadeado discreto no item quando o espaço é custom.
+- **Refresh:** após salvar/alternar, `router.refresh()` (actions já
+  `revalidatePath('/','layout')`). Sem models/endpoints novos; sem deps novas.
+
 ### 2026-07-13 — Redesign IA fatia 3 — grupos visuais de status + filtro/groupBy Categoria
 - **ZERO migração / enum intocado** (spec §3). Os 11 `TaskStatus` viram 6 grupos de
   APRESENTAÇÃO via mapa puro em `src/components/operacional/taskBoard.ts`

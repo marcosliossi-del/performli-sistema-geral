@@ -6,7 +6,7 @@ import { getSession } from '@/lib/session'
 import { getSidebarCounts } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { homeForUser } from '@/lib/home'
-import { assertPathAccess } from '@/lib/nav-access'
+import { assertPathAccess, getNavOverrides, serializeOverrides } from '@/lib/nav-access'
 import { DashboardShell } from '@/components/layout/DashboardShell'
 
 export default async function DashboardLayout({
@@ -43,8 +43,14 @@ export default async function DashboardLayout({
   }
   const homeHref = homeForUser(session.role, operationalRole)
 
+  // Overrides da ACL de navegação por espaço, serializados para atravessar a
+  // fronteira server→client (props). Só contém espaços em modo custom. O client
+  // (Sidebar/CommandPalette) consome via `filterNavByOverrides`. A segurança
+  // real do acesso vive no `assertPathAccess` acima — isto é só UX de menu.
+  const navOverrides = serializeOverrides(await getNavOverrides(session.userId))
+
   return (
-    <DashboardShell session={session} counts={counts} unreadAlerts={counts.alertas} homeHref={homeHref} modal={modal}>
+    <DashboardShell session={session} counts={counts} unreadAlerts={counts.alertas} homeHref={homeHref} navOverrides={navOverrides} modal={modal}>
       {children}
     </DashboardShell>
   )
