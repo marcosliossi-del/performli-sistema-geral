@@ -7,7 +7,7 @@
 > multi-agente: banco, endpoints, auth/RBAC, integrações/crons, frontend/infra). O que não
 > pôde ser confirmado no código está marcado com `⚠️ NÃO CONFIRMADO NO CÓDIGO — VERIFICAR`.
 >
-> **Números de verificação:** 71 models · 45 enums · 70 migrations · 47 arquivos `route.ts` ·
+> **Números de verificação:** 87 models · 58 enums · 72 migrations · 47 arquivos `route.ts` ·
 > 62 endpoints HTTP · 32 arquivos de server actions · 96 actions · 10 integrações externas ·
 > 4 crons · 4 webhooks de entrada · 43 páginas.
 
@@ -101,7 +101,7 @@ flowchart LR
         API["/api/* route handlers<br/>47 arquivos / 62 endpoints"]
         Crons["/api/cron/* (4)"]
     end
-    DB[(PostgreSQL<br/>Prisma 7 · 71 models)]
+    DB[(PostgreSQL<br/>Prisma 7 · 87 models)]
     subgraph Externos
         Meta[Meta Ads]
         GAds[Google Ads]
@@ -157,7 +157,7 @@ src/
 ## 4. BANCO DE DADOS
 
 **Fonte:** `prisma/schema.prisma` (1950 linhas) + `prisma/migrations/`.
-**Números exatos: 71 models · 45 enums · 70 migrations.** Provider `postgresql`, sem
+**Números exatos: 87 models · 58 enums · 72 migrations.** Provider `postgresql`, sem
 previewFeatures; conexão via driver adapter `@prisma/adapter-pg` (singleton em `src/lib/prisma.ts`).
 
 ### 4.1 Multi-tenant no nível de dados
@@ -224,6 +224,19 @@ sentAt/deliveredAt/firstReplyAt — deliveredAt aguarda callback Z-API), `Monthl
 **CRM/CONTRATOS:** `AgencyLead` (UTMs, soft delete via deletedAt), `AgencyActivity`,
 `Contract` (self-relation de renovação, noticeDays, autoRenew).
 
+**CONVERSAS (CRM conversacional — Fase 1, fundação):** 16 models novos, todos com `clientId`
++ cascade (isolamento por tenant). Canal/contato/funil: `ConversationChannel` (credenciais
+cifradas AES-256-GCM, unique client+type+phoneNumberId), `ConversationContact` (opt-in LGPD,
+soft delete), `ConversationPipeline`/`ConversationStage`, `ConversationLead` (índice crítico
+client+pipeline+stage; utm/ctwaClid/referral). Inbox: `Conversation` (índice crítico
+client+lastMessageAt; janela 24h via lastInboundAt), `ConversationMessage` (`waMessageId
+@unique` p/ idempotência de webhook). Ingestão outbox: `ChannelEvent` (`externalId @unique`,
+status PENDING→PROCESSED/FAILED/DEAD). Automação: `ConversationAutomation`/
+`ConversationAutomationRun` (reusa enum `AutomationLogStatus`). Bot: `BotFlow`/`BotSession`.
+Broadcast: `ConversationTemplate`/`ConversationBroadcast`. Atribuição: `ConversionEvent`
+(CAPI, `eventId @unique`), `ConversationNote`. Soft relations (String sem FK): pipelineId/
+stageId/ownerUserId em Lead; leadId/assignedUserId em Conversation; `Task.conversationLeadId`.
+
 **INFRA:** `RateLimit` (fixed-window serverless-safe).
 
 ### 4.3 Diagrama ER (agregados principais)
@@ -260,7 +273,7 @@ erDiagram
 Relações "soft" (String sem FK, fora do ER): `Task.leadId`/`contractId`,
 `AgencyLead.ownerId`/`convertedClientId`, `WeeklyReport.sentBy`.
 
-### 4.4 Enums (45) — principais
+### 4.4 Enums (58) — principais
 
 `Role` (ADMIN, CS, SUPERVISOR_TRAFEGO, ANALISTA_TRAFEGO, GESTOR_TRAFEGO + legados deprecados
 MANAGER/ANALYST) · `OperationalRole` (HEAD/SUPERVISOR/GESTOR/CRM/CS/ACOMPANHAMENTO — NÃO
@@ -271,14 +284,18 @@ FATURAMENTO, TICKET_MEDIO, TAXA_CONVERSAO, CPS, CPM, CAC, MENSAGENS, VISITAS_PER
 LIGACOES, AGENDAMENTOS, LEADS, SEGUIDORES) · `GoalPeriod` · `HealthStatus` (OTIMO/REGULAR/RUIM)
 · `AlertType` (20 valores) · `TaskStatus` (11) · `TaskType` (22) · `TaskOrigin` ·
 `RecurrenceFrequency` (13) · `CheckinStatus` · `SyncStatus` · `CriticalProtocolStatus` ·
-`WarRoomOutcome` · Asaas/Nuvemshop/CRM/Contract/Expense enums. Lista integral no schema
-(`prisma/schema.prisma`, contagem: 45 `^enum`).
+`WarRoomOutcome` · Asaas/Nuvemshop/CRM/Contract/Expense enums · **Conversas (13 novos):**
+`ConversationChannelType`, `ConversationChannelStatus`, `ConversationOptIn`,
+`ConversationLeadStatus`, `ConversationStatus`, `MessageDirection`, `ConversationMessageType`,
+`MessageDeliveryStatus`, `ChannelEventStatus`, `ConversationTriggerType`, `BotSessionStatus`,
+`TemplateMetaStatus`, `BroadcastStatus` (o run de automação reusa `AutomationLogStatus`). Lista
+integral no schema (`prisma/schema.prisma`, contagem: 58 `^enum`).
 
 ### 4.5 Migrations
-70 no total, baseline `20260321113638_init`. 5 mais recentes:
+72 no total, baseline `20260321113638_init`. 5 mais recentes:
+`20260713150000_conversas_foundation`, `20260713140000_platform_ga4sync`,
 `20260706130000_client_portal_users`, `20260704120000_checkin_form_and_chat_mentions`,
-`20260703220000_recurrence_clickup_migration_extensions`,
-`20260703210000_client_paused_semantics`, `20260703200000_recurrence_rule_archived_at`.
+`20260703220000_recurrence_clickup_migration_extensions`.
 Regra do projeto: migrations preferencialmente **aditivas**.
 
 ---
@@ -295,6 +312,7 @@ Rotas `/api/*` **não passam pelo middleware** — cada rota se protege sozinha.
 | GET, POST | `/api/cron/recurrences` | Motores de recorrência (templates por cliente + schedule por task); `?force=1` |
 | GET, POST | `/api/cron/digest` | Digest WhatsApp + watchdog do daily |
 | GET, POST | `/api/cron/resultados` | Resultado semanal (ROAS/GA4) + Etapa (segundas) |
+| GET, POST | `/api/cron/conversas` | Drena o outbox de Conversas (ChannelEvent PENDING/FAILED, batch 50) a cada 1 min; retry + dead-letter; heartbeat `CRON_CONVERSAS_LAST_RUN` |
 
 ### 5.2 Sync (auth: `x-cron-secret` OU sessão; posse por atribuição p/ não-ADMIN)
 | Método | Path | Descrição | Roles |
@@ -314,6 +332,8 @@ Rotas `/api/*` **não passam pelo middleware** — cada rota se protege sozinha.
 | POST | `/api/webhooks/whatsapp/test` | sessão **ADMIN** | Simula inbound |
 | POST | `/api/asaas/webhook` | header `asaas-access-token` = `ASAAS_WEBHOOK_TOKEN` | Processa eventos PAYMENT_* (500 → Asaas reentrega) |
 | POST | `/api/nuvemshop/webhooks` | HMAC-SHA256 body vs `x-linkedstore-hmac-sha256` | Upsert `NuvemshopOrder` + `MetricSnapshot` do dia |
+| GET | `/api/webhooks/meta-whatsapp` | handshake `hub.verify_token`=`META_WA_VERIFY_TOKEN` (DB-first/env); 503 sem token, 403 sem match | Retorna `hub.challenge` (texto puro) |
+| POST | `/api/webhooks/meta-whatsapp` | `X-Hub-Signature-256`=`sha256=`+HMAC do RAW body com `META_WA_APP_SECRET` (DB-first/env), timing-safe; 503 sem secret, 401 inválida | WhatsApp Cloud API: grava cada mensagem/status em `ChannelEvent` (outbox, dedup por externalId), 200 imediato, processa inline best-effort; cron drena o resto |
 
 ### 5.4 Nuvemshop OAuth
 | Método | Path | Auth |
@@ -448,8 +468,10 @@ alterar `status` em tarefas (`assertTaskPatchAllowed`). **Posse de mutação:**
 
 ## 7. INTEGRAÇÕES EXTERNAS
 
-**Total: 10.** Padrões de credencial: DB-first (`IntegrationSetting`) + fallback env →
-Asaas, GA4Sync, Z-API, Evolution; só env → Meta (system token), Google (Service Account),
+**Total: 11.** Padrões de credencial: DB-first (`IntegrationSetting`) + fallback env →
+Asaas, GA4Sync, Z-API, Evolution, WhatsApp Cloud API (verify token/app secret); token
+por canal cifrado (AES-256-GCM) → `ConversationChannel.credentials`; só env → Meta
+(system token), Google (Service Account),
 GA4, Windsor, Nuvemshop (app), Anthropic; token por conta → `PlatformAccount.accessToken`
 (Meta) e `NuvemshopStore.accessToken` (OAuth por loja).
 
@@ -464,6 +486,7 @@ GA4, Windsor, Nuvemshop (app), Anthropic; token por conta → `PlatformAccount.a
 | **Asaas** | Financeiro (cobranças, DRE) | header `access_token` (DB-first) | `/payments`, `/customers`, `/subscriptions`, `/transfers`, `/finance/*` | Asaas* models | daily Step 0, webhook |
 | **Z-API** | WhatsApp (digest, chat, leads) | instance/token/client-token (DB) | `/send-text`, `/qr-code`, `/status`, grupos | AgencyLead (webhook) | digest, webhook |
 | **Evolution** | WhatsApp alternativo (Baileys) | `EVOLUTION_URL/KEY/INSTANCE` (DB) | `/instance/*`, `/message/sendText` | — | — |
+| **WhatsApp Cloud API** (Meta) | CRM Conversas: inbox oficial por cliente + envio de texto (janela 24h) + CTWA→Lead | token por canal cifrado em `ConversationChannel.credentials`; webhook `META_WA_VERIFY_TOKEN`/`META_WA_APP_SECRET` (DB-first) | Graph `v23.0` ⚠️ TODO conferir doc `POST /{phone_number_id}/messages` | ChannelEvent → Conversation/ConversationMessage/ConversationContact/ConversationLead | webhook meta-whatsapp, cron conversas (1min) |
 | **Anthropic** | IA: chat consultor, insights, relatórios, plano de ação, ingestão RAG | `ANTHROPIC_API_KEY` | Messages API (`claude-sonnet-4-6`, `claude-haiku-4-5-20251001` p/ PDF/insights) | AIConversation, ClientInsight, relatórios | daily (relatórios), api/ai/* |
 
 **RAG é lexical, não vetorial:** `knowledge-search.ts` busca por palavras-chave (stopwords pt,
@@ -488,6 +511,7 @@ Auth: `CRON_SECRET` timing-safe fail-closed. Heartbeat: `CRON_<NAME>_LAST_RUN` e
 | digest | `30 11 * * *` (08:30 BRT) | UTC | Watchdog do daily + digest WhatsApp por gestor | Z-API |
 | recurrences | `0 10 * * *` (07:00 BRT) | UTC | 2 motores de recorrência (templates por cliente + schedule por task), idempotentes | Prisma, AutomationLog |
 | resultados | `0 9 * * 1` (seg 06:00 BRT) | UTC | Resultado semanal ROAS/GA4 + Etapa (janela dom-sáb fechada, idempotente) | dados já sincronizados |
+| conversas | `* * * * *` (cada 1 min) | UTC | Drena o outbox `ChannelEvent` (PENDING/FAILED, batch 50, ordem `receivedAt`); processa em série com try/catch por evento; retry até 5 tentativas → DEAD + AuditLog; heartbeat `CRON_CONVERSAS_LAST_RUN` | Postgres (sem fila externa — decisão R1) |
 
 `maxDuration`: `api/sync/**` e `api/cron/**` 300s; `api/nuvemshop/**` 60s;
 `api/admin/knowledge/**` 120s.
@@ -563,6 +587,9 @@ operacional pt-BR; portal mobile-first (390px) com layout próprio.
 | `GA4SYNC_API_KEY` / `GA4SYNC_API_BASE` | API GA4Sync | services/ga4sync |
 | `LEAD_CAPTURE_ALLOWED_ORIGINS` | CORS da captura de leads | api/leads/capture |
 | `SENHA_TESTE_RBAC` | Seed de teste RBAC | services/seed-rbac-test |
+| `CONVERSAS_ENCRYPTION_KEY` | Chave AES-256-GCM (32 bytes base64) p/ cifrar credenciais de canal | lib/conversas/crypto.ts |
+| `META_WA_VERIFY_TOKEN` | Handshake GET do webhook Meta (fallback; DB-first em `IntegrationSetting`) | api/webhooks/meta-whatsapp |
+| `META_WA_APP_SECRET` | Assinatura `X-Hub-Signature-256` do webhook Meta (fallback; DB-first) | api/webhooks/meta-whatsapp |
 
 **Chaves em `IntegrationSetting` (DB, configuráveis em `/settings` sem redeploy):**
 `ASAAS_API_KEY`, `ASAAS_SANDBOX`, `GA4SYNC_API_KEY`, `GA4SYNC_API_BASE`, `ZAPI_INSTANCE_ID`,
@@ -726,6 +753,60 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-13 — Fase 1 Conversas — fundação de dados (schema + migration + crypto + RBAC)
+- **Schema** (`prisma/schema.prisma`): nova seção "CONVERSAS (CRM conversacional)" com 16
+  models — `ConversationChannel`, `ConversationContact`, `ConversationPipeline`,
+  `ConversationStage`, `ConversationLead`, `Conversation`, `ConversationMessage`,
+  `ChannelEvent`, `ConversationAutomation`, `ConversationAutomationRun`, `BotFlow`,
+  `BotSession`, `ConversationTemplate`, `ConversationBroadcast`, `ConversionEvent`,
+  `ConversationNote` — e 13 enums novos. Todos com `clientId` + cascade. Índices críticos:
+  `Conversation(clientId,lastMessageAt)`, `ConversationLead(clientId,pipelineId,stageId)`,
+  `ConversationMessage.waMessageId @unique`, `ChannelEvent.externalId @unique`.
+  `ConversationAutomationRun.status` reusa `AutomationLogStatus`. Client ganhou 10 relações
+  inversas. Campo aditivo `Task.conversationLeadId String?` (soft, sem FK).
+- **Migration** `20260713150000_conversas_foundation` — 100% aditiva (CREATE TYPE/TABLE/INDEX,
+  FKs cascade, `ALTER TABLE "Task" ADD COLUMN`). Nada destrutivo.
+- **Crypto** (`src/lib/conversas/crypto.ts`, novo, server-only): AES-256-GCM
+  (`encryptSecret`/`decryptSecret`, formato `v1:<iv>:<tag>:<cipher>`), chave em
+  `CONVERSAS_ENCRYPTION_KEY` (32 bytes base64). Nunca loga chave/plaintext.
+- **RBAC** (`src/lib/rbac/permissions.ts`): módulo `'conversas'` — ADMIN/ANALISTA_TRAFEGO
+  FULL_CRUD; SUPERVISOR_TRAFEGO/CS `[view,create,update]` (sem delete de histórico);
+  GESTOR_TRAFEGO VIEW_ONLY (escopo de carteira via `scopeClients`). Discovery R4.
+- Anti-escopo desta fatia: sem webhook/ingestão/UI/rotas (outras fatias). Números do
+  cabeçalho atualizados: 87 models · 58 enums · 72 migrations.
+
+### 2026-07-13 — Fase 1 Conversas (fatia B) — conector Cloud API + webhook + ingestão + cron
+- **Cloud API client** (`src/services/conversas/cloud-api.ts`, novo, server-only): `sendTextMessage`
+  (POST Graph `v23.0` `/{phoneNumberId}/messages`, Bearer decifrado de `channel.credentials` via
+  `decryptSecret` — token NUNCA logado; `AbortSignal.timeout(15s)`; retorna wamid; erros tipados
+  `ConversasApiError` code/status pt-BR). `getWindowState` puro (janela 24h a partir de
+  `lastInboundAt` + minutos restantes). Guard: texto livre só com janela aberta. `sendTemplateMessage`
+  com assinatura preparada mas não implementada (Fase 3). ⚠️ **Graph API v23.0 veio de memória do
+  modelo — WebSearch/WebFetch indisponíveis no ambiente; conferir doc oficial da Meta antes do go-live.**
+- **Webhook** (`src/app/api/webhooks/meta-whatsapp/route.ts`, novo): GET handshake
+  (`hub.verify_token`=`META_WA_VERIFY_TOKEN` DB-first+env, fail-closed 503/403, challenge texto puro);
+  POST valida `X-Hub-Signature-256` = `sha256=`+HMAC(raw body, `META_WA_APP_SECRET` DB-first+env) com
+  `timingSafeEqual` (503 sem secret, 401 inválida); grava cada mensagem/status em `ChannelEvent`
+  (dedup por `externalId` unique), responde 200 imediato, processa inline best-effort (try/catch que
+  nunca derruba a resposta). Sempre 200 exceto auth. Rota independente do webhook Z-API.
+- **Ingestão** (`src/services/conversas/ingest.ts`, novo): `processChannelEvent` idempotente — resolve
+  canal ATIVO por `phone_number_id`; inbound → upsert Contact(clientId,phone)/Conversation(não-CLOSED)/
+  Message(waMessageId dedup) + lastInboundAt/lastMessageAt/unreadCount; CTWA (referral em contato NOVO)
+  → cria `ConversationLead` no pipeline default (seed lazy "Atendimento": Novo/Em atendimento/
+  Qualificado/Ganhou(isWon)/Perdeu(isLost)) e linka `Conversation.leadId`; status update → atualiza
+  `ConversationMessage.status` por waMessageId. Transições PROCESSED/FAILED(attempts+1)/DEAD(≥5) +
+  `AuditLog` em DEAD (regra #8). clientId sempre derivado do canal.
+- **Cron** (`src/app/api/cron/conversas/route.ts`, novo): `isCronAuthorized` fail-closed; drena
+  `ChannelEvent` PENDING/FAILED (attempts<5, batch 50, ordem `receivedAt`) em série com try/catch por
+  evento; `recordCronHeartbeat('CONVERSAS')`; resumo {processed,failed,dead}. `vercel.json`: cron
+  `* * * * *` (coberto por `api/cron/** maxDuration 300`). `CronName` ganhou `'CONVERSAS'`.
+- **Envio outbound (gate)** (`src/app/actions/conversas.ts`, novo): `sendConversationMessage` —
+  `requireSession` + `can(role,'update','conversas')` + `assertClientMutationAccess(clientId da
+  conversa, allowCS)` + guard janela 24h + `sendTextMessage` + cria `ConversationMessage` OUT
+  (sentByUserId, status SENT) + `lastMessageAt` + `AuditLog`. clientId sempre da conversa.
+- Env vars novas: `META_WA_VERIFY_TOKEN`, `META_WA_APP_SECRET` (DB-first em `IntegrationSetting`,
+  fallback env). Sem migration (schema da fatia A já contempla tudo).
+
 ### 2026-07-13 — Validação zod permissiva de INPUT em rotas internas (AL-6, parcial)
 - Adicionado `z.safeParse` **permissivo** (aceita exatamente o que já era aceito;
   rejeita só malformado com `400 { error: <pt-BR string> }`, sem `flatten()` cru —
@@ -885,3 +966,16 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
 ### 2026-07-13 — Dossiê técnico
 - **Criado** `DOSSIE-PERFORMLI.md` por exploração forense do código real.
+
+### 2026-07-13 — Redesign de IA (Fase 0) + hardening do middleware
+- **Auditoria de navegação:** criado `docs/audit-ia-atual.md` (Fase 0 do
+  redesign de arquitetura de informação; matriz 7 MANTER / 11 ADAPTAR /
+  3 CRIAR; 5 status problemáticos reportados). Passou por autocrítica
+  adversarial — 8 correções aplicadas (StatusSet é semi-ligado, não dark
+  feature; rota órfã `/tasks`; camada middleware documentada). Aguarda
+  aprovação do gate antes da Fase 1.
+- **Fix de segurança (defesa em profundidade):** `/suporte`, `/recorrencias`
+  e `/juridico` adicionados ao `PROTECTED_PREFIX` do `src/middleware.ts` —
+  eram itens de menu sem cobertura do middleware (as páginas já tinham
+  `requireSession()` interno; nenhum acesso indevido possível, mas a 1ª
+  barreira estava furada).

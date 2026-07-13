@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/resultados",
       "schedule": "0 9 * * 1"
+    },
+    {
+      "path": "/api/cron/conversas",
+      "schedule": "* * * * *"
     }
   ],
   "functions": {

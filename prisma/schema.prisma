@@ -256,6 +256,18 @@ model Client {
   productChanges      ClientProductChange[]
   portalUsers         ClientPortalUser[]
 
+  // ── CONVERSAS (CRM conversacional) ─────────────────────────────────────────
+  conversationChannels    ConversationChannel[]
+  conversationContacts    ConversationContact[]
+  conversationPipelines   ConversationPipeline[]
+  conversationLeads       ConversationLead[]
+  conversations           Conversation[]
+  conversationAutomations ConversationAutomation[]
+  botFlows                BotFlow[]
+  conversationTemplates   ConversationTemplate[]
+  conversationBroadcasts  ConversationBroadcast[]
+  conversionEvents        ConversionEvent[]
+
   @@index([status])
   @@index([pipelineStage])
   @@index([gestorId])
@@ -954,6 +966,7 @@ model Task {
   list          TaskList?    @relation(fields: [listId], references: [id])
 
   leadId        String?     // AgencyLead vinculado (id, sem FK)
+  conversationLeadId String? // ConversationLead vinculado (id, sem FK)
   contractId    String?     // Contract vinculado (id, sem FK)
 
   requesterId   String?
@@ -1947,4 +1960,380 @@ model RateLimit {
   updatedAt   DateTime @updatedAt
 
   @@index([windowStart])
+}
+
+// ─── CONVERSAS (CRM conversacional — WhatsApp Cloud API por cliente) ──────────
+//
+// Domínio novo: inbox multicanal + pipeline de leads do CONSUMIDOR FINAL da loja
+// de cada cliente (tenant). NÃO confundir com AgencyLead (CRM da própria Arkza,
+// sem clientId) nem com ClientChat (chat interno de staff, thread única). Todo
+// model nasce com isolamento por `clientId` + `@relation(onDelete: Cascade)`,
+// no padrão de MetricSnapshot/Goal. Credenciais de canal são gravadas cifradas
+// (AES-256-GCM, ver src/lib/conversas/crypto.ts). Ingestão via outbox
+// (ChannelEvent) drenado por cron — decisão R1 do discovery.
+
+enum ConversationChannelType {
+  WHATSAPP_CLOUD // WhatsApp Cloud API oficial (v1)
+  INSTAGRAM      // Instagram DM (futuro)
+}
+
+enum ConversationChannelStatus {
+  PENDING  // aguardando configuração/verificação
+  ACTIVE   // operando
+  ERROR    // credencial/webhook com falha
+  DISABLED // desligado manualmente
+}
+
+enum ConversationOptIn {
+  UNKNOWN   // sem consentimento registrado
+  OPTED_IN  // aceitou receber (base para broadcast)
+  OPTED_OUT // recusou / descadastrou
+}
+
+enum ConversationLeadStatus {
+  OPEN // em atendimento no funil
+  WON  // ganho (conversão)
+  LOST // perdido
+}
+
+enum ConversationStatus {
+  OPEN    // conversa ativa
+  PENDING // aguardando resposta do atendente
+  CLOSED  // encerrada
+}
+
+enum MessageDirection {
+  IN  // recebida do contato (inbound)
+  OUT // enviada pela agência/bot (outbound)
+}
+
+enum ConversationMessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+  TEMPLATE     // mensagem de template (fora da janela de 24h)
+  INTERACTIVE  // botões/listas
+  UNSUPPORTED  // tipo não tratado
+}
+
+enum MessageDeliveryStatus {
+  PENDING   // aguardando envio
+  SENT      // enviada à Meta
+  DELIVERED // entregue ao aparelho
+  READ      // lida
+  FAILED    // falha de envio
+}
+
+enum ChannelEventStatus {
+  PENDING   // aguardando processamento (outbox)
+  PROCESSED // processado com sucesso
+  FAILED    // falhou, elegível a retry
+  DEAD      // esgotou tentativas (dead-letter)
+}
+
+enum ConversationTriggerType {
+  LEAD_CREATED     // novo lead no funil
+  STAGE_CHANGED    // mudou de estágio
+  MESSAGE_RECEIVED // mensagem recebida
+  NO_REPLY_AFTER   // sem resposta após X tempo
+  TAG_ADDED        // tag adicionada
+}
+
+enum BotSessionStatus {
+  ACTIVE     // fluxo em andamento
+  COMPLETED  // fluxo concluído
+  HANDED_OFF // transferido para humano
+  ABORTED    // interrompido
+}
+
+enum TemplateMetaStatus {
+  PENDING  // aguardando aprovação da Meta
+  APPROVED // aprovado
+  REJECTED // rejeitado pela Meta
+}
+
+enum BroadcastStatus {
+  DRAFT     // rascunho
+  SCHEDULED // agendado
+  SENDING   // em envio
+  DONE      // concluído
+  FAILED    // falhou
+}
+
+// ── Canal ─────────────────────────────────────────────────────────────────────
+model ConversationChannel {
+  id            String                    @id @default(cuid())
+  clientId      String
+  type          ConversationChannelType   // WHATSAPP_CLOUD (v1) | INSTAGRAM (futuro)
+  status        ConversationChannelStatus @default(PENDING)
+  phoneNumberId String?                   // WhatsApp Cloud API
+  wabaId        String?
+  displayName   String?
+  credentials   String                    @db.Text // JSON cifrado (AES-256-GCM) — token etc.
+  webhookSecret String?                   // verify_token do GET challenge (por canal)
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+
+  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  // Unique GLOBAL (não por cliente): o phone_number_id identifica o canal na
+  // Meta; permitir o mesmo em dois clientes abriria misroteamento de tenant
+  // (QA Fase 1, bloqueante 1).
+  @@unique([type, phoneNumberId])
+  @@index([clientId])
+}
+
+// ── Contato e Lead (consumidor final da loja) ────────────────────────────────
+model ConversationContact {
+  id              String            @id @default(cuid())
+  clientId        String
+  name            String?
+  phone           String?           // E.164
+  email           String?
+  instagramHandle String?
+  customFields    Json?
+  optInStatus     ConversationOptIn @default(UNKNOWN)
+  optInAt         DateTime?
+  deletedAt       DateTime?         // LGPD soft delete
+  createdAt       DateTime          @default(now())
+
+  client        Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  leads         ConversationLead[]
+  conversations Conversation[]
+
+  @@unique([clientId, phone])
+  @@index([clientId, createdAt])
+}
+
+model ConversationPipeline {
+  id        String  @id @default(cuid())
+  clientId  String
+  name      String
+  isDefault Boolean @default(false)
+
+  client Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  stages ConversationStage[]
+
+  @@index([clientId])
+}
+
+model ConversationStage {
+  id           String  @id @default(cuid())
+  pipelineId   String
+  name         String
+  order        Int
+  color        String?
+  isWon        Boolean @default(false)
+  isLost       Boolean @default(false)
+  isConversion Boolean @default(false) // dispara CAPI ao entrar (config por pipeline)
+
+  pipeline ConversationPipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  @@index([pipelineId, order])
+}
+
+model ConversationLead {
+  id             String                 @id @default(cuid())
+  clientId       String
+  contactId      String
+  pipelineId     String                 // ConversationPipeline vinculado (id, sem FK)
+  stageId        String                 // ConversationStage vinculado (id, sem FK)
+  ownerUserId    String?                // atendente responsável (User staff, sem FK)
+  value          Decimal?               @db.Decimal(12, 2)
+  source         String?                // 'ctwa' | 'organic' | 'form' | ...
+  utm            Json?
+  ctwaClid       String?                // click id do Click-to-WhatsApp
+  referral       Json?                  // source_url, headline etc. do webhook CTWA
+  status         ConversationLeadStatus @default(OPEN)
+  lostReason     String?
+  stageEnteredAt DateTime               @default(now())
+  deletedAt      DateTime?              // LGPD soft delete
+  createdAt      DateTime               @default(now())
+
+  client  Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contact ConversationContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, pipelineId, stageId]) // índice crítico do discovery
+  @@index([clientId, status])
+}
+
+// ── Conversação ───────────────────────────────────────────────────────────────
+model Conversation {
+  id             String             @id @default(cuid())
+  clientId       String
+  contactId      String
+  channelId      String
+  leadId         String?            // ConversationLead vinculado (id, sem FK)
+  status         ConversationStatus @default(OPEN)
+  assignedUserId String?            // atendente (User staff, sem FK)
+  lastMessageAt  DateTime?
+  lastInboundAt  DateTime?          // base da janela de 24h
+  unreadCount    Int                @default(0)
+  createdAt      DateTime           @default(now())
+
+  client   Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contact  ConversationContact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  channel  ConversationChannel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  messages ConversationMessage[]
+
+  @@index([clientId, lastMessageAt]) // índice crítico do discovery
+  @@index([clientId, status, assignedUserId])
+}
+
+model ConversationMessage {
+  id             String                  @id @default(cuid())
+  conversationId String
+  direction      MessageDirection
+  type           ConversationMessageType
+  body           String?                 @db.Text
+  mediaUrl       String?
+  waMessageId    String?                 @unique // idempotência de webhook (crítico)
+  status         MessageDeliveryStatus   @default(PENDING)
+  errorDetail    String?
+  sentByUserId   String?                 // staff que enviou (null = inbound/bot)
+  sentByBot      Boolean                 @default(false)
+  createdAt      DateTime                @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+// ── Ingestão (outbox — resposta do R1) ───────────────────────────────────────
+model ChannelEvent {
+  id          String             @id @default(cuid())
+  channelId   String?            // resolvido quando possível (sem FK)
+  externalId  String?            @unique // wa message/status id (dedup)
+  payload     Json               // payload cru do webhook
+  status      ChannelEventStatus @default(PENDING)
+  attempts    Int                @default(0)
+  lastError   String?
+  receivedAt  DateTime           @default(now())
+  processedAt DateTime?
+
+  @@index([status, receivedAt])
+}
+
+// ── Automação (Digital Pipeline) ──────────────────────────────────────────────
+model ConversationAutomation {
+  id            String                  @id @default(cuid())
+  clientId      String
+  name          String
+  triggerType   ConversationTriggerType
+  triggerConfig Json?
+  actions       Json                    // sequência ordenada de ações (v1: avaliador simples)
+  isActive      Boolean                 @default(true)
+
+  client Client                      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  runs   ConversationAutomationRun[]
+
+  @@index([clientId, triggerType, isActive])
+}
+
+model ConversationAutomationRun {
+  id           String              @id @default(cuid())
+  automationId String
+  leadId       String?             // ConversationLead vinculado (id, sem FK)
+  status       AutomationLogStatus // REUSA o enum existente (SUCESSO|FALHA|DUPLICIDADE_EVITADA)
+  error        String?
+  executedAt   DateTime            @default(now())
+
+  automation ConversationAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId, executedAt])
+}
+
+// ── Bot (Salesbot v1 determinístico) ─────────────────────────────────────────
+model BotFlow {
+  id         String   @id @default(cuid())
+  clientId   String
+  name       String
+  definition Json     // grafo de nós MESSAGE|QUESTION|CONDITION|ACTION|HANDOFF
+  isActive   Boolean  @default(false)
+  channelIds String[]
+
+  client   Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sessions BotSession[]
+
+  @@index([clientId, isActive])
+}
+
+model BotSession {
+  id             String           @id @default(cuid())
+  botFlowId      String
+  conversationId String           // Conversation vinculada (id, sem FK)
+  currentNode    String
+  variables      Json?
+  status         BotSessionStatus @default(ACTIVE)
+
+  botFlow BotFlow @relation(fields: [botFlowId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, botFlowId])
+}
+
+// ── Broadcast ─────────────────────────────────────────────────────────────────
+model ConversationTemplate {
+  id               String             @id @default(cuid())
+  clientId         String
+  channelId        String             // ConversationChannel vinculado (id, sem FK)
+  metaTemplateName String
+  language         String             @default("pt_BR")
+  body             String             @db.Text
+  variables        String[]
+  metaStatus       TemplateMetaStatus @default(PENDING)
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  // map: nome explícito <=63 chars (o default do Prisma estoura o limite do
+  // Postgres e seria truncado, gerando drift — QA Fase 1, bloqueante 2).
+  @@unique([clientId, channelId, metaTemplateName, language], map: "ConversationTemplate_client_channel_template_lang_key")
+}
+
+model ConversationBroadcast {
+  id             String          @id @default(cuid())
+  clientId       String
+  templateId     String          // ConversationTemplate vinculado (id, sem FK)
+  audienceFilter Json            // segmentação (só opt-in — enforced no código)
+  scheduledAt    DateTime?
+  status         BroadcastStatus @default(DRAFT)
+  sentCount      Int             @default(0)
+  deliveredCount Int             @default(0)
+  readCount      Int             @default(0)
+  replyCount     Int             @default(0)
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, status])
+}
+
+// ── Atribuição / CAPI ─────────────────────────────────────────────────────────
+model ConversionEvent {
+  id          String    @id @default(cuid())
+  clientId    String
+  leadId      String    // ConversationLead vinculado (id, sem FK)
+  eventName   String    // Lead | Purchase | ...
+  value       Decimal?  @db.Decimal(12, 2)
+  currency    String?   @default("BRL")
+  eventId     String    @unique // dedup na Meta
+  sentToMeta  Boolean   @default(false)
+  metaTraceId String?
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId, sentToMeta])
+}
+
+model ConversationNote {
+  id        String   @id @default(cuid())
+  leadId    String   // ConversationLead vinculado (id, sem FK)
+  userId    String   // User staff autor (id, sem FK)
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([leadId, createdAt])
 }
