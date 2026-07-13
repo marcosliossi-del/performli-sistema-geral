@@ -113,7 +113,6 @@ export async function createTask(formData: FormData) {
     console.error('[task-automation] hook created falhou:', err)
   }
 
-  revalidatePath('/tasks')
   revalidatePath('/operacional')
   return { ok: true, id: task.id }
 }
@@ -362,9 +361,9 @@ export async function updateTaskStatus(
 
   // Revalidação cirúrgica (perf): OperacionalBoard e SupportBoard são otimistas
   // com rollback, então re-renderizar essas rotas a cada clique é trabalho
-  // redundante. /tasks é só redirect e /meu-dia é uma leitura sem mutação inline
-  // — ambas rotas dinâmicas (auth por cookie) que re-renderizam frescas na
-  // próxima navegação de qualquer forma. Mantemos apenas /operacional como
+  // redundante. /meu-dia é uma leitura sem mutação inline — rota dinâmica (auth
+  // por cookie) que re-renderiza fresca na próxima navegação de qualquer forma.
+  // Mantemos apenas /operacional como
   // superfície canônica; TaskDrawer/TaskPanel reconciliam o estado localmente.
   revalidatePath('/operacional')
   return { ok: true }

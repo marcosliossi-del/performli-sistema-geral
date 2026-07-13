@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { requireSession } from '@/lib/dal'
 import { loadTaskPanel } from '@/lib/tasks/panel'
 import { TaskPanel } from '@/components/tasks/TaskPanel'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,5 +24,15 @@ export default async function TaskPanelPage({
   // sem posse — mesmo padrão de recorte de leitura do resto do sistema).
   if (!result) notFound()
 
-  return <TaskPanel result={result} variant="page" />
+  return (
+    <div className="mx-auto w-full max-w-3xl space-y-4">
+      <Breadcrumbs
+        items={[
+          { label: 'Central de Tarefas', href: '/operacional' },
+          { label: result.data.title },
+        ]}
+      />
+      <TaskPanel result={result} variant="page" />
+    </div>
+  )
 }

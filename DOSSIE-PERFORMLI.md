@@ -37,7 +37,7 @@ de migração (rastreabilidade via `externalId` em `User`, `Client`, `TaskList`)
 |---|---|
 | Cockpit / central de comando | `/cockpit`, `/dashboard` |
 | Clientes (Client 360, saúde, metas) | `/clients`, `/clients/[slug]` |
-| Tarefas / Central Operacional | `/tasks`, `/t/[taskId]`, `/meu-dia`, `/minha-semana`, `/recorrencias`, `/validacoes`, `/processos` |
+| Tarefas / Central Operacional | `/operacional`, `/t/[taskId]`, `/meu-dia`, `/recorrencias`, `/validacoes`, `/processos` |
 | Check-ins e relatórios | `/check-ins`, `/reports` |
 | Anti-churn / War Room | `/anti-churn`, `/operations`, `/alerts` |
 | Comercial (CRM + propostas) | `/comercial`, `/comercial/proposta`, `/pipeline` |
@@ -987,3 +987,23 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
   (4) órfãs `/minha-semana` e `/tasks` serão removidas.
 - Criado `docs/proposta-ia-performli.md` (árvores por papel, sem migrations,
   4 fatias de implementação). Aguarda aprovação do gate da Fase 1.
+
+### 2026-07-13 — Redesign de IA (Fase 1, Fatia 1 — implementação)
+- **Sidebar reagrupada** (`src/components/layout/Sidebar.tsx`): `navigation[]`
+  reorganizado para a árvore da proposta §2. Fixos reduzidos a Meu Dia + Cockpit
+  (Hub de Suporte → grupo Clientes; Central de Tarefas → 1ª leaf de Operação).
+  Grupo NOVO "Risco" (War Room + Alertas). Grupo "Administrativo" consolida
+  Financeiro/Jurídico/Metas/Equipe/Atribuições/Visão CEO/Visão Gestor.
+  "Recorrências" renomeada p/ "Rotinas & Recorrências" (href `/recorrencias`
+  inalterado). Nenhuma mudança em `permissions.ts` — visibilidade 100% via `can()`.
+- **Badges em grupos colapsados:** `NavGroup` soma os contadores dos filhos
+  visíveis quando FECHADO (cor de alerta se algum filho for `alert`); aberto, o
+  badge do grupo some (cada leaf mostra o próprio — sem dupla contagem).
+- **⌘K ampliado:** exportado `NAV_LINKS` (lista plana derivada do registry) do
+  `Sidebar.tsx`; `CommandPalette.tsx` recebe `role` e gera os quick-links de
+  todas as páginas do menu, filtrando por `can(role,'view',module)` — sem lista
+  duplicada.
+- **Rotas órfãs removidas:** deletados `src/app/(dashboard)/minha-semana/` e
+  `src/app/(dashboard)/tasks/` (eram só redirects). `/minha-semana` e `/tasks`
+  saíram do `PROTECTED_PREFIX` do middleware; `revalidatePath('/tasks')` órfão
+  removido de `actions/tasks.ts` (regra 12 — remoção registrada na proposta §4).
