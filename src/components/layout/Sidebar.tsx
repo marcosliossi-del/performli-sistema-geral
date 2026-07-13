@@ -126,6 +126,7 @@ const navigation: NavSection[] = [
           { name: 'Estágio da Carteira',     href: '/pipeline',           icon: Kanban,    module: 'comercial' },
           { name: 'Dashboard Comercial',     href: '/comercial/dashboard', icon: BarChart3, module: 'comercial' },
           { name: 'Gerador de Proposta',     href: '/comercial/proposta',  icon: FileText,  module: 'comercial' },
+          { name: 'Conversas',               href: '/conversas',           icon: MessagesSquare, module: 'conversas' },
         ],
       },
       {
@@ -288,6 +289,12 @@ export function Sidebar({ role, counts, homeHref = '/cockpit', navOverrides = {}
 
   // Kebab "Gerenciar acesso" + cadeado: SÓ para ADMIN real (nunca na prévia).
   const showKebab = base === 'ADMIN' && !isPreview
+
+  // QA D5: entrar na prévia fecha o modal de acesso (ele é ferramenta do ADMIN
+  // real; as actions barram server-side de qualquer forma).
+  useEffect(() => {
+    if (isPreview) setManagingSpace(null)
+  }, [isPreview])
   const isCustomSpace = (spaceKey: string | undefined): boolean =>
     !!spaceKey && spaceKey in navOverrides
 

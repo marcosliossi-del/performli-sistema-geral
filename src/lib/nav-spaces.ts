@@ -65,6 +65,7 @@ const COMERCIAL_LEAVES: LeafSeed[] = [
   { key: 'comercial.pipeline', label: 'Estágio da Carteira', href: '/pipeline' },
   { key: 'comercial.dashboard', label: 'Dashboard Comercial', href: '/comercial/dashboard' },
   { key: 'comercial.proposta', label: 'Gerador de Proposta', href: '/comercial/proposta' },
+  { key: 'comercial.conversas', label: 'Conversas', href: '/conversas' },
 ]
 
 const ADMINISTRATIVO_LEAVES: LeafSeed[] = [

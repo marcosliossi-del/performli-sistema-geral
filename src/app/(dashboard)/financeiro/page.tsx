@@ -14,10 +14,10 @@ import { ExpenseLaunchButton } from '@/components/financeiro/ExpenseLaunchButton
 import { categoryColor, categoryLabel } from '@/components/financeiro/ExpenseModal'
 import { saoPauloDateString, saoPauloDayStart, formatSaoPauloDateTime } from '@/lib/utils'
 import {
-import { hasSpaceGrant } from '@/lib/nav-access'
   TrendingUp, TrendingDown, DollarSign, Users, AlertCircle,
   Clock, Calendar, BarChart3, Percent,
 } from 'lucide-react'
+import { hasSpaceGrant } from '@/lib/nav-access'
 
 export const dynamic = 'force-dynamic'
 
