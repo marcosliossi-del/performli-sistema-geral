@@ -358,6 +358,27 @@ src/components/conversas/                     # shell inbox, thread, kanban (com
 docs/conversas/                               # discovery + relatórios de fase
 ```
 
+## 6.0 APROVAÇÃO E DIRETRIZ DE PRODUTO (2026-07-13)
+
+**Aprovado pelo Marcos** ("pode fazer a sua recomendação"): R1 (outbox + cron
+1min), R4 (ANALISTA_TRAFEGO ≈ CRM/Automação, sem papel novo). Fase 1 iniciada.
+
+**Diretriz de produto (palavras do Marcos):** *"minha principal função com o
+CRM é acompanhar atendimento dos vendedores, estágio dos leads, monetização."*
+Implicações de prioridade:
+1. **Supervisão de atendimento** — métricas por vendedor/atendente (tempo de 1ª
+   resposta, conversas abertas/pendentes, SLA de resposta) são cidadãs de
+   primeira classe no inbox e no dashboard do módulo (Fase 2).
+2. **Estágio dos leads** — pipeline Kanban com visão gerencial (leads por
+   estágio, tempo em estágio, gargalos) (Fase 2).
+3. **Monetização** — valor por lead, receita ganha (WON), atribuição por
+   origem/campanha e CAPI (Fase 5, priorizada logo após a 2).
+4. Bot e broadcast (Fases 3-4) ficam por último, conforme o anti-escopo.
+
+Pendências operacionais (não bloqueiam o código): WABA para o gate da Fase 1;
+cliente piloto + 2º tenant de teste; processo Meta (verificação + templates)
+iniciado em paralelo pelo Marcos.
+
 ## 6. PERGUNTAS ABERTAS PARA O MARCOS (bloqueiam a Fase 1)
 
 1. **R1 aprovado?** Outbox + cron de 1 min (sem Redis/pg-boss) como mecanismo de fila.
