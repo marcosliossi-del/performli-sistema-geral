@@ -18,8 +18,9 @@ import { TasksListView } from './TasksListView'
 import { TasksKanbanView } from './TasksKanbanView'
 import {
   applyFilters, loadView, saveView, loadFilters, saveFilters,
+  loadKanbanGrouping, saveKanbanGrouping,
   EMPTY_FILTERS, isOverdue as isOverdueVM,
-  type BoardView, type TaskFilters, type BoardHandlers,
+  type BoardView, type TaskFilters, type BoardHandlers, type KanbanGrouping,
 } from './taskBoard'
 import {
   STATUS_LABELS, STATUS_COLORS, PRIORITY_LABELS, label,
@@ -31,6 +32,7 @@ const VIEWS: { key: BoardView; label: string }[] = [
   { key: 'calendario', label: 'Calendário' },
   { key: 'cliente', label: 'Por Cliente' },
   { key: 'responsavel', label: 'Por Gestor' },
+  { key: 'area', label: 'Por Área' },
 ]
 
 function Segmented({ view, setView }: { view: BoardView; setView: (v: BoardView) => void }) {
@@ -266,6 +268,7 @@ export function OperacionalBoard({
   const [tasks, setTasks] = useState<OperacionalTask[]>(initialTasks)
 
   const [view, setView] = useState<BoardView>('lista')
+  const [kanbanGrouping, setKanbanGrouping] = useState<KanbanGrouping>('status')
   const [filters, setFilters] = useState<TaskFilters>(EMPTY_FILTERS)
   const [hydrated, setHydrated] = useState(false)
 
@@ -277,10 +280,12 @@ export function OperacionalBoard({
   // divergência de hidratação (TaskSavedView sem action de escrita — ver handoff).
   useEffect(() => {
     setView(loadView())
+    setKanbanGrouping(loadKanbanGrouping())
     setFilters(loadFilters())
     setHydrated(true)
   }, [])
   useEffect(() => { if (hydrated) saveView(view) }, [view, hydrated])
+  useEffect(() => { if (hydrated) saveKanbanGrouping(kanbanGrouping) }, [kanbanGrouping, hydrated])
   useEffect(() => { if (hydrated) saveFilters(filters) }, [filters, hydrated])
 
   // Deep-link: ?task=<id> abre o TaskDrawer atual (preservado — não remover).
@@ -300,6 +305,7 @@ export function OperacionalBoard({
 
   const usersOpts = useMemo(() => ctx.usuarios.map((u) => ({ id: u.id, name: u.name })), [ctx.usuarios])
   const clientesOpts = useMemo(() => ctx.clientes.map((c) => ({ id: c.id, name: c.name })), [ctx.clientes])
+  const areasOpts = useMemo(() => ctx.areas.map((a) => ({ code: a.code, name: a.name })), [ctx.areas])
   const userNameById = useMemo(() => new Map(usersOpts.map((u) => [u.id, u.name])), [usersOpts])
 
   // Handlers rethrow no erro (rollback já aplicado); os átomos da Fase 3 e o
@@ -409,7 +415,7 @@ export function OperacionalBoard({
         clientId: null, clientName: null, clientSlug: null, clientHealth: null,
         assigneeId: currentUser.id, assigneeName: currentUser.name,
         assignees: [{ id: currentUser.id, name: currentUser.name }],
-        areaName: null, popCode: null, slaHours: null, slaBreached: false,
+        areaName: null, areaCode: null, popCode: null, slaHours: null, slaBreached: false,
         tags: [], orderIndex: null, checklistDone: 0, checklistTotal: 0, commentCount: 0,
       }
       setTasks((prev) => [optimistic, ...prev])
@@ -426,10 +432,12 @@ export function OperacionalBoard({
 
   // Grupos das views legadas Por Cliente / Por Gestor
   const legacyGroups = useMemo(() => {
-    if (view !== 'responsavel' && view !== 'cliente') return []
+    if (view !== 'responsavel' && view !== 'cliente' && view !== 'area') return []
     const keyFn = view === 'responsavel'
       ? (t: OperacionalTask) => t.assigneeName
-      : (t: OperacionalTask) => t.clientName ?? 'Interno'
+      : view === 'area'
+        ? (t: OperacionalTask) => t.areaName ?? 'Sem área'
+        : (t: OperacionalTask) => t.clientName ?? 'Interno'
     const map = new Map<string, OperacionalTask[]>()
     for (const t of filtered) {
       const k = keyFn(t)
@@ -446,6 +454,26 @@ export function OperacionalBoard({
       {/* Barra de visão + criar */}
       <div className="flex flex-wrap items-center gap-2">
         <Segmented view={view} setView={setView} />
+        {view === 'kanban' && (
+          <div className="inline-flex items-center gap-1 rounded-lg border border-[#38435C] bg-[#0A1E2C] p-0.5" role="group" aria-label="Agrupar Kanban">
+            {([
+              { key: 'status', label: 'Por status' },
+              { key: 'grupo', label: 'Por grupo' },
+            ] as { key: KanbanGrouping; label: string }[]).map((g) => {
+              const on = kanbanGrouping === g.key
+              return (
+                <button
+                  key={g.key}
+                  type="button"
+                  onClick={() => setKanbanGrouping(g.key)}
+                  className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${on ? 'bg-[#95BBE2]/20 text-[#95BBE2] font-semibold' : 'text-[#a3b2c2] hover:text-[#EBEBEB]'}`}
+                >
+                  {g.label}
+                </button>
+              )
+            })}
+          </div>
+        )}
         <div className="flex-1" />
         {canEdit && (
           <button onClick={() => setNovaOpen(true)} className="flex items-center gap-1.5 text-xs bg-[#95BBE2]/10 text-[#95BBE2] border border-[#95BBE2]/20 rounded-lg px-3 py-1.5 hover:bg-[#95BBE2]/20">
@@ -460,6 +488,7 @@ export function OperacionalBoard({
         onChange={setFilters}
         users={usersOpts}
         clientes={clientesOpts}
+        areas={areasOpts}
       />
 
       {/* Conteúdo — Lista/Kanban sempre renderizam (grupos/colunas vazios ainda
@@ -467,7 +496,7 @@ export function OperacionalBoard({
       {view === 'lista' ? (
         <TasksListView tasks={filtered} handlers={handlers} />
       ) : view === 'kanban' ? (
-        <TasksKanbanView tasks={filtered} handlers={handlers} />
+        <TasksKanbanView tasks={filtered} handlers={handlers} grouping={kanbanGrouping} />
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-sm text-[#87919E]">Nenhuma tarefa com esses filtros.</div>
       ) : view === 'calendario' ? (

@@ -8,7 +8,7 @@ import {
   STATUS_CHOICES, statusLabel, countActiveFilters,
   type TaskFilters, type DueFilter,
 } from './taskBoard'
-import { PRIORITY_LABELS, PRIORITY_OPTIONS, label } from './labels'
+import { PRIORITY_LABELS, PRIORITY_OPTIONS, AREA_LABELS, label } from './labels'
 
 type Opt = { value: string; label: string }
 
@@ -131,15 +131,19 @@ export function TaskFiltersBar({
   onChange,
   users,
   clientes,
+  areas,
 }: {
   filters: TaskFilters
   onChange: (next: TaskFilters) => void
   users: { id: string; name: string }[]
   clientes: { id: string; name: string }[]
+  /** Categorias (Áreas) disponíveis — code = AreaCode, name = rótulo pt-BR. */
+  areas: { code: string; name: string }[]
 }) {
   const statusOpts: Opt[] = STATUS_CHOICES.map((s) => ({ value: s, label: statusLabel(s) }))
   const userOpts: Opt[] = users.map((u) => ({ value: u.id, label: u.name }))
   const prioOpts: Opt[] = PRIORITY_OPTIONS.map((p) => ({ value: p, label: label(PRIORITY_LABELS, p) }))
+  const areaOpts: Opt[] = areas.map((a) => ({ value: a.code, label: a.name || label(AREA_LABELS, a.code) }))
   const activeCount = countActiveFilters(filters)
 
   return (
@@ -161,6 +165,9 @@ export function TaskFiltersBar({
       <MultiSelect label="Status" options={statusOpts} selected={filters.status} onChange={(v) => onChange({ ...filters, status: v })} />
       <MultiSelect label="Responsável" options={userOpts} selected={filters.assignee} onChange={(v) => onChange({ ...filters, assignee: v })} />
       <MultiSelect label="Prioridade" options={prioOpts} selected={filters.priority} onChange={(v) => onChange({ ...filters, priority: v })} />
+      {areaOpts.length > 0 && (
+        <MultiSelect label="Categoria" options={areaOpts} selected={filters.area} onChange={(v) => onChange({ ...filters, area: v })} />
+      )}
 
       <select
         value={filters.clientId}
@@ -200,7 +207,7 @@ export function TaskFiltersBar({
       {activeCount > 0 && (
         <button
           type="button"
-          onClick={() => onChange({ status: [], assignee: [], priority: [], clientId: '', due: null, search: '' })}
+          onClick={() => onChange({ status: [], assignee: [], priority: [], area: [], clientId: '', due: null, search: '' })}
           className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] text-[#647488] hover:text-[#EBEBEB]"
         >
           <X size={12} aria-hidden /> Limpar ({activeCount})
