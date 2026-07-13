@@ -717,3 +717,35 @@ este dossiê refletem o RBAC v2; em divergência, o código é a verdade.
 Recharts · jose · Anthropic SDK · Vercel Cron.
 
 **Repositório:** `marcosliossi-del/performli-sistema-geral`.
+
+---
+
+## 15. HISTÓRICO DE MUDANÇAS
+
+Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra aqui
+no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
+da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
+
+### 2026-07-13 — Auditoria forense + primeira onda de correções (críticos)
+- **Criado** `AUDITORIA-PERFORMLI.md` (33 achados; 4 críticos). Este dossiê passou
+  a ser consultado antes de qualquer ação e atualizado após qualquer mudança.
+- **CR-3 corrigido** — `GET/POST /api/comercial/leads` e `POST /api/comercial/activities`
+  ganharam guard `session.role !== 'ADMIN'` (antes: qualquer autenticado lia/gravava
+  o pipeline comercial). Fecha vazamento de dado comercial.
+- **CR-4 corrigido** — `fetchMonthlyGoals` (`actions/goals.ts`) agora filtra por
+  `scopeClients` (GESTOR só a carteira) e omite metas de receita para não-ADMIN
+  (`isRevenueMetric`). Fecha vazamento cross-tenant de meta de FATURAMENTO/ROAS.
+- **CR-2 corrigido** — `warroom/prefill.ts` passou a usar a fonte única
+  `aggregateSnapshots` (roteia receita por `businessType`) em vez de somar
+  `conversionValue` de todas as plataformas. Elimina o faturamento dobrado no
+  diagnóstico do War Room quando o cliente tem GA4 + Nuvemshop.
+- **AL-1 corrigido** — `resultado-engine.ts` agora loga mensagem específica
+  ("sem meta de ROAS nem roasMinimo — não classificado") em vez do genérico
+  "sem meta cadastrada" (que mentia quando existia meta de FATURAMENTO).
+- **Aberto (estrutural):** CR-1 — faturamento e-commerce usa GA4-only (bruto) e
+  descarta a receita real da Nuvemshop. Aguarda decisão de produto sobre a fonte
+  de verdade (ver §12.3). AL-2/AL-3/AL-4 (fuso e divergência DAL) e demais
+  achados médios/dívida seguem em aberto na auditoria.
+
+### 2026-07-13 — Dossiê técnico
+- **Criado** `DOSSIE-PERFORMLI.md` por exploração forense do código real.

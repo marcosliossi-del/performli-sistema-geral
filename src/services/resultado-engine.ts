@@ -146,7 +146,10 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
           },
         })
         await prisma.automationLog.create({
-          data: { clientId: c.id, status: 'SUCESSO', reason: `resultado.semMetaRoas — ROAS ${roas.toFixed(2)} sem meta cadastrada (${windowKey})` },
+          // Mensagem específica (AL-1 da auditoria): o cliente pode TER meta de
+          // faturamento; o que falta é meta de ROAS (Goal metric=ROAS) OU
+          // Client.roasMinimo. Não dizer "sem meta cadastrada" genérico.
+          data: { clientId: c.id, status: 'SUCESSO', reason: `resultado.semMetaRoas — ROAS ${roas.toFixed(2)} realizado, mas cliente sem meta de ROAS nem roasMinimo definido — não classificado (${windowKey})` },
         })
         updated++
         continue

@@ -6,10 +6,15 @@
 Este arquivo define as regras transversais que **todos** os agentes herdam.
 Nenhum agente pode violar o que está aqui, independente da tarefa.
 
-> **DOSSIÊ TÉCNICO:** antes de qualquer nova feature ou integração, leia
-> `DOSSIE-PERFORMLI.md` (raiz). Após qualquer mudança estrutural (endpoint,
-> model, role, integração, env var, cron), atualize a seção correspondente do
-> dossiê **no mesmo PR/commit**.
+> **DOSSIÊ TÉCNICO (regra permanente):** `DOSSIE-PERFORMLI.md` é a fonte
+> canônica. **Antes de QUALQUER ação** (nova feature, integração, correção,
+> investigação de bug), consulte o dossiê primeiro. **Depois de QUALQUER
+> mudança** — upgrade, correção, bug encontrado, mudança estrutural (endpoint,
+> model, role, integração, env var, cron) — documente no dossiê **no mesmo
+> PR/commit**: atualize a seção correspondente e registre a mudança na seção
+> "15. HISTÓRICO DE MUDANÇAS". Bug encontrado e ainda não corrigido vai para a
+> seção 12.3 (bugs conhecidos) até ser resolvido. Correções derivadas da
+> `AUDITORIA-PERFORMLI.md` atualizam o status do achado lá também.
 
 ---
 

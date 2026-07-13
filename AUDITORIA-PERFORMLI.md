@@ -51,7 +51,7 @@ Quebram funcionalidade, vazam dados entre tenants ou corrompem métricas.
 - **Impacto:** (a) o faturamento exibido em `/agency`, Client 360, `/agency/metas`, relatórios e o ROAS do resultado-engine é o do GA4 (atribuído, bruto), que **diverge do faturamento real da loja**; (b) e-commerce que tem loja Nuvemshop mas **não** tem GA4 conectado fica com `FATURAMENTO = null` mesmo com pedidos sincronizados, e o `resultado-engine` grava `FALHA … sem GA4` e nunca classifica o cliente (`resultado-engine.ts:102-120`). É a "divergência de faturamento em e-commerce" relatada.
 - **Correção proposta (não aplicada):** decidir a fonte de verdade da receita e-commerce (recomendo Nuvemshop real, ou net-of-refunds), e fazer `aggregateSnapshots` usar `platform='NUVEMSHOP'` para FATURAMENTO quando existir loja, com fallback GA4. Alinhar `resultado-engine` ao mesmo critério.
 
-### CR-2 — War Room soma `conversionValue` de todas as plataformas → faturamento dobrado/triplicado
+### CR-2 — War Room soma `conversionValue` de todas as plataformas → faturamento dobrado/triplicado — ✅ CORRIGIDO (2026-07-13)
 - **Arquivo:** `src/lib/warroom/prefill.ts:34-41`.
 - **Confiança:** CONFIRMADO.
 - **Trecho:**
@@ -66,7 +66,7 @@ Quebram funcionalidade, vazam dados entre tenants ou corrompem métricas.
 - **Impacto:** o diagnóstico automático do War Room (contas críticas — a tela de maior atenção do Marcos) mostra faturamento ~2x o real. Decisão crítica tomada sobre número inflado.
 - **Correção proposta:** filtrar a plataforma canônica (mesma decisão de CR-1) ou reusar `getRealizado`/`aggregateSnapshots` em vez de `aggregate` cru.
 
-### CR-3 — Pipeline comercial (ADMIN-only) exposto a qualquer autenticado: `GET/POST /api/comercial/leads` e `POST /api/comercial/activities` sem RBAC
+### CR-3 — Pipeline comercial (ADMIN-only) exposto a qualquer autenticado: `GET/POST /api/comercial/leads` e `POST /api/comercial/activities` sem RBAC — ✅ CORRIGIDO (2026-07-13)
 - **Arquivos:** `src/app/api/comercial/leads/route.ts:32-34` (GET), `:52-54` (POST); `src/app/api/comercial/activities/route.ts` (POST).
 - **Confiança:** CONFIRMADO (lido diretamente).
 - **Trecho:**
@@ -82,7 +82,7 @@ Quebram funcionalidade, vazam dados entre tenants ou corrompem métricas.
 - **Impacto:** qualquer GESTOR/ANALISTA/CS/SUPERVISOR logado faz `GET /api/comercial/leads` e recebe todo o funil — nomes, e-mails, telefones, `value` (valor do negócio), `probability`, `notes`. Chamada direta à rota ignora o esconde-botão da UI. Também pode injetar leads e atividades.
 - **Correção proposta:** adicionar `|| normalizeRole(session.role) !== 'ADMIN'` (403) no GET, no POST de leads e no POST de activities, igual aos handlers PATCH/DELETE/convert.
 
-### CR-4 — `fetchMonthlyGoals` vaza metas de receita cross-carteira (sem `scopeClients` nem `stripSensitive`)
+### CR-4 — `fetchMonthlyGoals` vaza metas de receita cross-carteira (sem `scopeClients` nem `stripSensitive`) — ✅ CORRIGIDO (2026-07-13)
 - **Arquivo:** `src/app/actions/goals.ts:134-157`.
 - **Confiança:** CONFIRMADO (lido diretamente).
 - **Trecho:**
@@ -103,7 +103,7 @@ Quebram funcionalidade, vazam dados entre tenants ou corrompem métricas.
 
 ## 3. ACHADOS ALTOS
 
-### AL-1 — "Cliente sem meta cadastrada" mente: o cron só verifica meta de ROAS
+### AL-1 — "Cliente sem meta cadastrada" mente: o cron só verifica meta de ROAS — ✅ CORRIGIDO (2026-07-13, mensagem)
 - **Arquivo:** `src/services/resultado-engine.ts:65-70,135-149`. **Confiança:** CONFIRMADO.
 - A query de meta filtra `metric: 'ROAS'` e o log dispara quando `target == null`. O operador tipicamente cadastra meta de **FATURAMENTO** (via `upsertMonthlyGoals`); se nunca cadastrou ROAS e o cliente não tem `roasMinimo`, o cron loga `resultado.semMetaRoas — … sem meta cadastrada` **apesar de a meta existir**. Bate com o sintoma e com o finding S1-008 (`docs/AUDITORIA_METAS_PERFORMLI.md:193`).
 - **Correção:** mensagem específica ("sem meta de ROAS — usando roasMinimo" / "cadastre meta de ROAS") e/ou fallback para meta de FATURAMENTO na avaliação.

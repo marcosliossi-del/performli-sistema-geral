@@ -1,5 +1,7 @@
 import 'server-only'
 import { prisma } from '@/lib/prisma'
+import type { BusinessType } from '@prisma/client'
+import { aggregateSnapshots, type AggregatableSnapshot } from '@/services/health-scorer'
 
 /**
  * WAR-14 — Pré-preenchimento do diagnóstico do gestor (MENOS CLIQUES).
@@ -30,15 +32,27 @@ const DAY = 86_400_000
 
 type Agg = { spend: number; faturamento: number; roas: number | null }
 
-async function aggregateWindow(clientId: string, start: Date, end: Date): Promise<Agg | null> {
-  const res = await prisma.metricSnapshot.aggregate({
+/**
+ * Agrega uma janela usando a FONTE ÚNICA `aggregateSnapshots` (roteia receita por
+ * businessType), em vez de somar `conversionValue` cru de todas as plataformas.
+ * Sem isto, um e-commerce com GA4 **e** Nuvemshop tinha o faturamento dobrado no
+ * diagnóstico do War Room (CR-2 da auditoria). `spend` só existe em plataformas
+ * de anúncio (não é duplicado), então continua sendo soma direta.
+ */
+async function aggregateWindow(
+  clientId: string,
+  start: Date,
+  end: Date,
+  businessType: BusinessType,
+): Promise<Agg | null> {
+  const snaps = await prisma.metricSnapshot.findMany({
     where: { clientId, date: { gte: start, lt: end } },
-    _sum: { spend: true, conversionValue: true },
-    _count: { _all: true },
+    include: { platformAccount: { select: { platform: true } } },
   })
-  if (res._count._all === 0) return null
-  const spend = Number(res._sum.spend ?? 0)
-  const faturamento = Number(res._sum.conversionValue ?? 0)
+  if (snaps.length === 0) return null
+  const typed = snaps as unknown as AggregatableSnapshot[]
+  const faturamento = aggregateSnapshots(typed, 'FATURAMENTO', businessType) ?? 0
+  const spend = snaps.reduce((s, x) => s + Number(x.spend ?? 0), 0)
   const roas = spend > 0 ? faturamento / spend : null
   return { spend, faturamento, roas }
 }
@@ -65,6 +79,14 @@ export async function buildDiagnosticoPrefill(args: {
 
   const desdeQuando = new Date(activatedAt).toLocaleDateString('pt-BR')
 
+  // businessType roteia a fonte de receita na agregação canônica (ECOM=GA4,
+  // LOCAL/B2B=Meta). Default ECOMMERCE se o cliente sumiu.
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { businessType: true },
+  })
+  const businessType: BusinessType = client?.businessType ?? 'ECOMMERCE'
+
   // ── Situação: 7d antes da abertura vs 7d mais recentes ─────────────────────
   const antesEnd = new Date(activatedAt)
   const antesStart = new Date(antesEnd.getTime() - 7 * DAY)
@@ -72,8 +94,8 @@ export async function buildDiagnosticoPrefill(args: {
   const agoraStart = new Date(agoraEnd.getTime() - 7 * DAY)
 
   const [antes, agora] = await Promise.all([
-    aggregateWindow(clientId, antesStart, antesEnd),
-    aggregateWindow(clientId, agoraStart, agoraEnd),
+    aggregateWindow(clientId, antesStart, antesEnd, businessType),
+    aggregateWindow(clientId, agoraStart, agoraEnd, businessType),
   ])
 
   let situacao = ''
