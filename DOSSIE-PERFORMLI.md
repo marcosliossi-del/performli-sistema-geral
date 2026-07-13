@@ -979,3 +979,11 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
   eram itens de menu sem cobertura do middleware (as páginas já tinham
   `requireSession()` interno; nenhum acesso indevido possível, mas a 1ª
   barreira estava furada).
+
+### 2026-07-13 — Redesign de IA (Fase 1 — proposta)
+- Decisões do Marcos sobre a Fase 0: (1) status = agrupamento visual dos 11 em
+  6 grupos, zero migração; (2) StatusSet: aposentar a customização, manter
+  StatusGroup como motor do agrupamento; (3) Pessoas/RH e NF descartados;
+  (4) órfãs `/minha-semana` e `/tasks` serão removidas.
+- Criado `docs/proposta-ia-performli.md` (árvores por papel, sem migrations,
+  4 fatias de implementação). Aguarda aprovação do gate da Fase 1.
