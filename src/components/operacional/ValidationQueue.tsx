@@ -6,6 +6,7 @@ import { CheckSquare, RotateCcw, Clock, User as UserIcon, ShieldCheck, FileText 
 import { decideTaskValidation } from '@/app/actions/operacional'
 import type { ValidationQueueItem } from '@/lib/dal'
 import { toast } from '@/lib/toast'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 export function ValidationQueue({ items, canDecide }: { items: ValidationQueueItem[]; canDecide: boolean }) {
   const [list, setList] = useState(items)
@@ -31,11 +32,11 @@ export function ValidationQueue({ items, canDecide }: { items: ValidationQueueIt
 
   if (list.length === 0) {
     return (
-      <div className="rounded-xl border border-[#1F2937] bg-[#0F1623] p-8 text-center">
-        <ShieldCheck size={28} className="text-[#22C55E] mx-auto mb-2" />
-        <p className="text-[#EBEBEB] font-medium">Nada aguardando validação</p>
-        <p className="text-[#87919E] text-sm mt-1">Quando um gestor enviar um check-in ou prestação de contas, ele aparece aqui.</p>
-      </div>
+      <EmptyState
+        icon={<ShieldCheck size={20} />}
+        title="Nada aguardando validação"
+        description="Nenhum check-in ou prestação de contas na fila. Quando um gestor enviar um, ele aparece aqui para você aprovar ou pedir ajustes."
+      />
     )
   }
 

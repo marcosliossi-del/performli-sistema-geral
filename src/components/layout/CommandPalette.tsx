@@ -1,23 +1,29 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, ListTodo, Users, Activity, CornerDownLeft, ArrowUp, ArrowDown } from 'lucide-react'
 import { globalSearch, type SearchResult } from '@/app/actions/search'
+import { NAV_LINKS } from './Sidebar'
+import { can, normalizeRole } from '@/lib/rbac'
+import type { SessionPayload } from '@/lib/session'
 
-type Flat = { key: string; group: string; label: string; sub?: string; href: string; icon: typeof Search }
+type SessionRole = SessionPayload['role']
 
-const QUICK: Flat[] = [
-  { key: 'q-meudia', group: 'Ir para', label: 'Meu Dia', href: '/meu-dia', icon: ListTodo },
-  { key: 'q-central', group: 'Ir para', label: 'Central de Tarefas', href: '/operacional', icon: ListTodo },
-  { key: 'q-cockpit', group: 'Ir para', label: 'Cockpit', href: '/cockpit', icon: Activity },
-  { key: 'q-aceite', group: 'Ir para', label: 'Aceite Operacional', href: '/aceite', icon: Activity },
-  { key: 'q-clientes', group: 'Ir para', label: 'Meus Clientes', href: '/clients', icon: Users },
-  { key: 'q-validacoes', group: 'Ir para', label: 'Validação da CS', href: '/validacoes', icon: Activity },
-]
+type Flat = { key: string; group: string; label: string; sub?: string; href: string; icon: React.ElementType }
 
-export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function CommandPalette({ open, onClose, role }: { open: boolean; onClose: () => void; role: SessionRole }) {
   const router = useRouter()
+
+  // Quick-links = TODAS as páginas do menu (derivadas do registry da Sidebar,
+  // sem lista duplicada), filtradas pela MESMA matriz de permissões do backend.
+  const QUICK: Flat[] = useMemo(() => {
+    const r = normalizeRole(role)
+    return NAV_LINKS
+      .filter((l) => !l.module || can(r, 'view', l.module))
+      .map((l) => ({ key: `q-${l.href}`, group: 'Ir para', label: l.name, href: l.href, icon: l.icon }))
+  }, [role])
+
   const inputRef = useRef<HTMLInputElement>(null)
   const [q, setQ] = useState('')
   const [res, setRes] = useState<SearchResult | null>(null)

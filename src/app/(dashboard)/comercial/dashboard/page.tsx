@@ -1,6 +1,6 @@
-import { ArrowLeft, Target, Flame, DollarSign, TrendingUp, Clock, BarChart2, Users, CheckCircle, XCircle } from 'lucide-react'
-import Link from 'next/link'
+import { Target, Flame, DollarSign, TrendingUp, Clock, BarChart2, Users, CheckCircle, XCircle } from 'lucide-react'
 import { redirect } from 'next/navigation'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { requireSession } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { formatCurrency } from '@/lib/utils'
@@ -123,15 +123,13 @@ export default async function ComercialDashboardPage() {
 
   return (
     <div className="flex flex-col gap-6 p-5 min-h-screen">
+      {/* Trilha de navegação */}
+      <Breadcrumbs items={[{ label: 'Comercial', href: '/comercial' }, { label: 'Dashboard' }]} />
+
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <Link href="/comercial" className="text-[#87919E] hover:text-[#EBEBEB] transition-colors">
-          <ArrowLeft size={18} />
-        </Link>
-        <div>
-          <h1 className="text-xl font-bold text-[#EBEBEB]">Dashboard Comercial</h1>
-          <p className="text-sm text-[#87919E] mt-0.5">Visão analítica do pipeline</p>
-        </div>
+      <div>
+        <h1 className="text-xl font-bold text-[#EBEBEB]">Dashboard Comercial</h1>
+        <p className="text-sm text-[#87919E] mt-0.5">Visão analítica do pipeline</p>
       </div>
 
       {/* KPI grid */}

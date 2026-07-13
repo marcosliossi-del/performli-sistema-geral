@@ -74,7 +74,7 @@ export function DashboardShell({ children, session, unreadAlerts, counts, homeHr
           </div>
           <main className="flex-1 overflow-y-auto p-6 print:overflow-visible print:p-4">{children}</main>
         </div>
-        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={session.role} />
         <ToastViewport />
         {/* Slot @modal: slide-over da task sobre a view (fixed, não desloca layout). */}
         {modal}

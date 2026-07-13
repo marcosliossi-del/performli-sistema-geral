@@ -66,6 +66,21 @@ export const TYPE_OPTIONS = [
   'FINANCEIRA', 'COMERCIAL', 'CS', 'MELHORIA_PROCESSO', 'BUG_OPERACIONAL',
 ]
 
+// Rótulos operacionais das Áreas (Categoria) — fallback caso o nome não venha
+// do banco (TaskArea.name). Keyed por AreaCode (enum, 10 valores).
+export const AREA_LABELS: Record<string, string> = {
+  COMERCIAL: 'Comercial',
+  ONBOARDING: 'Onboarding',
+  TRAFEGO: 'Tráfego',
+  SUCESSO_CLIENTE: 'Sucesso do Cliente',
+  WAR_ROOM: 'War Room',
+  CRM_AUTOMACAO: 'CRM e Automação',
+  FINANCEIRO: 'Financeiro',
+  JURIDICO: 'Jurídico',
+  GESTAO_INTERNA: 'Gestão Interna',
+  CONTEUDO: 'Conteúdo',
+}
+
 export function label(map: Record<string, string>, key: string): string {
   return map[key] ?? key
 }

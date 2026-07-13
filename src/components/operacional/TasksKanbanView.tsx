@@ -9,41 +9,68 @@ import type { OperacionalTask } from '@/lib/dal'
 import { QuickAddTask } from './QuickAddTask'
 import {
   PIPELINE_STATUS_ORDER, KANBAN_BASE_STATUS, CLOSED_STATUS, DONE_COLUMN_LIMIT,
-  compareTasks, compareCompletedDesc, legacyStatusValue, toTaskVM, type BoardHandlers,
+  compareTasks, compareCompletedDesc, legacyStatusValue, toTaskVM,
+  VISUAL_GROUP_ORDER, VISUAL_GROUP_LABELS, VISUAL_GROUP_PRIMARY, visualGroupOf,
+  type BoardHandlers, type KanbanGrouping, type VisualStatusGroup,
 } from './taskBoard'
 
-type Column = { status: string; items: OperacionalTask[]; total: number }
+// Cada coluna do Kanban. No modo "status" a chave é um TaskStatus; no modo
+// "grupo" a chave é um VisualStatusGroup. `closed` marca a coluna encerrada
+// (Concluído/Cancelado) — limitada às N mais recentes.
+type Column = { key: string; label: React.ReactNode; items: OperacionalTask[]; total: number; closed: boolean; isTodo: boolean }
 
 /**
- * View KANBAN (ClickUp-class): colunas = status do pipeline (@hello-pangea/dnd,
- * D-002). Arrastar entre colunas → updateTaskStatus; dentro da coluna →
- * reorderTask com o orderIndex dos vizinhos. Concluído/Cancelado limitados às 20
- * mais recentes. Criação rápida no rodapé da coluna "A fazer".
+ * View KANBAN (ClickUp-class): colunas = status do pipeline OU grupos visuais de
+ * status (spec §3), conforme `grouping`. Arrastar entre colunas → updateTaskStatus
+ * (no modo grupo aplica o status "principal" do grupo destino); dentro da coluna →
+ * reorderTask. Concluído/Cancelado limitados às 20 mais recentes.
  */
 export function TasksKanbanView({
   tasks,
   handlers,
+  grouping = 'status',
 }: {
   tasks: OperacionalTask[]
   handlers: BoardHandlers
+  grouping?: KanbanGrouping
 }) {
   // GESTOR_TRAFEGO (status-only) também arrasta entre colunas para mudar status.
   const canDrag = handlers.canEdit || handlers.canEditStatusOnly
 
   const columns = useMemo<Column[]>(() => {
+    if (grouping === 'grupo') {
+      const byGroup = new Map<VisualStatusGroup, OperacionalTask[]>()
+      for (const t of tasks) {
+        const g = visualGroupOf(t.status)
+        const arr = byGroup.get(g)
+        if (arr) arr.push(t)
+        else byGroup.set(g, [t])
+      }
+      return VISUAL_GROUP_ORDER.map((g) => {
+        const all = byGroup.get(g) ?? []
+        const closed = g === 'CONCLUIDO'
+        const items = closed
+          ? all.slice().sort(compareCompletedDesc).slice(0, DONE_COLUMN_LIMIT)
+          : all.slice().sort(compareTasks)
+        return { key: g, label: VISUAL_GROUP_LABELS[g], items, total: all.length, closed, isTodo: g === 'PARA_FAZER' }
+      })
+    }
+    // Modo status (padrão): uma coluna por status do pipeline.
     const present = new Set(tasks.map((t) => t.status))
     const statuses = PIPELINE_STATUS_ORDER.filter((s) => KANBAN_BASE_STATUS.includes(s) || present.has(s))
     return statuses.map((status) => {
       const all = tasks.filter((t) => t.status === status)
-      let items: OperacionalTask[]
-      if (CLOSED_STATUS.has(status)) {
-        items = all.slice().sort(compareCompletedDesc).slice(0, DONE_COLUMN_LIMIT)
-      } else {
-        items = all.slice().sort(compareTasks)
+      const closed = CLOSED_STATUS.has(status)
+      const items = closed
+        ? all.slice().sort(compareCompletedDesc).slice(0, DONE_COLUMN_LIMIT)
+        : all.slice().sort(compareTasks)
+      return {
+        key: status,
+        label: <StatusBadge value={legacyStatusValue(status)} size="sm" />,
+        items, total: all.length, closed, isTodo: status === 'A_FAZER',
       }
-      return { status, items, total: all.length }
     })
-  }, [tasks])
+  }, [tasks, grouping])
 
   async function onDragEnd(result: DropResult) {
     const { destination, source, draggableId } = result
@@ -52,6 +79,21 @@ export function TasksKanbanView({
 
     const task = tasks.find((t) => t.id === draggableId)
     if (!task) return
+
+    // ── Modo grupo: soltar num grupo diferente aplica o status "principal" dele.
+    // Soltar no mesmo grupo é no-op (grupo mistura status; reordenar entre eles
+    // seria ambíguo e poderia trocar o status sem intenção do usuário).
+    if (grouping === 'grupo') {
+      if (destination.droppableId === source.droppableId) return
+      const primary = VISUAL_GROUP_PRIMARY[destination.droppableId as VisualStatusGroup]
+      if (!primary || primary === task.status) return
+      try {
+        await handlers.onChangeStatus(task, primary)
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'Não foi possível mover a tarefa.', 'err')
+      }
+      return
+    }
 
     const destStatus = destination.droppableId
     // GESTOR_TRAFEGO só move de coluna (status); reordenar dentro da coluna é
@@ -69,7 +111,7 @@ export function TasksKanbanView({
         return
       }
       // Dentro da coluna → reordena com o orderIndex dos vizinhos (null nas bordas).
-      const col = columns.find((c) => c.status === destStatus)
+      const col = columns.find((c) => c.key === destStatus)
       if (!col) return
       const without = col.items.filter((t) => t.id !== draggableId)
       // Coluna com itens SEM orderIndex: chaves de vizinhos nulos não refletem
@@ -94,20 +136,22 @@ export function TasksKanbanView({
       <div className="flex gap-3.5 overflow-x-auto pb-2">
         {columns.map((col) => {
           const truncated = col.items.length < col.total
-          const showQuickAdd = handlers.canEdit && col.status === 'A_FAZER'
+          const showQuickAdd = handlers.canEdit && col.isTodo
           return (
             <div
-              key={col.status}
+              key={col.key}
               className="flex w-[280px] min-w-[280px] flex-shrink-0 flex-col rounded-xl border border-white/[0.08] bg-[#10151c]"
             >
               <div className="flex items-center gap-2 border-b border-white/[0.05] px-3.5 py-3">
-                <StatusBadge value={legacyStatusValue(col.status)} size="sm" />
+                {typeof col.label === 'string'
+                  ? <span className="text-[12.5px] font-bold text-[#EBEBEB]">{col.label}</span>
+                  : col.label}
                 <span className="ml-auto rounded-full bg-white/[0.05] px-2 py-0.5 font-mono text-[11px] text-[#647488] tabular-nums">
                   {col.total}
                 </span>
               </div>
 
-              <Droppable droppableId={col.status}>
+              <Droppable droppableId={col.key}>
                 {(provided, snapshot) => (
                   <div
                     ref={provided.innerRef}

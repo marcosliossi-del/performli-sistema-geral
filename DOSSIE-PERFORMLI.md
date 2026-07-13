@@ -37,7 +37,7 @@ de migração (rastreabilidade via `externalId` em `User`, `Client`, `TaskList`)
 |---|---|
 | Cockpit / central de comando | `/cockpit`, `/dashboard` |
 | Clientes (Client 360, saúde, metas) | `/clients`, `/clients/[slug]` |
-| Tarefas / Central Operacional | `/tasks`, `/t/[taskId]`, `/meu-dia`, `/minha-semana`, `/recorrencias`, `/validacoes`, `/processos` |
+| Tarefas / Central Operacional | `/operacional`, `/t/[taskId]`, `/meu-dia`, `/recorrencias`, `/validacoes`, `/processos` |
 | Check-ins e relatórios | `/check-ins`, `/reports` |
 | Anti-churn / War Room | `/anti-churn`, `/operations`, `/alerts` |
 | Comercial (CRM + propostas) | `/comercial`, `/comercial/proposta`, `/pipeline` |
@@ -753,6 +753,62 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-13 — Redesign IA fatia 3 — grupos visuais de status + filtro/groupBy Categoria
+- **ZERO migração / enum intocado** (spec §3). Os 11 `TaskStatus` viram 6 grupos de
+  APRESENTAÇÃO via mapa puro em `src/components/operacional/taskBoard.ts`
+  (`VISUAL_GROUP_ORDER/LABELS/STATUSES/PRIMARY`, `visualGroupOf`). Não usa o
+  `StatusGroup` do Prisma (4 valores ≠ 6 da spec) — mapa próprio, sem tocar
+  `statusMap.ts` nem schema. Grupos: Para fazer (A_FAZER) · Em andamento
+  (EM_ANDAMENTO, ATRASADO) · Validação interna (EM_VALIDACAO) · Aguardando
+  (AGUARDANDO_CLIENTE/CS/GESTOR) · Alteração e ajuste (AJUSTES_SOLICITADOS,
+  BLOQUEADO) · Concluído (CONCLUIDO, CANCELADO). ATRASADO segue como flag derivada
+  de prazo (`isOverdue`); como ainda é valor de enum possível no dado, cai em
+  "Em andamento" para não perder card.
+- **Kanban ganha modo "Por grupo"** (`TasksKanbanView` prop `grouping`): 6 colunas
+  de grupo; cards mantêm o `StatusBadge` do status EXATO. **Drag entre colunas de
+  grupo:** soltar num grupo diferente aplica o status "principal" do grupo destino
+  (grupos de 1 status → o próprio; multi → AGUARDANDO_CLIENTE / AJUSTES_SOLICITADOS
+  / CONCLUIDO, spec §3). Soltar no MESMO grupo é no-op (grupo mistura status;
+  reordenar entre eles trocaria status sem intenção). Reusa `onChangeStatus`
+  (optimistic + rollback + validação real na server action).
+- **Filtro de Categoria (Área):** `TaskFilters.area: string[]` (por `AreaCode`),
+  client-side em `applyFilters` — MESMO pipeline dos demais filtros (atua sobre o
+  conjunto já role-scoped por `getOperacionalBoard`; GESTOR segue só carteira).
+  `TaskFiltersBar` ganha MultiSelect "Categoria" alimentado por `ctx.areas`.
+  `OperacionalTask` ganha `areaCode` (novo select `area.code` na DAL). Rótulos
+  operacionais fallback em `labels.ts` (`AREA_LABELS`).
+- **BoardView "Por Área":** nova view segmentada (padrão de Por Cliente/Por Gestor),
+  agrupa por `areaName` ("Sem área" no nulo).
+- **Persistência de preferência:** mesmo padrão localStorage das outras prefs de
+  board — `performli.operacional.kanbanGroup` (`loadKanbanGrouping/saveKanbanGrouping`),
+  `area` incluída no blob de `performli.operacional.filters`, view "area" no
+  `performli.operacional.view`. Retrocompatível (defaults/guards nos loaders).
+- **Arquivos:** `src/lib/dal.ts` (areaCode), `taskBoard.ts`, `labels.ts`,
+  `TaskFiltersBar.tsx`, `TasksKanbanView.tsx`, `OperacionalBoard.tsx`. Sem
+  dependências novas, sem migration.
+
+### 2026-07-13 — Redesign IA fatia 4 — onboarding 1 clique + padrão de EmptyState
+- **Server action nova** (`src/app/actions/onboarding.ts`): `applyOnboardingTemplates(clientId)`.
+  Autenticação (`requireSession`) + papel/posse (`assertClientMutationAccess`, allowCS) +
+  só cliente `ACTIVE`. Reaproveita o serviço canônico `runClientOnboarding` (o MESMO caminho
+  da criação de cliente / cron via `materializeRecurringTasksForClient`) — NENHUM schema novo.
+  Idempotente pelo próprio serviço (idempotencyKey por janela + `onboarding-init:<clientId>:<slug>`),
+  não duplica tarefa já originada do mesmo template. AuditLog `client.onboarding.apply_manual`
+  (registra QUEM disparou, separado do disparo automático) + `revalidatePath`.
+- **Identificação de "template de onboarding":** onboarding NÃO é modelado como linha
+  `TaskTemplate` marcada (os 15 templates do seed são todos `defaultType: RECORRENTE`). O
+  onboarding é o serviço `runClientOnboarding` = INITIAL_TASKS (`type: ONBOARDING`) +
+  materialização das recorrentes. Por isso NÃO foi criada coluna/flag nem migration.
+- **UI** (`src/app/(dashboard)/clients/[slug]/page.tsx` — edição cirúrgica no `ClientTasksCard`):
+  botão "Aplicar onboarding" no estado vazio (via `EmptyState` com CTA) quando o cliente não
+  tem tarefas, e versão discreta (`variant=ghost`) no header quando já tem. Componente client
+  novo `src/components/clients/ApplyOnboardingButton.tsx` com feedback pt-BR operacional.
+- **EmptyState** (`src/components/ui/EmptyState.tsx`): prop opcional `action?: ReactNode`
+  (permite embutir CTA client-side). Padronizado o vazio em: tarefas do Client 360 (com CTA
+  onboarding), `/reports` (3 estados: sem cliente / cliente inexistente / sem metas → CTA),
+  `ValidationQueue` (`/validacoes`). `/operations` já usava `EmptyState`.
+- Sem migration. Não toca cron de recorrência, permissions.ts, portal, board.
+
 ### 2026-07-13 — Fase 1 Conversas — fundação de dados (schema + migration + crypto + RBAC)
 - **Schema** (`prisma/schema.prisma`): nova seção "CONVERSAS (CRM conversacional)" com 16
   models — `ConversationChannel`, `ConversationContact`, `ConversationPipeline`,
@@ -979,3 +1035,44 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
   eram itens de menu sem cobertura do middleware (as páginas já tinham
   `requireSession()` interno; nenhum acesso indevido possível, mas a 1ª
   barreira estava furada).
+
+### 2026-07-13 — Redesign de IA (Fase 1 — proposta)
+- Decisões do Marcos sobre a Fase 0: (1) status = agrupamento visual dos 11 em
+  6 grupos, zero migração; (2) StatusSet: aposentar a customização, manter
+  StatusGroup como motor do agrupamento; (3) Pessoas/RH e NF descartados;
+  (4) órfãs `/minha-semana` e `/tasks` serão removidas.
+- Criado `docs/proposta-ia-performli.md` (árvores por papel, sem migrations,
+  4 fatias de implementação). Aguarda aprovação do gate da Fase 1.
+
+### 2026-07-13 — Redesign de IA (Fase 1, Fatia 1 — implementação)
+- **Sidebar reagrupada** (`src/components/layout/Sidebar.tsx`): `navigation[]`
+  reorganizado para a árvore da proposta §2. Fixos reduzidos a Meu Dia + Cockpit
+  (Hub de Suporte → grupo Clientes; Central de Tarefas → 1ª leaf de Operação).
+  Grupo NOVO "Risco" (War Room + Alertas). Grupo "Administrativo" consolida
+  Financeiro/Jurídico/Metas/Equipe/Atribuições/Visão CEO/Visão Gestor.
+  "Recorrências" renomeada p/ "Rotinas & Recorrências" (href `/recorrencias`
+  inalterado). Nenhuma mudança em `permissions.ts` — visibilidade 100% via `can()`.
+- **Badges em grupos colapsados:** `NavGroup` soma os contadores dos filhos
+  visíveis quando FECHADO (cor de alerta se algum filho for `alert`); aberto, o
+  badge do grupo some (cada leaf mostra o próprio — sem dupla contagem).
+- **⌘K ampliado:** exportado `NAV_LINKS` (lista plana derivada do registry) do
+  `Sidebar.tsx`; `CommandPalette.tsx` recebe `role` e gera os quick-links de
+  todas as páginas do menu, filtrando por `can(role,'view',module)` — sem lista
+  duplicada.
+- **Rotas órfãs removidas:** deletados `src/app/(dashboard)/minha-semana/` e
+  `src/app/(dashboard)/tasks/` (eram só redirects). `/minha-semana` e `/tasks`
+  saíram do `PROTECTED_PREFIX` do middleware; `revalidatePath('/tasks')` órfão
+  removido de `actions/tasks.ts` (regra 12 — remoção registrada na proposta §4).
+
+### 2026-07-13 — Redesign de IA (Fases 2–3 concluídas)
+- Fase 2 em 4 fatias, todas com QA guardião APROVADO: (1) sidebar reagrupada
+  (fixos Meu Dia+Cockpit; grupos Clientes/Operação/Risco/Comercial/
+  Administrativo/Inteligência; badges somados em grupo fechado; NAV_LINKS
+  exportado) + ⌘K cobrindo todo o menu + órfãs /minha-semana e /tasks
+  removidas; (2) Client 360 com abas (?tab=, hash mapeado) + Breadcrumbs;
+  (3) agrupamento visual 11 status→6 grupos no Kanban + filtro/‌view por
+  Categoria (AreaCode); (4) onboarding 1 clique (reusa runClientOnboarding)
+  + EmptyState padronizado.
+- Fase 3: verificação estática por papel em docs/checklist-redesign-ia.md;
+  1 divergência cosmética (7 grupos, não 6, para não-ADMIN) corrigida na
+  proposta. Zero migration em todo o redesign; portal intocado.

@@ -79,10 +79,8 @@ const navigation: NavSection[] = [
     // Bloco fixo — núcleo diário. Todos os papéis têm `view` nesses módulos.
     label: '',
     items: [
-      { name: 'Meu Dia',            href: '/meu-dia',     icon: Sun,     countKey: 'meuDia',  alert: true, module: 'tarefas' },
-      { name: 'Hub de Suporte',     href: '/suporte',     icon: Headset, countKey: 'suporte',              module: 'clientes' },
-      { name: 'Central de Tarefas', href: '/operacional', icon: ListTodo, countKey: 'abertas',             module: 'tarefas' },
-      { name: 'Cockpit',            href: '/cockpit',     icon: Gauge,                                      module: 'cockpit' },
+      { name: 'Meu Dia', href: '/meu-dia', icon: Sun,   countKey: 'meuDia', alert: true, module: 'tarefas' },
+      { name: 'Cockpit', href: '/cockpit', icon: Gauge,                                   module: 'cockpit' },
     ],
   },
   {
@@ -91,25 +89,32 @@ const navigation: NavSection[] = [
       {
         name: 'Clientes', href: '/clients', icon: Users, defaultOpen: true,
         children: [
-          { name: 'Clientes',               href: '/clients',    icon: Users,           module: 'clientes' },
-          { name: 'Check-ins da semana',    href: '/check-ins',  icon: CheckSquare,     countKey: 'checkins',   alert: true, module: 'clientes' },
-          { name: 'Validação da CS',        href: '/validacoes', icon: ShieldCheck,     countKey: 'validacoes', alert: true, module: 'clientes' },
-          { name: 'Central de Comunicação', href: '/canais',     icon: MessagesSquare,  module: 'clientes' },
-          { name: 'Relatórios',             href: '/reports',    icon: BarChart3,       module: 'clientes' },
-          { name: 'Acessos do Portal',      href: '/portal-acessos', icon: KeyRound,    module: 'gestaoEquipeEquipe' },
+          { name: 'Clientes',               href: '/clients',        icon: Users,          module: 'clientes' },
+          { name: 'Check-ins da semana',    href: '/check-ins',      icon: CheckSquare,    countKey: 'checkins',   alert: true, module: 'clientes' },
+          { name: 'Validação da CS',        href: '/validacoes',     icon: ShieldCheck,    countKey: 'validacoes', alert: true, module: 'clientes' },
+          { name: 'Hub de Suporte',         href: '/suporte',        icon: Headset,        countKey: 'suporte',                 module: 'clientes' },
+          { name: 'Central de Comunicação', href: '/canais',         icon: MessagesSquare, module: 'clientes' },
+          { name: 'Relatórios',             href: '/reports',        icon: BarChart3,      module: 'clientes' },
+          { name: 'Acessos do Portal',      href: '/portal-acessos', icon: KeyRound,       module: 'gestaoEquipeEquipe' },
         ],
       },
       {
-        name: 'Operação de Tráfego', href: '/processos', icon: Activity, defaultOpen: true,
+        name: 'Operação', href: '/operacional', icon: Activity, defaultOpen: true,
         children: [
+          { name: 'Central de Tarefas',     href: '/operacional',  icon: ListTodo,    countKey: 'abertas', module: 'tarefas' },
           { name: 'Aceite Operacional',     href: '/aceite',       icon: ShieldCheck, module: 'operacao' },
           { name: 'Processos & POPs',       href: '/processos',    icon: BookOpen,    module: 'operacao' },
-          { name: 'Recorrências',           href: '/recorrencias', icon: Repeat,      module: 'gestaoEquipeEquipe' },
+          { name: 'Rotinas & Recorrências', href: '/recorrencias', icon: Repeat,      module: 'gestaoEquipeEquipe' },
           { name: 'Registro de Operações',  href: '/operations',   icon: FileText,    module: 'operacao' },
         ],
       },
-      { name: 'War Room', href: '/anti-churn', icon: ShieldAlert, countKey: 'warRooms', alert: true, module: 'warRoom' },
-      { name: 'Alertas',  href: '/alerts',     icon: Bell,        countKey: 'alertas',  alert: true, module: 'warRoom' },
+      {
+        name: 'Risco', href: '/anti-churn', icon: ShieldAlert,
+        children: [
+          { name: 'War Room', href: '/anti-churn', icon: ShieldAlert, countKey: 'warRooms', alert: true, module: 'warRoom' },
+          { name: 'Alertas',  href: '/alerts',     icon: Bell,        countKey: 'alertas',  alert: true, module: 'warRoom' },
+        ],
+      },
       {
         name: 'Comercial', href: '/comercial', icon: Target,
         children: [
@@ -120,20 +125,15 @@ const navigation: NavSection[] = [
         ],
       },
       {
-        name: 'Financeiro', href: '/financeiro', icon: TrendingUp,
+        name: 'Administrativo', href: '/financeiro', icon: Building2,
         children: [
-          { name: 'DRE — Financeiro',       href: '/financeiro', icon: TrendingUp, module: 'financeiro' },
-          { name: 'Jurídico & Contratos',   href: '/juridico',   icon: Scale,      module: 'juridico' },
-        ],
-      },
-      {
-        name: 'Gestão & Equipe', href: '/team', icon: Building2,
-        children: [
-          { name: 'Equipe',                  href: '/team',                 icon: Users,     module: 'gestaoEquipeEquipe' },
-          { name: 'Atribuições de Clientes', href: '/managers/assignments', icon: UserPlus,  module: 'gestaoEquipeEquipe' },
-          { name: 'Metas da Agência',        href: '/agency/metas',         icon: Target,    module: 'gestaoEquipeMetas' },
-          { name: 'Visão CEO',               href: '/agency',               icon: Building2, module: 'gestaoEquipeEquipe' },
-          { name: 'Visão Gestor',            href: '/managers',             icon: PieChart,  module: 'gestaoEquipeVisaoGestor' },
+          { name: 'DRE — Financeiro',        href: '/financeiro',           icon: TrendingUp, module: 'financeiro' },
+          { name: 'Jurídico & Contratos',    href: '/juridico',             icon: Scale,      module: 'juridico' },
+          { name: 'Metas da Agência',        href: '/agency/metas',         icon: Target,     module: 'gestaoEquipeMetas' },
+          { name: 'Equipe',                  href: '/team',                 icon: Users,      module: 'gestaoEquipeEquipe' },
+          { name: 'Atribuições de Clientes', href: '/managers/assignments', icon: UserPlus,   module: 'gestaoEquipeEquipe' },
+          { name: 'Visão CEO',               href: '/agency',               icon: Building2,  module: 'gestaoEquipeEquipe' },
+          { name: 'Visão Gestor',            href: '/managers',             icon: PieChart,   module: 'gestaoEquipeVisaoGestor' },
         ],
       },
       {
@@ -146,6 +146,21 @@ const navigation: NavSection[] = [
     ],
   },
 ]
+
+/**
+ * Lista PLANA de links do menu (só leaves), derivada do MESMO `navigation[]`.
+ * Consumida pelo ⌘K (CommandPalette) — sem lista duplicada. A visibilidade por
+ * papel é aplicada lá via `can(role, 'view', module)`.
+ */
+export type NavLink = { name: string; href: string; module?: Module; icon: React.ElementType }
+
+export const NAV_LINKS: NavLink[] = navigation.flatMap((s) =>
+  s.items.flatMap((i) =>
+    i.children && i.children.length > 0
+      ? i.children.map((c) => ({ name: c.name, href: c.href, module: c.module, icon: c.icon }))
+      : [{ name: i.name, href: i.href, module: i.module, icon: i.icon }],
+  ),
+)
 
 // Todas as rotas do menu — usado para o active-state: um item só acende por
 // prefixo se NENHUM outro item do menu for um match mais específico da rota
@@ -336,7 +351,21 @@ function NavGroup({
   const kids = (item.children ?? []).filter((c) => itemVisible(c, role))
   const childActive = kids.some((c) => pathname === c.href || pathname.startsWith(c.href + '/'))
   const [open, setOpen] = useState(childActive || Boolean(item.defaultOpen))
-  const count = item.countKey ? counts?.[item.countKey] ?? 0 : 0
+
+  // Badge do grupo = soma dos filhos visíveis com contador, SÓ quando fechado.
+  // Aberto, cada leaf mostra o próprio badge (evita dupla contagem). Cor de
+  // alerta se qualquer filho contabilizado for `alert`.
+  let groupCount = 0
+  let groupAlert = false
+  for (const c of kids) {
+    if (!c.countKey) continue
+    const n = counts?.[c.countKey] ?? 0
+    if (n > 0) {
+      groupCount += n
+      if (c.alert) groupAlert = true
+    }
+  }
+  const count = open ? 0 : groupCount
 
   return (
     <div>
@@ -352,7 +381,7 @@ function NavGroup({
           : <ChevronRight size={13} className="flex-shrink-0 text-[#647488]" />}
         <Icon size={16} className="flex-shrink-0" />
         <span className="truncate">{item.name}</span>
-        <CountBadge count={count} alert={item.alert} />
+        <CountBadge count={count} alert={groupAlert} />
       </button>
       {open && (
         <div className="ml-[15px] mt-0.5 mb-0.5 pl-1.5 border-l border-white/[0.06] space-y-0.5">

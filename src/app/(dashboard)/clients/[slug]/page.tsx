@@ -24,7 +24,7 @@ import { HealthStatus } from '@prisma/client'
 import { formatCurrency, formatNumber, timeAgo, getWeekRange, getMonthRange } from '@/lib/utils'
 import { deriveOverallStatus } from '@/lib/health-derive'
 import { getRealizadoForMetrics } from '@/lib/metas/realizado'
-import { ArrowLeft, Target, BookOpen, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { Target, BookOpen, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { ClientContractCard } from '@/components/clients/ClientContractCard'
 import { GoalFormModal } from '@/components/clients/GoalFormModal'
 import { SyncButton } from '@/components/clients/SyncButton'
@@ -51,6 +51,8 @@ import { InteractionTimeline } from '@/components/clients/InteractionTimeline'
 import { EditClientButton } from '@/components/clients/ClientHeader'
 import { PauseClientControl } from '@/components/clients/PauseClientControl'
 import { PlanoAcaoPanel } from '@/components/clients/PlanoAcaoPanel'
+import { ApplyOnboardingButton } from '@/components/clients/ApplyOnboardingButton'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { RemovePlatformButton } from '@/components/clients/RemovePlatformButton'
 import { HealthScoreHistoryChart } from '@/components/clients/HealthScoreHistoryChart'
 import { PillarBenchmarkPanel } from '@/components/clients/PillarBenchmarkPanel'
@@ -59,7 +61,8 @@ import { LocalBusinessKPISection } from '@/components/clients/LocalBusinessKPISe
 import { SalesFunnelSection } from '@/components/clients/SalesFunnelSection'
 import { FichaCsPanel } from '@/components/clients/FichaCsPanel'
 import { CheckinReportPanel } from '@/components/clients/CheckinReportPanel'
-import { ClientSectionNav, type ClientSectionAnchor } from '@/components/clients/ClientSectionNav'
+import { ClientSectionNav, tabSlug, type ClientSectionAnchor } from '@/components/clients/ClientSectionNav'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 
 const platformColors: Record<string, string> = {
   META_ADS: '#1877F2',
@@ -121,10 +124,10 @@ export default async function ClientDetailPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ from?: string; to?: string }>
+  searchParams: Promise<{ from?: string; to?: string; tab?: string }>
 }) {
   const { slug } = await params
-  const { from, to } = await searchParams
+  const { from, to, tab } = await searchParams
   const session = await requireSession()
   const client = await getClientDetail(slug, { userId: session.userId, role: session.role })
   if (!client) notFound()
@@ -251,16 +254,22 @@ export default async function ClientDetailPage({
     { id: 'sec-crm',         label: 'Interações CRM' },
   ]
 
+  // Aba ativa (deep-link por ?tab=; default = primeira aba). SSR já esconde as
+  // sections não-ativas — o ClientSectionNav faz a troca client-side sem reload.
+  const activeTab = tab && sectionAnchors.some((a) => tabSlug(a.id) === tab)
+    ? tab
+    : tabSlug(sectionAnchors[0].id)
+  const secCls = (id: string) =>
+    `scroll-mt-24 space-y-6${activeTab === tabSlug(id) ? '' : ' hidden'}`
+
   return (
     <div className="space-y-6">
+      {/* Trilha de navegação */}
+      <Breadcrumbs items={[{ label: 'Clientes', href: '/clients' }, { label: client.name }]} />
+
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/clients" className="flex items-center gap-1 text-[#87919E] hover:text-[#EBEBEB] text-sm transition-colors">
-            <ArrowLeft size={15} />
-            Clientes
-          </Link>
-          <div className="w-px h-4 bg-[#38435C]" />
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#0A1E2C] flex items-center justify-center">
               <span className="text-[#95BBE2] font-bold">{client.name.charAt(0)}</span>
@@ -330,11 +339,11 @@ export default async function ClientDetailPage({
         </div>
       </div>
 
-      {/* Sub-header sticky — navegação interna por seção */}
-      <ClientSectionNav anchors={sectionAnchors} />
+      {/* Sub-header sticky — navegação por abas */}
+      <ClientSectionNav anchors={sectionAnchors} activeTab={activeTab} />
 
       {/* ══ VISÃO GERAL ══ */}
-      <section id="sec-visao-geral" className="scroll-mt-24 space-y-6">
+      <section id="sec-visao-geral" className={secCls('sec-visao-geral')}>
       {/* Resultado da semana (automação ROAS/GA4) */}
       {resultadoInfo?.resultado && (
         <ResultadoStrip
@@ -599,7 +608,7 @@ export default async function ClientDetailPage({
       </section>
 
       {/* ══ METAS & RESULTADO ══ */}
-      <section id="sec-metas" className="scroll-mt-24 space-y-6">
+      <section id="sec-metas" className={secCls('sec-metas')}>
       {/* ── Revenue Pace + Monthly Comparison (E-commerce only) ────────────── */}
       {!isLocal && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -729,7 +738,7 @@ export default async function ClientDetailPage({
       </section>
 
       {/* ══ HISTÓRICO & DIAGNÓSTICO ══ */}
-      <section id="sec-diagnostico" className="scroll-mt-24 space-y-6">
+      <section id="sec-diagnostico" className={secCls('sec-diagnostico')}>
       {/* ── Comparativo semana vs semana anterior ────────────────────────── */}
       {weekComparison.length > 0 && (
         <WeekComparisonTable rows={weekComparison} />
@@ -794,7 +803,7 @@ export default async function ClientDetailPage({
       </section>
 
       {/* ══ CAMPANHAS & RELATÓRIOS ══ */}
-      <section id="sec-campanhas" className="scroll-mt-24 space-y-6">
+      <section id="sec-campanhas" className={secCls('sec-campanhas')}>
       {/* ── Campanhas de Anúncio (E-commerce only) ──────────────────────── */}
       {!isLocal && (
         <div className="space-y-4">
@@ -850,7 +859,7 @@ export default async function ClientDetailPage({
       </section>
 
       {/* ══ CONVERSAS & OPERAÇÕES ══ */}
-      <section id="sec-conversas" className="scroll-mt-24 space-y-6">
+      <section id="sec-conversas" className={secCls('sec-conversas')}>
       {/* ── Chat do Cliente ───────────────────────────────────────────────── */}
       {/* id="chat" fica SEMPRE presente (âncora #chat da Central de Comunicação
           nunca quebra). Sem canal ainda, mostramos estado vazio explicando o porquê. */}
@@ -906,17 +915,17 @@ export default async function ClientDetailPage({
       </section>
 
       {/* ══ TAREFAS & PLANO DE AÇÃO ══ */}
-      <section id="sec-tarefas" className="scroll-mt-24 space-y-6">
+      <section id="sec-tarefas" className={secCls('sec-tarefas')}>
       {/* ── Plano de ação por IA ──────────────────────────────────────────── */}
       <PlanoAcaoPanel clientId={client.id} destaque={streakStatus === 'RUIM'} />
 
       {/* ── Tarefas operacionais do cliente ───────────────────────────────── */}
-      <ClientTasksCard tarefas={clienteTarefas} />
+      <ClientTasksCard tarefas={clienteTarefas} clientId={client.id} />
 
       </section>
 
       {/* ══ INTERAÇÕES CRM ══ */}
-      <section id="sec-crm" className="scroll-mt-24 space-y-6">
+      <section id="sec-crm" className={secCls('sec-crm')}>
       {/* ── Histórico de Interações CRM ───────────────────────────────────── */}
       <div className="card p-5">
         <InteractionTimeline clientId={client.id} interactions={interactions} />
@@ -967,8 +976,10 @@ function ResultadoStrip({ resultado, etapa, roas, atualizadoEm }: { resultado: s
   )
 }
 
-function ClientTasksCard({ tarefas }: { tarefas: ClienteTarefas }) {
+function ClientTasksCard({ tarefas, clientId }: { tarefas: ClienteTarefas; clientId: string }) {
   const { abertas, concluidasRecentes, atrasadasCount } = tarefas
+  // "Sem onboarding" = cliente sem NENHUMA tarefa (aberta ou concluída recente).
+  const semTarefas = abertas.length === 0 && concluidasRecentes.length === 0
   return (
     <div className="card p-5">
       <div className="flex items-center justify-between mb-3">
@@ -980,10 +991,21 @@ function ClientTasksCard({ tarefas }: { tarefas: ClienteTarefas }) {
             <span className="text-[11px] text-[#EF4444]">· {atrasadasCount} atrasada{atrasadasCount > 1 ? 's' : ''}</span>
           )}
         </div>
-        <Link href="/operacional" className="text-[11px] text-[#95BBE2] hover:underline">Abrir Central →</Link>
+        <div className="flex items-center gap-3">
+          {/* CTA discreto no header quando o cliente JÁ tem tarefas. */}
+          {!semTarefas && <ApplyOnboardingButton clientId={clientId} variant="ghost" />}
+          <Link href="/operacional" className="text-[11px] text-[#95BBE2] hover:underline">Abrir Central →</Link>
+        </div>
       </div>
 
-      {abertas.length === 0 ? (
+      {semTarefas ? (
+        <EmptyState
+          icon={<ListTodo size={20} />}
+          title="Cliente sem tarefas operacionais"
+          description="Ainda não há nenhuma rotina ou tarefa criada para este cliente. Aplique o onboarding para gerar as recorrentes e as tarefas iniciais (kick-off, acessos e acompanhamento dos primeiros 30 dias)."
+          action={<ApplyOnboardingButton clientId={clientId} variant="primary" />}
+        />
+      ) : abertas.length === 0 ? (
         <p className="text-[#87919E] text-sm">Nenhuma tarefa aberta para este cliente.</p>
       ) : (
         <div className="space-y-1.5">

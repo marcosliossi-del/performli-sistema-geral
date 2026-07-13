@@ -1255,6 +1255,8 @@ export type OperacionalTask = {
   /** Lista completa de responsáveis (principal + auxiliares, M:N — D-005). */
   assignees: { id: string; name: string }[]
   areaName: string | null
+  /** Código da Área (AreaCode) — chave estável p/ filtro/agrupamento por Categoria. */
+  areaCode: string | null
   popCode: string | null
   slaHours: number | null
   slaBreached: boolean
@@ -1302,7 +1304,7 @@ export const getOperacionalBoard = cache(
         slaBreached: true,
         client: { select: { name: true, slug: true, statusStreak: { select: { status: true } } } },
         user: { select: { name: true } },
-        area: { select: { name: true } },
+        area: { select: { name: true, code: true } },
         pop: { select: { code: true } },
         auxAssignees: { select: { userId: true } },
         checklist: { select: { done: true } },
@@ -1348,6 +1350,7 @@ export const getOperacionalBoard = cache(
         assigneeName: primaryName,
         assignees,
         areaName: t.area?.name ?? null,
+        areaCode: t.area?.code ?? null,
         popCode: t.pop?.code ?? null,
         slaHours: t.slaHours,
         slaBreached: t.slaBreached,

@@ -49,21 +49,39 @@ export type BoardHandlers = {
 const TZ = 'America/Sao_Paulo'
 
 // ─── View toggle (persistência localStorage, default Lista) ────────────────────
-export type BoardView = 'lista' | 'kanban' | 'calendario' | 'cliente' | 'responsavel'
+export type BoardView = 'lista' | 'kanban' | 'calendario' | 'cliente' | 'responsavel' | 'area'
 
 const VIEW_KEY = 'performli.operacional.view'
 const FILTERS_KEY = 'performli.operacional.filters'
+const KANBAN_GROUP_KEY = 'performli.operacional.kanbanGroup'
 
 export function loadView(): BoardView {
   if (typeof window === 'undefined') return 'lista'
   const v = window.localStorage.getItem(VIEW_KEY)
-  if (v === 'lista' || v === 'kanban' || v === 'calendario' || v === 'cliente' || v === 'responsavel') return v
+  if (
+    v === 'lista' || v === 'kanban' || v === 'calendario' ||
+    v === 'cliente' || v === 'responsavel' || v === 'area'
+  ) return v
   return 'lista'
 }
 
 export function saveView(v: BoardView): void {
   if (typeof window === 'undefined') return
   try { window.localStorage.setItem(VIEW_KEY, v) } catch { /* quota/privado: ignora */ }
+}
+
+// ─── Agrupamento do Kanban: por status (11) ou por grupo visual (6) ────────────
+// Mesma preferência-por-localStorage das outras prefs de board (view/filtros).
+export type KanbanGrouping = 'status' | 'grupo'
+
+export function loadKanbanGrouping(): KanbanGrouping {
+  if (typeof window === 'undefined') return 'status'
+  return window.localStorage.getItem(KANBAN_GROUP_KEY) === 'grupo' ? 'grupo' : 'status'
+}
+
+export function saveKanbanGrouping(g: KanbanGrouping): void {
+  if (typeof window === 'undefined') return
+  try { window.localStorage.setItem(KANBAN_GROUP_KEY, g) } catch { /* ignora */ }
 }
 
 // ─── Filtros combináveis (AND) — barra única das duas views ────────────────────
@@ -73,13 +91,14 @@ export type TaskFilters = {
   status: string[]     // multi
   assignee: string[]   // multi (userId)
   priority: string[]   // multi
+  area: string[]       // multi (AreaCode) — Categoria
   clientId: string     // select ('' = todos, '__interno__' = sem cliente)
   due: DueFilter | null
   search: string       // client-side
 }
 
 export const EMPTY_FILTERS: TaskFilters = {
-  status: [], assignee: [], priority: [], clientId: '', due: null, search: '',
+  status: [], assignee: [], priority: [], area: [], clientId: '', due: null, search: '',
 }
 
 export function loadFilters(): TaskFilters {
@@ -92,6 +111,7 @@ export function loadFilters(): TaskFilters {
       status: Array.isArray(parsed.status) ? parsed.status : [],
       assignee: Array.isArray(parsed.assignee) ? parsed.assignee : [],
       priority: Array.isArray(parsed.priority) ? parsed.priority : [],
+      area: Array.isArray(parsed.area) ? parsed.area : [],
       clientId: typeof parsed.clientId === 'string' ? parsed.clientId : '',
       due: parsed.due === 'atrasadas' || parsed.due === 'hoje' || parsed.due === 'proximos7' || parsed.due === 'semdata' ? parsed.due : null,
       search: typeof parsed.search === 'string' ? parsed.search : '',
@@ -108,7 +128,7 @@ export function saveFilters(f: TaskFilters): void {
 
 export function countActiveFilters(f: TaskFilters): number {
   return (
-    f.status.length + f.assignee.length + f.priority.length +
+    f.status.length + f.assignee.length + f.priority.length + f.area.length +
     (f.clientId ? 1 : 0) + (f.due ? 1 : 0) + (f.search.trim() ? 1 : 0)
   )
 }
@@ -146,11 +166,13 @@ export function applyFilters(tasks: OperacionalTask[], f: TaskFilters): Operacio
   const statusSet = f.status.length ? new Set(f.status) : null
   const prioSet = f.priority.length ? new Set(f.priority) : null
   const assigneeSet = f.assignee.length ? new Set(f.assignee) : null
+  const areaSet = f.area.length ? new Set(f.area) : null
 
   return tasks.filter((t) => {
     if (statusSet && !statusSet.has(t.status)) return false
     if (prioSet && !prioSet.has(t.priority)) return false
     if (assigneeSet && !t.assignees.some((a) => assigneeSet.has(a.id))) return false
+    if (areaSet && !(t.areaCode != null && areaSet.has(t.areaCode))) return false
     if (f.clientId) {
       if (f.clientId === '__interno__') { if (t.clientName != null) return false }
       else if (t.clientId !== f.clientId) return false
@@ -214,6 +236,67 @@ export const STATUS_VALUE_OPTIONS: StatusValue[] = STATUS_CHOICES.map(legacyStat
 
 export function statusLabel(status: string): string {
   return label(STATUS_LABELS, status)
+}
+
+// ─── Grupos visuais de status (spec §3 — ZERO migração, enum intocado) ─────────
+// Os 11 status do enum viram 6 grupos de APRESENTAÇÃO. Nada muda no schema nem
+// nos filtros (que seguem pelos 11). Só o Kanban ganha o modo "por grupo".
+// ATRASADO é flag derivada de prazo (isOverdue), mas continua sendo um valor de
+// enum possível no dado — para não perder cards, cai em "Em andamento".
+export type VisualStatusGroup =
+  | 'PARA_FAZER'
+  | 'EM_ANDAMENTO'
+  | 'VALIDACAO_INTERNA'
+  | 'AGUARDANDO'
+  | 'ALTERACAO_AJUSTE'
+  | 'CONCLUIDO'
+
+export const VISUAL_GROUP_ORDER: VisualStatusGroup[] = [
+  'PARA_FAZER', 'EM_ANDAMENTO', 'VALIDACAO_INTERNA', 'AGUARDANDO', 'ALTERACAO_AJUSTE', 'CONCLUIDO',
+]
+
+export const VISUAL_GROUP_LABELS: Record<VisualStatusGroup, string> = {
+  PARA_FAZER: 'Para fazer',
+  EM_ANDAMENTO: 'Em andamento',
+  VALIDACAO_INTERNA: 'Validação interna',
+  AGUARDANDO: 'Aguardando',
+  ALTERACAO_AJUSTE: 'Alteração e ajuste',
+  CONCLUIDO: 'Concluído',
+}
+
+/** Status que compõem cada grupo (ordem = ordem interna da coluna). */
+export const VISUAL_GROUP_STATUSES: Record<VisualStatusGroup, string[]> = {
+  PARA_FAZER: ['A_FAZER'],
+  EM_ANDAMENTO: ['EM_ANDAMENTO', 'ATRASADO'],
+  VALIDACAO_INTERNA: ['EM_VALIDACAO'],
+  AGUARDANDO: ['AGUARDANDO_CLIENTE', 'AGUARDANDO_CS', 'AGUARDANDO_GESTOR'],
+  ALTERACAO_AJUSTE: ['AJUSTES_SOLICITADOS', 'BLOQUEADO'],
+  CONCLUIDO: ['CONCLUIDO', 'CANCELADO'],
+}
+
+/**
+ * Status "principal" aplicado ao soltar um card num grupo com vários status
+ * (drag entre colunas de grupo). Grupos de 1 status aplicam o próprio; grupos
+ * multi aplicam o representante operacional definido na spec §3.
+ */
+export const VISUAL_GROUP_PRIMARY: Record<VisualStatusGroup, string> = {
+  PARA_FAZER: 'A_FAZER',
+  EM_ANDAMENTO: 'EM_ANDAMENTO',
+  VALIDACAO_INTERNA: 'EM_VALIDACAO',
+  AGUARDANDO: 'AGUARDANDO_CLIENTE',
+  ALTERACAO_AJUSTE: 'AJUSTES_SOLICITADOS',
+  CONCLUIDO: 'CONCLUIDO',
+}
+
+const STATUS_TO_GROUP: Record<string, VisualStatusGroup> = (() => {
+  const m: Record<string, VisualStatusGroup> = {}
+  for (const g of VISUAL_GROUP_ORDER) for (const s of VISUAL_GROUP_STATUSES[g]) m[s] = g
+  return m
+})()
+
+/** Grupo visual do status (fallback "Em andamento" p/ valores fora do mapa). */
+export function visualGroupOf(status: string): VisualStatusGroup {
+  return STATUS_TO_GROUP[status] ?? 'EM_ANDAMENTO'
 }
 
 // ─── View-model p/ TaskRow / TaskCard (Fase 3) ─────────────────────────────────
