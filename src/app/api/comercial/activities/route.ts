@@ -13,7 +13,10 @@ const schema = z.object({
 /** POST /api/comercial/activities */
 export async function POST(request: NextRequest) {
   const session = await getSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // RBAC v2: pipeline comercial é SÓ ADMIN (matriz comercial).
+  if (!session || session.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const body   = await request.json()
   const parsed = schema.safeParse(body)

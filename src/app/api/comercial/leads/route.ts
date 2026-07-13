@@ -31,7 +31,11 @@ const createSchema = z.object({
 /** GET /api/comercial/leads — list all active leads */
 export async function GET(_request: NextRequest) {
   const session = await getSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // RBAC v2: pipeline comercial é SÓ ADMIN (matriz comercial). Espelha o guard
+  // de PATCH/DELETE/convert — sem isto, qualquer autenticado lê o funil inteiro.
+  if (!session || session.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const leads = await prisma.agencyLead.findMany({
     where: { deletedAt: null },
@@ -51,7 +55,10 @@ export async function GET(_request: NextRequest) {
 /** POST /api/comercial/leads — create a new lead */
 export async function POST(request: NextRequest) {
   const session = await getSession()
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // RBAC v2: pipeline comercial é SÓ ADMIN (matriz comercial).
+  if (!session || session.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const body = await request.json()
   const parsed = createSchema.safeParse(body)

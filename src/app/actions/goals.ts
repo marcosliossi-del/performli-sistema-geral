@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
+import { normalizeRole, scopeClients, isRevenueMetric } from '@/lib/rbac'
 import { MetricType } from '@prisma/client'
 import { getMonthRange } from '@/lib/utils'
 import { parseDateInput } from '@/lib/tasks/dateInput'
@@ -136,7 +137,9 @@ export async function fetchMonthlyGoals(
   year: number,
   month: number,
 ): Promise<Record<string, MonthlyGoalsRow>> {
-  await requireSession()
+  const session = await requireSession()
+  const role = normalizeRole(session.role)
+  const isAdmin = role === 'ADMIN'
 
   const monthStart = new Date(year, month, 1)
   const monthEnd   = new Date(year, month + 1, 0)
@@ -144,6 +147,10 @@ export async function fetchMonthlyGoals(
   const goals = await prisma.goal.findMany({
     where: {
       clientId: { in: clientIds },
+      // Isolamento de tenant: GESTOR só enxerga metas da própria carteira; os
+      // demais papéis têm leitura ampla. `clientIds` vem do cliente e NÃO é
+      // confiável sozinho (CR-4 da auditoria).
+      client: scopeClients(role, session.userId),
       period: 'MONTHLY',
       startDate: { lte: monthEnd },
       endDate:   { gte: monthStart },
@@ -167,6 +174,9 @@ export async function fetchMonthlyGoals(
   for (const g of goals) {
     const row = result[g.clientId]
     if (!row) continue
+    // Coluna sensível: meta de métrica de receita (FATURAMENTO/…) só para ADMIN,
+    // espelhando stripSensitive das leituras (CR-4).
+    if (!isAdmin && isRevenueMetric(g.metric)) continue
     const val = Number(g.targetValue)
     if      (g.metric === 'FATURAMENTO') row.FATURAMENTO = val
     else if (g.metric === 'ROAS')        row.ROAS = val
