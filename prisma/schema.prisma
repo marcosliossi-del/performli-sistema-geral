@@ -2079,7 +2079,10 @@ model ConversationChannel {
   client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   conversations Conversation[]
 
-  @@unique([clientId, type, phoneNumberId])
+  // Unique GLOBAL (não por cliente): o phone_number_id identifica o canal na
+  // Meta; permitir o mesmo em dois clientes abriria misroteamento de tenant
+  // (QA Fase 1, bloqueante 1).
+  @@unique([type, phoneNumberId])
   @@index([clientId])
 }
 
@@ -2284,7 +2287,9 @@ model ConversationTemplate {
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
-  @@unique([clientId, channelId, metaTemplateName, language])
+  // map: nome explícito <=63 chars (o default do Prisma estoura o limite do
+  // Postgres e seria truncado, gerando drift — QA Fase 1, bloqueante 2).
+  @@unique([clientId, channelId, metaTemplateName, language], map: "ConversationTemplate_client_channel_template_lang_key")
 }
 
 model ConversationBroadcast {

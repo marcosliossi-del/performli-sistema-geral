@@ -13,7 +13,7 @@ import { prisma } from './prisma'
  * que rodasse dentro do próprio cron morreria junto com ele.
  */
 
-export type CronName = 'DAILY' | 'DIGEST' | 'RECURRENCES' | 'RESULTADOS' | 'ASAAS'
+export type CronName = 'DAILY' | 'DIGEST' | 'RECURRENCES' | 'RESULTADOS' | 'ASAAS' | 'CONVERSAS'
 
 /** Monta a key de IntegrationSetting para o heartbeat de um cron. */
 export function cronLastRunKey(name: CronName): string {

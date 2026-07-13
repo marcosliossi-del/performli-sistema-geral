@@ -284,7 +284,7 @@ CREATE TABLE "ConversationNote" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ConversationChannel_clientId_type_phoneNumberId_key" ON "ConversationChannel"("clientId", "type", "phoneNumberId");
+CREATE UNIQUE INDEX "ConversationChannel_type_phoneNumberId_key" ON "ConversationChannel"("type", "phoneNumberId");
 
 -- CreateIndex
 CREATE INDEX "ConversationChannel_clientId_idx" ON "ConversationChannel"("clientId");
@@ -338,7 +338,7 @@ CREATE INDEX "BotFlow_clientId_isActive_idx" ON "BotFlow"("clientId", "isActive"
 CREATE UNIQUE INDEX "BotSession_conversationId_botFlowId_key" ON "BotSession"("conversationId", "botFlowId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ConversationTemplate_clientId_channelId_metaTemplateName_lan_key" ON "ConversationTemplate"("clientId", "channelId", "metaTemplateName", "language");
+CREATE UNIQUE INDEX "ConversationTemplate_client_channel_template_lang_key" ON "ConversationTemplate"("clientId", "channelId", "metaTemplateName", "language");
 
 -- CreateIndex
 CREATE INDEX "ConversationBroadcast_clientId_status_idx" ON "ConversationBroadcast"("clientId", "status");
