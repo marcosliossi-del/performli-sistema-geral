@@ -44,6 +44,9 @@ const PRORATE_METRICS: Set<MetricType> = new Set([
 const TREND_THRESHOLD_PCT = 20
 
 export type AggregatableSnapshot = {
+  // Opcional: usado para a precedência GA4SYNC>GA4 POR DIA. Quando ausente, o
+  // merge por-dia trata a linha como dia único (sempre contada, nunca perdida).
+  date?:            unknown
   spend:            unknown
   roas:             unknown
   cpl:              unknown
@@ -82,12 +85,57 @@ export function aggregateSnapshots(
   const toNum = (v: unknown) => (v != null ? Number(v) : 0)
 
   const ga4  = snapshots.filter((x) => x.platformAccount.platform === 'GA4')
-  const ads  = snapshots.filter((x) => x.platformAccount.platform !== 'GA4')
+  // `ads` = plataformas de ANÚNCIO (spend/impressões). GA4/GA4SYNC/NUVEMSHOP têm
+  // spend nulo, então incluí-los aqui não corrompe totalSpend/adImpressions —
+  // mas os excluímos por clareza: são fontes de RECEITA, não de investimento.
+  const ads  = snapshots.filter(
+    (x) => !['GA4', 'GA4SYNC', 'NUVEMSHOP'].includes(x.platformAccount.platform),
+  )
   const meta = snapshots.filter((x) => x.platformAccount.platform === 'META_ADS')
+  // GA4SYNC: receita AUTORITATIVA da loja (Nuvemshop via API GA4Sync), persistida
+  // no MetricSnapshot pelo sync. Quando o cliente ECOMMERCE tem dado GA4Sync na
+  // janela, ele é a fonte de verdade do faturamento (CR-1 da auditoria); senão,
+  // cai no GA4 (atribuído). LOCAL/B2B NÃO usam GA4Sync (medem leads via Meta).
+  const ga4sync = snapshots.filter((x) => x.platformAccount.platform === 'GA4SYNC')
 
-  const ga4Revenue    = ga4.reduce((s, x) => s + toNum(x.conversionValue), 0)
+  // ga4Revenue removido: o faturamento ECOMMERCE agora vem de mergePerDay
+  // (GA4SYNC>GA4 por dia). ga4Purchases/ga4Sessions seguem para TAXA_CONVERSAO/CPS.
   const ga4Purchases  = ga4.reduce((s, x) => s + toNum(x.conversions), 0)
   const ga4Sessions   = ga4.reduce((s, x) => s + toNum(x.clicks), 0)
+
+  // Precedência GA4SYNC>GA4 POR DIA (não tudo-ou-nada): para cada dia, se há
+  // linha GA4SYNC usa-a; senão usa GA4. Sem isso, uma janela que MISTURA dias
+  // com e sem GA4Sync (ex.: mês que cruza o limite de sincronização de 90d)
+  // somaria só os dias GA4SYNC e descartaria os dias GA4 → subcontagem
+  // (bloqueante da QA). Também elimina a dupla contagem: dia com GA4 e GA4SYNC
+  // usa só o GA4SYNC. Linhas sem `date` caem em chave única (contadas, nunca
+  // deduplicadas) — fallback seguro; MetricSnapshot sempre tem date.
+  let _nokey = 0
+  const dayKeyOf = (x: AggregatableSnapshot): string => {
+    const d = x.date
+    if (d == null) return `__nd${_nokey++}`
+    const dt = d instanceof Date ? d : new Date(String(d))
+    return Number.isNaN(dt.getTime()) ? `__bd${_nokey++}` : dt.toISOString().slice(0, 10)
+  }
+  const mergePerDay = (field: (x: AggregatableSnapshot) => number): number => {
+    const byDay = new Map<string, { ga4: number; sync: number; hasSync: boolean }>()
+    for (const x of ga4) {
+      const k = dayKeyOf(x)
+      const e = byDay.get(k) ?? { ga4: 0, sync: 0, hasSync: false }
+      e.ga4 += field(x)
+      byDay.set(k, e)
+    }
+    for (const x of ga4sync) {
+      const k = dayKeyOf(x)
+      const e = byDay.get(k) ?? { ga4: 0, sync: 0, hasSync: false }
+      e.sync += field(x)
+      e.hasSync = true
+      byDay.set(k, e)
+    }
+    let total = 0
+    for (const e of byDay.values()) total += e.hasSync ? e.sync : e.ga4
+    return total
+  }
 
   const metaRevenue    = meta.reduce((s, x) => s + toNum(x.conversionValue), 0)
   const metaConv       = meta.reduce((s, x) => s + toNum(x.conversions), 0)
@@ -104,8 +152,14 @@ export function aggregateSnapshots(
   // `isLocalLike` cobre LOCAL e B2B; ECOMMERCE segue GA4. A lógica ECOMMERCE/
   // LOCAL abaixo é preservada — só o roteamento do B2B muda (antes caía em GA4).
   const isLocalLike = businessType !== 'ECOMMERCE'
-  const revenue   = isLocalLike ? metaRevenue  : ga4Revenue
-  const purchases = isLocalLike ? metaConv     : ga4Purchases
+  // ECOMMERCE: receita/pedidos por-dia com GA4SYNC>GA4 (loja real > atribuído).
+  // Para cliente sem NENHUMA linha GA4SYNC, mergePerDay retorna exatamente o
+  // ga4Revenue/ga4Purchases de antes (todos os dias caem no ramo GA4).
+  // LOCAL/B2B: Meta, sem mudança.
+  const ecomRevenue   = mergePerDay((x) => toNum(x.conversionValue))
+  const ecomPurchases = mergePerDay((x) => toNum(x.conversions))
+  const revenue   = isLocalLike ? metaRevenue : ecomRevenue
+  const purchases = isLocalLike ? metaConv    : ecomPurchases
 
   // ── Derived metrics ───────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ import { syncAllMetaAccounts } from '@/services/meta-ads/sync'
 import { syncAllGA4Accounts } from '@/services/ga4/sync'
 import { syncAllGoogleAdsAccounts } from '@/services/google-ads/sync'
 import { syncAllNuvemshopAccounts } from '@/services/nuvemshop/sync'
+import { syncAllGa4SyncAccounts } from '@/services/ga4sync/sync'
 import { recalculateAllClientsHealth } from '@/services/health-scorer'
 import { detectOscillationsForAll } from '@/services/oscillation-detector'
 import { scoreAllClientsChurnRisk } from '@/services/churn-scorer'
@@ -60,6 +61,7 @@ async function runDailySync() {
     synced: { meta: { ok: false }, ga4: { ok: false }, googleAds: { ok: false }, nuvemshop: { ok: false } },
     weeklyGoalsSync: isMonday ? { ok: false } : { ok: true, skipped: true },
     metaProjection: isFirstOfMonth ? { ok: false } : { ok: true, skipped: true },
+    ga4sync: { ok: false },
     asaas: { ok: false },
     asaasReconcile: { ok: false },
     healthScores: { ok: false },
@@ -146,6 +148,22 @@ async function runDailySync() {
     ;(summary.synced as Record<string, unknown>).nuvemshop = {
       ok: false, error: err instanceof Error ? err.message : String(err),
     }
+  }
+
+  // ── Step 2c2: Sync GA4Sync (receita real de e-commerce → MetricSnapshot) ──
+  // Roda DEPOIS de Nuvemshop e GA4 (depende do mapa loja↔cliente já existir).
+  // Só persiste a receita diária autoritativa; a agregação que a consome é a
+  // próxima fatia. try/catch isolado — não derruba o cron.
+  try {
+    const ga4syncResult = await syncAllGa4SyncAccounts()
+    summary.ga4sync = {
+      ok: true,
+      synced: ga4syncResult.synced,
+      skipped: ga4syncResult.skipped,
+      failed: ga4syncResult.failed,
+    }
+  } catch (err) {
+    summary.ga4sync = { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 
   // ── Step 2d: Monday — sync weekly goals from monthly ─────────────────────

@@ -37,7 +37,7 @@
 
 Quebram funcionalidade, vazam dados entre tenants ou corrompem métricas.
 
-### CR-1 — Faturamento de ECOMMERCE ignora as vendas reais da Nuvemshop e usa receita bruta do GA4
+### CR-1 — Faturamento de ECOMMERCE ignora as vendas reais da Nuvemshop e usa receita bruta do GA4 — ✅ CORRIGIDO (2026-07-13, via GA4Sync)
 - **Arquivo:** `src/services/health-scorer.ts:84,107,117-118` (agregação canônica); escrita descartada em `src/services/nuvemshop/sync.ts:167-172`.
 - **Confiança:** CONFIRMADO.
 - **Trecho:**
@@ -108,7 +108,7 @@ Quebram funcionalidade, vazam dados entre tenants ou corrompem métricas.
 - A query de meta filtra `metric: 'ROAS'` e o log dispara quando `target == null`. O operador tipicamente cadastra meta de **FATURAMENTO** (via `upsertMonthlyGoals`); se nunca cadastrou ROAS e o cliente não tem `roasMinimo`, o cron loga `resultado.semMetaRoas — … sem meta cadastrada` **apesar de a meta existir**. Bate com o sintoma e com o finding S1-008 (`docs/AUDITORIA_METAS_PERFORMLI.md:193`).
 - **Correção:** mensagem específica ("sem meta de ROAS — usando roasMinimo" / "cadastre meta de ROAS") e/ou fallback para meta de FATURAMENTO na avaliação.
 
-### AL-2 — `dal.ts` recalcula revenue/ROAS GA4-only para TODOS os clientes, divergindo do canônico para LOCAL/B2B
+### AL-2 — `dal.ts` recalcula revenue/ROAS GA4-only para TODOS os clientes, divergindo do canônico para LOCAL/B2B — ✅ CORRIGIDO (2026-07-13)
 - **Arquivo:** `src/lib/dal.ts:321-333` (e cópias em `:635-700,850,917,978,2202,2849,2959,3379`). **Confiança:** CONFIRMADO.
 - `aggregateSnapshots` roteia por `businessType` (LOCAL/B2B usam Meta); a tabela operacional da DAL faz `revenue = ga4Rev` para todos. Para LOCAL/B2B o ROAS/faturamento da lista **diverge** do valor canônico de `getRealizado`. O comentário `// GA4-only — single source of truth` contradiz `health-scorer.ts:106-114`. Reintrodução do S2-014.
 - **Correção:** a DAL deve chamar `aggregateSnapshots`/`getRealizadoForMetrics` em vez de recomputar inline.

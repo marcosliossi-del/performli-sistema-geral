@@ -4,13 +4,13 @@ import { unstable_cache } from 'next/cache'
 import { prisma } from './prisma'
 import { getSession } from './session'
 import { redirect } from 'next/navigation'
-import { HealthStatus, GoalPeriod, Prisma, AlertType, TaskStatus } from '@prisma/client'
+import { HealthStatus, GoalPeriod, Prisma, AlertType, TaskStatus, BusinessType } from '@prisma/client'
 import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
 import { normalizeRole, stripSensitive, scopeClients, isRevenueMetric } from './rbac'
 import { readCronHeartbeat, CRON_STALE_HOURS } from './cron-heartbeat'
 import { getRealizadoForMetrics } from './metas/realizado'
 import { RATE_METRICS } from '@/services/weekly-goals-sync'
-import { LOWER_IS_BETTER } from '@/services/health-scorer'
+import { LOWER_IS_BETTER, aggregateSnapshots, type AggregatableSnapshot } from '@/services/health-scorer'
 import { deriveOverallStatus, selectCanonicalScores } from './health-derive'
 import { ALERT_GOVERNANCE, GOVERNANCE_ROLE_LABELS, ALERT_TYPE_LABELS as ALERT_HEALTH_LABELS } from './alerts/governance-config'
 
@@ -228,6 +228,51 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
   }
 })
 
+// ─── Fonte única de receita/ROAS (AL-2/F-01) ──────────────────────────────────
+// A DAL NÃO recomputa mais receita/ROAS GA4-only inline. Toda receita/ROAS
+// canônica passa por `aggregateSnapshots` (health-scorer), que roteia por
+// businessType (ECOMMERCE→GA4/GA4SYNC, LOCAL/B2B→Meta) e aplica a precedência
+// GA4SYNC>GA4. `toAgg` adapta qualquer snapshot com `select` reduzido ao shape
+// `AggregatableSnapshot` — só receita/ROAS usam `conversionValue`/`spend`/
+// `conversions`/plataforma, então campos ausentes viram null (toNum→0) sem
+// corromper o cálculo.
+type SnapForAgg = {
+  // `date` alimenta a precedência GA4SYNC>GA4 POR DIA em aggregateSnapshots.
+  // Sem ele, dias com GA4 e GA4SYNC não deduplicam (dupla contagem). Todo select
+  // que alimenta toAgg DEVE incluir `date: true`.
+  date?: unknown
+  spend?: unknown
+  conversions?: unknown
+  conversionValue?: unknown
+  clicks?: unknown
+  impressions?: unknown
+  reach?: unknown
+  mensagens?: unknown
+  landingPageViews?: unknown
+  platformAccount: { platform: string }
+}
+
+function toAgg(s: SnapForAgg): AggregatableSnapshot {
+  return {
+    date:             s.date ?? null,
+    spend:            s.spend ?? null,
+    roas:             null,
+    cpl:              null,
+    cpa:              null,
+    ctr:              null,
+    cpc:              null,
+    conversions:      s.conversions ?? null,
+    conversionValue:  s.conversionValue ?? null,
+    impressions:      s.impressions ?? null,
+    reach:            s.reach ?? null,
+    clicks:           s.clicks ?? null,
+    frequency:        null,
+    mensagens:        s.mensagens ?? null,
+    landingPageViews: s.landingPageViews ?? null,
+    platformAccount:  { platform: s.platformAccount.platform },
+  }
+}
+
 // ─── Operational dashboard table ──────────────────────────────────────────────
 
 export type ClientOperationalRow = {
@@ -316,18 +361,20 @@ export const getClientsOperationalTable = cache(async (
     const snaps = c.metricSnapshots
 
     const ga4  = snaps.filter((x) => x.platformAccount.platform === 'GA4')
-    const ads  = snaps.filter((x) => x.platformAccount.platform !== 'GA4')
+    // `ads` = plataformas de ANÚNCIO (spend); exclui fontes de receita
+    // (GA4/GA4SYNC/NUVEMSHOP) para não misturar orders GA4SYNC em adPurchases.
+    const ads  = snaps.filter(
+      (x) => !['GA4', 'GA4SYNC', 'NUVEMSHOP'].includes(x.platformAccount.platform),
+    )
 
     const spend        = ads.reduce((s, x) => s + Number(x.spend ?? 0), 0)
     const sessions     = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
-    // Prefer GA4 ecommerce_purchases to avoid double-counting with Meta actions_purchase
-    const ga4Purchases = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
-    const adPurchases  = ads.reduce((s, x) => s + (x.conversions ?? 0), 0)
-    const purchases    = ga4Purchases > 0 ? ga4Purchases : adPurchases
-    const ga4Rev    = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
-    const revenue   = ga4Rev  // GA4-only — single source of truth for revenue
-
-    const roas          = spend > 0 && revenue > 0 ? revenue / spend : null
+    // Receita/ROAS/pedidos canônicos via fonte única (roteia por businessType +
+    // precedência GA4SYNC>GA4 por dia).
+    const aggSnaps  = snaps.map(toAgg)
+    const revenue   = aggregateSnapshots(aggSnaps, 'FATURAMENTO', c.businessType) ?? 0
+    const roas      = aggregateSnapshots(aggSnaps, 'ROAS', c.businessType)
+    const purchases = aggregateSnapshots(aggSnaps, 'CONVERSIONS', c.businessType) ?? 0
     const cpa           = spend > 0 && purchases > 0 ? spend / purchases : null
     const cps           = spend > 0 && sessions > 0 ? spend / sessions : null
     const taxaConversao = sessions > 0 && purchases > 0 ? (purchases / sessions) * 100 : null
@@ -407,23 +454,27 @@ async function _fetchClientsList(userId: string, role: string) {
     orderBy: { name: 'asc' },
   })
 
-  // Fetch current month KPIs for all clients in one query
+  // Fetch current month KPIs for all clients in one query (sem N+1: um findMany).
   const allSnaps = await prisma.metricSnapshot.findMany({
     where: { clientId: { in: clients.map((c) => c.id) }, date: { gte: monthStart } },
-    select: { clientId: true, spend: true, conversionValue: true, platformAccount: { select: { platform: true } } },
+    select: { clientId: true, date: true, spend: true, conversions: true, conversionValue: true, platformAccount: { select: { platform: true } } },
   })
-  const kpiMap = new Map<string, { revenue: number; spend: number }>()
+  // Agrupa por cliente para rotear receita/ROAS por businessType (fonte única).
+  const snapsByClient = new Map<string, AggregatableSnapshot[]>()
+  const spendByClient = new Map<string, number>()
   for (const s of allSnaps) {
-    if (!kpiMap.has(s.clientId)) kpiMap.set(s.clientId, { revenue: 0, spend: 0 })
-    const k = kpiMap.get(s.clientId)!
-    if (s.platformAccount.platform === 'GA4') {
-      k.revenue += Number(s.conversionValue ?? 0)
-    } else {
-      k.spend += Number(s.spend ?? 0)
+    if (!snapsByClient.has(s.clientId)) snapsByClient.set(s.clientId, [])
+    snapsByClient.get(s.clientId)!.push(toAgg(s))
+    if (s.platformAccount.platform !== 'GA4') {
+      spendByClient.set(s.clientId, (spendByClient.get(s.clientId) ?? 0) + Number(s.spend ?? 0))
     }
   }
 
   return clients.map((c): ClientListItem => {
+    const cSnaps = snapsByClient.get(c.id) ?? []
+    const monthRevenue = aggregateSnapshots(cSnaps, 'FATURAMENTO', c.businessType) ?? 0
+    const monthSpend   = spendByClient.get(c.id) ?? 0
+    const monthRoas    = aggregateSnapshots(cSnaps, 'ROAS', c.businessType)
     // Janela canônica unificada — mesma régua do grid/tabela.
     const scores = selectCanonicalScores(c.healthScores, weekStart, monthStart)
     const avgPct =
@@ -443,12 +494,9 @@ async function _fetchClientsList(userId: string, role: string) {
       overallStatus,
       achievementPct: Math.round(avgPct),
       platforms: [...new Set(c.platformAccounts.map((p) => p.platform))],
-      monthRevenue: kpiMap.get(c.id)?.revenue ?? 0,
-      monthSpend:   kpiMap.get(c.id)?.spend ?? 0,
-      monthRoas:    (() => {
-        const k = kpiMap.get(c.id)
-        return k && k.spend > 0 && k.revenue > 0 ? Math.round((k.revenue / k.spend) * 100) / 100 : null
-      })(),
+      monthRevenue,
+      monthSpend,
+      monthRoas: monthRoas !== null ? Math.round(monthRoas * 100) / 100 : null,
     }
   })
 }
@@ -614,10 +662,12 @@ export const getClientKPIs = cache(async (
 
   const snapInclude = { platformAccount: { select: { platform: true } } } as const
 
-  const [currSnaps, prevSnaps] = await Promise.all([
+  const [client, currSnaps, prevSnaps] = await Promise.all([
+    prisma.client.findUnique({ where: { id: clientId }, select: { businessType: true } }),
     prisma.metricSnapshot.findMany({ where: { clientId, date: { gte: rangeFrom, lte: rangeTo } }, include: snapInclude }),
     prisma.metricSnapshot.findMany({ where: { clientId, date: { gte: prevFrom, lte: prevTo } }, include: snapInclude }),
   ])
+  const businessType: BusinessType = client?.businessType ?? 'ECOMMERCE'
 
   /**
    * Fontes de dados:
@@ -637,7 +687,9 @@ export const getClientKPIs = cache(async (
     const tiktokSpend = tiktok.reduce((s, x) => s + Number(x.spend ?? 0), 0)
     const totalSpend  = metaSpend + googleSpend + tiktokSpend
 
-    const revenue  = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+    // Receita canônica via fonte única (roteia GA4/GA4SYNC p/ ECOMMERCE, Meta p/
+    // LOCAL/B2B). Para ECOMMERCE sem GA4SYNC, retorna exatamente a soma GA4 de antes.
+    const revenue  = aggregateSnapshots(snaps.map(toAgg), 'FATURAMENTO', businessType) ?? 0
     const purchases = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
     const sessions  = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
     const newUsers  = ga4.reduce((s, x) => s + (x.newUsers ?? 0), 0)
@@ -653,7 +705,9 @@ export const getClientKPIs = cache(async (
     const ctrLink        = allImpr > 0 && adClicks > 0 ? (adClicks / allImpr) * 100 : null
     const cpcLink        = totalSpend > 0 && adClicks > 0 ? totalSpend / adClicks : null
 
-    const roas       = totalSpend  > 0 && revenue > 0 ? revenue / totalSpend  : null
+    // ROAS canônico via fonte única. roasMeta/Google/Tiktok permanecem inline —
+    // são BREAKDOWN por plataforma (exibição), não o ROAS canônico do cliente.
+    const roas       = aggregateSnapshots(snaps.map(toAgg), 'ROAS', businessType)
     const roasMeta   = metaSpend   > 0 && revenue > 0 ? revenue / metaSpend   : null
     const roasGoogle = googleSpend > 0 && revenue > 0 ? revenue / googleSpend : null
     const roasTiktok = tiktokSpend > 0 && revenue > 0 ? revenue / tiktokSpend : null
@@ -829,25 +883,30 @@ export const getClientMetricHistory = cache(async (clientId: string, days = 14):
   since.setDate(since.getDate() - days + 1)
   since.setHours(0, 0, 0, 0)
 
-  const snapshots = await prisma.metricSnapshot.findMany({
-    where: { clientId, date: { gte: since } },
-    orderBy: { date: 'asc' },
-    include: { platformAccount: { select: { platform: true } } },
-  })
+  const [client, snapshots] = await Promise.all([
+    prisma.client.findUnique({ where: { id: clientId }, select: { businessType: true } }),
+    prisma.metricSnapshot.findMany({
+      where: { clientId, date: { gte: since } },
+      orderBy: { date: 'asc' },
+      include: { platformAccount: { select: { platform: true } } },
+    }),
+  ])
+  const businessType: BusinessType = client?.businessType ?? 'ECOMMERCE'
 
   const byDate = new Map<string, {
-    spend: number; ga4Revenue: number; ga4Purchases: number; ga4Sessions: number; hasData: boolean;
+    spend: number; ga4Purchases: number; ga4Sessions: number; hasData: boolean;
+    snaps: AggregatableSnapshot[];
   }>()
 
   for (const s of snapshots) {
     const key = s.date.toISOString().slice(0, 10)
     if (!byDate.has(key)) {
-      byDate.set(key, { spend: 0, ga4Revenue: 0, ga4Purchases: 0, ga4Sessions: 0, hasData: false })
+      byDate.set(key, { spend: 0, ga4Purchases: 0, ga4Sessions: 0, hasData: false, snaps: [] })
     }
     const d = byDate.get(key)!
     d.hasData = true
+    d.snaps.push(toAgg(s))
     if (s.platformAccount.platform === 'GA4') {
-      d.ga4Revenue   += Number(s.conversionValue ?? 0)
       d.ga4Purchases += s.conversions ?? 0
       d.ga4Sessions  += s.clicks ?? 0  // GA4: clicks = sessões
     } else {
@@ -865,13 +924,16 @@ export const getClientMetricHistory = cache(async (clientId: string, days = 14):
     if (!agg || !agg.hasData) {
       result.push({ date: key, spend: null, conversions: null, roas: null, taxaConversao: null, ticketMedio: null, cps: null })
     } else {
+      // Receita/ROAS/ticket médio via fonte única (roteia por businessType).
+      // taxaConversao/cps permanecem GA4 (métricas de funil e-commerce, fora do
+      // escopo receita/ROAS).
       result.push({
         date: key,
         spend:         agg.spend || null,
         conversions:   agg.ga4Purchases || null,
-        roas:          agg.spend > 0 && agg.ga4Revenue > 0 ? agg.ga4Revenue / agg.spend : null,
+        roas:          aggregateSnapshots(agg.snaps, 'ROAS', businessType),
         taxaConversao: agg.ga4Sessions > 0 && agg.ga4Purchases > 0 ? (agg.ga4Purchases / agg.ga4Sessions) * 100 : null,
-        ticketMedio:   agg.ga4Purchases > 0 && agg.ga4Revenue > 0 ? agg.ga4Revenue / agg.ga4Purchases : null,
+        ticketMedio:   aggregateSnapshots(agg.snaps, 'TICKET_MEDIO', businessType),
         cps:           agg.ga4Sessions > 0 && agg.spend > 0 ? agg.spend / agg.ga4Sessions : null,
       })
     }
@@ -897,25 +959,29 @@ export async function getClientDailyRevenue(
   const from = new Date(fromStr + 'T00:00:00')
   const to = new Date(toStr + 'T23:59:59')
 
-  const snapshots = await prisma.metricSnapshot.findMany({
-    where: { clientId, date: { gte: from, lte: to } },
-    select: {
-      date: true,
-      spend: true,
-      conversionValue: true,
-      platformAccount: { select: { platform: true } },
-    },
-    orderBy: { date: 'asc' },
-  })
+  const [client, snapshots] = await Promise.all([
+    prisma.client.findUnique({ where: { id: clientId }, select: { businessType: true } }),
+    prisma.metricSnapshot.findMany({
+      where: { clientId, date: { gte: from, lte: to } },
+      select: {
+        date: true,
+        spend: true,
+        conversions: true,
+        conversionValue: true,
+        platformAccount: { select: { platform: true } },
+      },
+      orderBy: { date: 'asc' },
+    }),
+  ])
+  const businessType: BusinessType = client?.businessType ?? 'ECOMMERCE'
 
-  const byDate = new Map<string, { revenue: number; spend: number }>()
+  const byDate = new Map<string, { spend: number; snaps: AggregatableSnapshot[] }>()
   for (const s of snapshots) {
     const key = s.date.toISOString().slice(0, 10)
-    if (!byDate.has(key)) byDate.set(key, { revenue: 0, spend: 0 })
+    if (!byDate.has(key)) byDate.set(key, { spend: 0, snaps: [] })
     const d = byDate.get(key)!
-    if (s.platformAccount.platform === 'GA4') {
-      d.revenue += Number(s.conversionValue ?? 0)
-    } else {
+    d.snaps.push(toAgg(s))
+    if (s.platformAccount.platform !== 'GA4') {
       d.spend += Number(s.spend ?? 0)
     }
   }
@@ -925,9 +991,12 @@ export async function getClientDailyRevenue(
   const current = new Date(from)
   while (current <= to) {
     const key = current.toISOString().slice(0, 10)
-    const agg = byDate.get(key) ?? { revenue: 0, spend: 0 }
-    accumulated += agg.revenue
-    result.push({ date: key, revenue: agg.revenue, spend: agg.spend, accumulated })
+    const agg = byDate.get(key)
+    // Receita canônica via fonte única (roteia por businessType).
+    const revenue = agg ? (aggregateSnapshots(agg.snaps, 'FATURAMENTO', businessType) ?? 0) : 0
+    const spend = agg?.spend ?? 0
+    accumulated += revenue
+    result.push({ date: key, revenue, spend, accumulated })
     current.setDate(current.getDate() + 1)
   }
   return result
@@ -949,24 +1018,29 @@ async function _fetchMonthlyComparison(clientId: string, months: number): Promis
   // Single query covering all N months instead of N sequential queries
   const rangeStart = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1)
 
-  const snapshots = await prisma.metricSnapshot.findMany({
-    where: { clientId, date: { gte: rangeStart } },
-    select: {
-      date: true,
-      spend: true,
-      conversionValue: true,
-      platformAccount: { select: { platform: true } },
-    },
-  })
+  const [client, snapshots] = await Promise.all([
+    prisma.client.findUnique({ where: { id: clientId }, select: { businessType: true } }),
+    prisma.metricSnapshot.findMany({
+      where: { clientId, date: { gte: rangeStart } },
+      select: {
+        date: true,
+        spend: true,
+        conversions: true,
+        conversionValue: true,
+        platformAccount: { select: { platform: true } },
+      },
+    }),
+  ])
+  const businessType: BusinessType = client?.businessType ?? 'ECOMMERCE'
 
   // Build month buckets in memory
-  const buckets = new Map<string, { revenue: number; spend: number; label: string }>()
+  const buckets = new Map<string, { spend: number; label: string; snaps: AggregatableSnapshot[] }>()
   for (let i = months - 1; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
     buckets.set(`${d.getFullYear()}-${d.getMonth()}`, {
-      revenue: 0,
       spend: 0,
       label: `${MONTH_NAMES[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`,
+      snaps: [],
     })
   }
 
@@ -974,19 +1048,23 @@ async function _fetchMonthlyComparison(clientId: string, months: number): Promis
     const d = new Date(s.date)
     const bucket = buckets.get(`${d.getFullYear()}-${d.getMonth()}`)
     if (!bucket) continue
-    if (s.platformAccount.platform === 'GA4') {
-      bucket.revenue += Number(s.conversionValue ?? 0)
-    } else {
+    bucket.snaps.push(toAgg(s))
+    if (s.platformAccount.platform !== 'GA4') {
       bucket.spend += Number(s.spend ?? 0)
     }
   }
 
-  return Array.from(buckets.values()).map((m) => ({
-    month: m.label,
-    revenue: m.revenue,
-    spend: m.spend,
-    roas: m.spend > 0 && m.revenue > 0 ? Math.round((m.revenue / m.spend) * 100) / 100 : null,
-  }))
+  // Receita/ROAS canônicos via fonte única (roteia por businessType + GA4SYNC).
+  return Array.from(buckets.values()).map((m) => {
+    const revenue = aggregateSnapshots(m.snaps, 'FATURAMENTO', businessType) ?? 0
+    const roas    = aggregateSnapshots(m.snaps, 'ROAS', businessType)
+    return {
+      month: m.label,
+      revenue,
+      spend: m.spend,
+      roas: roas !== null ? Math.round(roas * 100) / 100 : null,
+    }
+  })
 }
 
 export const getClientMonthlyComparison = (clientId: string, months = 6) =>
@@ -2098,6 +2176,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
       metricSnapshots: {
         where: { date: { gte: weekStart, lte: weekEnd } },
         select: {
+          date: true,
           spend: true,
           conversions: true,
           conversionValue: true,
@@ -2124,6 +2203,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
         },
         select: {
           clientId: true,
+          date: true,
           conversions: true,
           conversionValue: true,
           platformAccount: { select: { platform: true } },
@@ -2142,6 +2222,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
       name: string
       slug: string
       snaps: SnapItem[]
+      businessType: BusinessType
       healthScores: HealthItem[]
       prevSales: number
       streakDays: number | null
@@ -2159,16 +2240,19 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
       managerMap.set(user.id, { user, clientData: [] })
     }
 
-    // Previous week revenue: GA4 only (source of truth)
-    const prevSales = prevSnapshots
-      .filter((s) => s.clientId === client.id && s.platformAccount.platform === 'GA4')
-      .reduce((sum, s) => sum + Number(s.conversionValue ?? 0), 0)
+    // Receita da semana anterior via fonte única (roteia por businessType).
+    const prevSales = aggregateSnapshots(
+      prevSnapshots.filter((s) => s.clientId === client.id).map(toAgg),
+      'FATURAMENTO',
+      client.businessType,
+    ) ?? 0
 
     managerMap.get(user.id)!.clientData.push({
       id: client.id,
       name: client.name,
       slug: client.slug,
       snaps: client.metricSnapshots,
+      businessType: client.businessType,
       healthScores: client.healthScores,
       prevSales,
       streakDays:  client.statusStreak?.days ?? null,
@@ -2194,21 +2278,22 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
     let clientsWarning = 0
     let clientsCritical = 0
 
-    for (const { snaps, healthScores, prevSales } of clientData) {
-      // Revenue = GA4 only (source of truth)
+    for (const { snaps, businessType, healthScores, prevSales } of clientData) {
+      // Receita/ROAS canônicos via fonte única (roteia por businessType).
       const ga4Snaps = snaps.filter((x) => x.platformAccount.platform === 'GA4')
       const adsSnaps = snaps.filter((x) => x.platformAccount.platform !== 'GA4' && Number(x.spend ?? 0) > 0)
 
       const clientSpend   = adsSnaps.reduce((s, x) => s + Number(x.spend ?? 0), 0)
-      const clientRevenue = ga4Snaps.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
+      const clientRevenue = aggregateSnapshots(snaps.map(toAgg), 'FATURAMENTO', businessType) ?? 0
+      const clientRoas    = aggregateSnapshots(snaps.map(toAgg), 'ROAS', businessType)
       const clientPurchases = ga4Snaps.reduce((s, x) => s + (x.conversions ?? 0), 0)
 
       totalSpend += clientSpend
-      totalSales += clientRevenue  // revenue from GA4, not mixed ad platform conversions
+      totalSales += clientRevenue  // receita canônica (roteada por businessType)
       totalPrevSales += prevSales
 
-      if (clientSpend > 0 && clientRevenue > 0) {
-        roasValues.push(clientRevenue / clientSpend)
+      if (clientRoas !== null) {
+        roasValues.push(clientRoas)
       }
       if (clientSpend > 0 && clientPurchases > 0) {
         cpaValues.push(clientSpend / clientPurchases)
@@ -2796,6 +2881,10 @@ export type CampaignRow = {
   spendShare: number  // % do total de spend do cliente no período
 }
 
+// NOTA (AL-2/F-01): ROAS/CPL aqui são BREAKDOWN por campanha/adset, calculados
+// sobre `CampaignSnapshot` (pixel Meta), não sobre `MetricSnapshot`. Não é o
+// faturamento/ROAS canônico do cliente e `aggregateSnapshots` não se aplica
+// (opera em MetricSnapshot). Mantido inline de propósito.
 export const getClientCampaigns = cache(async (
   clientId: string,
   days = 7,
@@ -2921,6 +3010,7 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
       id: true,
       name: true,
       slug: true,
+      businessType: true,
       contractValue: true,
       contractStart: true,
       assignments: {
@@ -2938,11 +3028,12 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
   const clientIds = clients.map((c) => c.id)
   const goalClientIds = await getClientsWithActiveGoal(clientIds, monthStart, weekStart)
 
-  // All MTD snapshots in one query
+  // All MTD snapshots in one query (sem N+1)
   const snaps = await prisma.metricSnapshot.findMany({
     where: { clientId: { in: clientIds }, date: { gte: monthStart } },
     select: {
       clientId: true,
+      date: true,
       spend: true,
       conversions: true,
       conversionValue: true,
@@ -2950,13 +3041,15 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
     },
   })
 
-  // Aggregate per client
-  const kpiMap = new Map<string, { revenue: number; spend: number; purchases: number }>()
+  // Aggregate per client. spend/purchases seguem inline (spend = plataformas de
+  // anúncio; purchases = compras GA4). Receita/ROAS canônicos são roteados por
+  // businessType via fonte única no loop abaixo.
+  const kpiMap = new Map<string, { spend: number; purchases: number; snaps: AggregatableSnapshot[] }>()
   for (const s of snaps) {
-    if (!kpiMap.has(s.clientId)) kpiMap.set(s.clientId, { revenue: 0, spend: 0, purchases: 0 })
+    if (!kpiMap.has(s.clientId)) kpiMap.set(s.clientId, { spend: 0, purchases: 0, snaps: [] })
     const k = kpiMap.get(s.clientId)!
+    k.snaps.push(toAgg(s))
     if (s.platformAccount.platform === 'GA4') {
-      k.revenue   += Number(s.conversionValue ?? 0)
       k.purchases += s.conversions ?? 0
     } else {
       k.spend += Number(s.spend ?? 0)
@@ -2972,8 +3065,10 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
   const clientRows: AgencyClientRow[] = []
 
   for (const c of clients) {
-    const k = kpiMap.get(c.id) ?? { revenue: 0, spend: 0, purchases: 0 }
-    totalRevenue   += k.revenue
+    const k = kpiMap.get(c.id) ?? { spend: 0, purchases: 0, snaps: [] as AggregatableSnapshot[] }
+    // Receita/ROAS canônicos via fonte única (roteia por businessType).
+    const revenue = aggregateSnapshots(k.snaps, 'FATURAMENTO', c.businessType) ?? 0
+    totalRevenue   += revenue
     totalSpend     += k.spend
     totalPurchases += k.purchases
 
@@ -2987,9 +3082,10 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
     else health.semMeta++
 
     const manager = c.assignments[0]?.user ?? null
-    const roas = k.spend > 0 && k.revenue > 0 ? Math.round((k.revenue / k.spend) * 100) / 100 : null
+    const roasAgg = aggregateSnapshots(k.snaps, 'ROAS', c.businessType)
+    const roas = roasAgg !== null ? Math.round(roasAgg * 100) / 100 : null
 
-    clientRows.push({ id: c.id, name: c.name, slug: c.slug, revenue: k.revenue, spend: k.spend, roas, status, manager: manager?.name ?? null })
+    clientRows.push({ id: c.id, name: c.name, slug: c.slug, revenue, spend: k.spend, roas, status, manager: manager?.name ?? null })
 
     if (manager) {
       if (!managerMap.has(manager.id)) {
@@ -2997,7 +3093,7 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
       }
       const m = managerMap.get(manager.id)!
       m.clientCount++
-      m.revenue += k.revenue
+      m.revenue += revenue
       m.spend   += k.spend
       if (status === 'OTIMO') m.otimo++
       else if (status === 'REGULAR') m.regular++
@@ -3358,6 +3454,9 @@ export type SalesFunnelData = {
   hasData: boolean
 }
 
+// NOTA (AL-2/F-01): funil e-commerce (sessões→carrinho→checkout→compra) é
+// inerentemente GA4 e NÃO envolve receita/ROAS. Fora do escopo da fonte única;
+// mantido GA4-only de propósito.
 export const getClientSalesFunnel = cache(async (
   clientId: string,
   fromStr?: string,
