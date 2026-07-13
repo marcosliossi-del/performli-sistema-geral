@@ -753,6 +753,62 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-13 — Redesign IA fatia 3 — grupos visuais de status + filtro/groupBy Categoria
+- **ZERO migração / enum intocado** (spec §3). Os 11 `TaskStatus` viram 6 grupos de
+  APRESENTAÇÃO via mapa puro em `src/components/operacional/taskBoard.ts`
+  (`VISUAL_GROUP_ORDER/LABELS/STATUSES/PRIMARY`, `visualGroupOf`). Não usa o
+  `StatusGroup` do Prisma (4 valores ≠ 6 da spec) — mapa próprio, sem tocar
+  `statusMap.ts` nem schema. Grupos: Para fazer (A_FAZER) · Em andamento
+  (EM_ANDAMENTO, ATRASADO) · Validação interna (EM_VALIDACAO) · Aguardando
+  (AGUARDANDO_CLIENTE/CS/GESTOR) · Alteração e ajuste (AJUSTES_SOLICITADOS,
+  BLOQUEADO) · Concluído (CONCLUIDO, CANCELADO). ATRASADO segue como flag derivada
+  de prazo (`isOverdue`); como ainda é valor de enum possível no dado, cai em
+  "Em andamento" para não perder card.
+- **Kanban ganha modo "Por grupo"** (`TasksKanbanView` prop `grouping`): 6 colunas
+  de grupo; cards mantêm o `StatusBadge` do status EXATO. **Drag entre colunas de
+  grupo:** soltar num grupo diferente aplica o status "principal" do grupo destino
+  (grupos de 1 status → o próprio; multi → AGUARDANDO_CLIENTE / AJUSTES_SOLICITADOS
+  / CONCLUIDO, spec §3). Soltar no MESMO grupo é no-op (grupo mistura status;
+  reordenar entre eles trocaria status sem intenção). Reusa `onChangeStatus`
+  (optimistic + rollback + validação real na server action).
+- **Filtro de Categoria (Área):** `TaskFilters.area: string[]` (por `AreaCode`),
+  client-side em `applyFilters` — MESMO pipeline dos demais filtros (atua sobre o
+  conjunto já role-scoped por `getOperacionalBoard`; GESTOR segue só carteira).
+  `TaskFiltersBar` ganha MultiSelect "Categoria" alimentado por `ctx.areas`.
+  `OperacionalTask` ganha `areaCode` (novo select `area.code` na DAL). Rótulos
+  operacionais fallback em `labels.ts` (`AREA_LABELS`).
+- **BoardView "Por Área":** nova view segmentada (padrão de Por Cliente/Por Gestor),
+  agrupa por `areaName` ("Sem área" no nulo).
+- **Persistência de preferência:** mesmo padrão localStorage das outras prefs de
+  board — `performli.operacional.kanbanGroup` (`loadKanbanGrouping/saveKanbanGrouping`),
+  `area` incluída no blob de `performli.operacional.filters`, view "area" no
+  `performli.operacional.view`. Retrocompatível (defaults/guards nos loaders).
+- **Arquivos:** `src/lib/dal.ts` (areaCode), `taskBoard.ts`, `labels.ts`,
+  `TaskFiltersBar.tsx`, `TasksKanbanView.tsx`, `OperacionalBoard.tsx`. Sem
+  dependências novas, sem migration.
+
+### 2026-07-13 — Redesign IA fatia 4 — onboarding 1 clique + padrão de EmptyState
+- **Server action nova** (`src/app/actions/onboarding.ts`): `applyOnboardingTemplates(clientId)`.
+  Autenticação (`requireSession`) + papel/posse (`assertClientMutationAccess`, allowCS) +
+  só cliente `ACTIVE`. Reaproveita o serviço canônico `runClientOnboarding` (o MESMO caminho
+  da criação de cliente / cron via `materializeRecurringTasksForClient`) — NENHUM schema novo.
+  Idempotente pelo próprio serviço (idempotencyKey por janela + `onboarding-init:<clientId>:<slug>`),
+  não duplica tarefa já originada do mesmo template. AuditLog `client.onboarding.apply_manual`
+  (registra QUEM disparou, separado do disparo automático) + `revalidatePath`.
+- **Identificação de "template de onboarding":** onboarding NÃO é modelado como linha
+  `TaskTemplate` marcada (os 15 templates do seed são todos `defaultType: RECORRENTE`). O
+  onboarding é o serviço `runClientOnboarding` = INITIAL_TASKS (`type: ONBOARDING`) +
+  materialização das recorrentes. Por isso NÃO foi criada coluna/flag nem migration.
+- **UI** (`src/app/(dashboard)/clients/[slug]/page.tsx` — edição cirúrgica no `ClientTasksCard`):
+  botão "Aplicar onboarding" no estado vazio (via `EmptyState` com CTA) quando o cliente não
+  tem tarefas, e versão discreta (`variant=ghost`) no header quando já tem. Componente client
+  novo `src/components/clients/ApplyOnboardingButton.tsx` com feedback pt-BR operacional.
+- **EmptyState** (`src/components/ui/EmptyState.tsx`): prop opcional `action?: ReactNode`
+  (permite embutir CTA client-side). Padronizado o vazio em: tarefas do Client 360 (com CTA
+  onboarding), `/reports` (3 estados: sem cliente / cliente inexistente / sem metas → CTA),
+  `ValidationQueue` (`/validacoes`). `/operations` já usava `EmptyState`.
+- Sem migration. Não toca cron de recorrência, permissions.ts, portal, board.
+
 ### 2026-07-13 — Fase 1 Conversas — fundação de dados (schema + migration + crypto + RBAC)
 - **Schema** (`prisma/schema.prisma`): nova seção "CONVERSAS (CRM conversacional)" com 16
   models — `ConversationChannel`, `ConversationContact`, `ConversationPipeline`,

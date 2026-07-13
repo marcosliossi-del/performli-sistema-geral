@@ -12,12 +12,18 @@ export function EmptyState({
   description,
   actionLabel,
   actionHref,
+  action,
 }: {
   icon?: ReactNode
   title: string
   description?: string
   actionLabel?: string
   actionHref?: string
+  /**
+   * Ação customizada (ex.: botão client-side que dispara uma server action).
+   * Quando presente, é renderizada ABAIXO do CTA de link (se ambos existirem).
+   */
+  action?: ReactNode
 }) {
   return (
     <div className="card flex flex-col items-center justify-center text-center py-12 px-6">
@@ -38,6 +44,7 @@ export function EmptyState({
           {actionLabel}
         </Link>
       )}
+      {action && <div className="mt-4">{action}</div>}
     </div>
   )
 }

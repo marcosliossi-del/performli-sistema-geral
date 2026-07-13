@@ -51,6 +51,8 @@ import { InteractionTimeline } from '@/components/clients/InteractionTimeline'
 import { EditClientButton } from '@/components/clients/ClientHeader'
 import { PauseClientControl } from '@/components/clients/PauseClientControl'
 import { PlanoAcaoPanel } from '@/components/clients/PlanoAcaoPanel'
+import { ApplyOnboardingButton } from '@/components/clients/ApplyOnboardingButton'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { RemovePlatformButton } from '@/components/clients/RemovePlatformButton'
 import { HealthScoreHistoryChart } from '@/components/clients/HealthScoreHistoryChart'
 import { PillarBenchmarkPanel } from '@/components/clients/PillarBenchmarkPanel'
@@ -918,7 +920,7 @@ export default async function ClientDetailPage({
       <PlanoAcaoPanel clientId={client.id} destaque={streakStatus === 'RUIM'} />
 
       {/* ── Tarefas operacionais do cliente ───────────────────────────────── */}
-      <ClientTasksCard tarefas={clienteTarefas} />
+      <ClientTasksCard tarefas={clienteTarefas} clientId={client.id} />
 
       </section>
 
@@ -974,8 +976,10 @@ function ResultadoStrip({ resultado, etapa, roas, atualizadoEm }: { resultado: s
   )
 }
 
-function ClientTasksCard({ tarefas }: { tarefas: ClienteTarefas }) {
+function ClientTasksCard({ tarefas, clientId }: { tarefas: ClienteTarefas; clientId: string }) {
   const { abertas, concluidasRecentes, atrasadasCount } = tarefas
+  // "Sem onboarding" = cliente sem NENHUMA tarefa (aberta ou concluída recente).
+  const semTarefas = abertas.length === 0 && concluidasRecentes.length === 0
   return (
     <div className="card p-5">
       <div className="flex items-center justify-between mb-3">
@@ -987,10 +991,21 @@ function ClientTasksCard({ tarefas }: { tarefas: ClienteTarefas }) {
             <span className="text-[11px] text-[#EF4444]">· {atrasadasCount} atrasada{atrasadasCount > 1 ? 's' : ''}</span>
           )}
         </div>
-        <Link href="/operacional" className="text-[11px] text-[#95BBE2] hover:underline">Abrir Central →</Link>
+        <div className="flex items-center gap-3">
+          {/* CTA discreto no header quando o cliente JÁ tem tarefas. */}
+          {!semTarefas && <ApplyOnboardingButton clientId={clientId} variant="ghost" />}
+          <Link href="/operacional" className="text-[11px] text-[#95BBE2] hover:underline">Abrir Central →</Link>
+        </div>
       </div>
 
-      {abertas.length === 0 ? (
+      {semTarefas ? (
+        <EmptyState
+          icon={<ListTodo size={20} />}
+          title="Cliente sem tarefas operacionais"
+          description="Ainda não há nenhuma rotina ou tarefa criada para este cliente. Aplique o onboarding para gerar as recorrentes e as tarefas iniciais (kick-off, acessos e acompanhamento dos primeiros 30 dias)."
+          action={<ApplyOnboardingButton clientId={clientId} variant="primary" />}
+        />
+      ) : abertas.length === 0 ? (
         <p className="text-[#87919E] text-sm">Nenhuma tarefa aberta para este cliente.</p>
       ) : (
         <div className="space-y-1.5">

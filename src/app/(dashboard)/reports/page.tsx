@@ -7,6 +7,7 @@ import { healthLabels } from '@/lib/health'
 import { HealthStatus } from '@prisma/client'
 import Link from 'next/link'
 import { ReportClientSelect } from '@/components/reports/ReportClientSelect'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 interface Props {
   searchParams: Promise<{ clientId?: string; weekOffset?: string }>
@@ -98,33 +99,27 @@ export default async function ReportsPage({ searchParams }: Props) {
       </div>
 
       {!clientId ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="w-20 h-20 rounded-2xl bg-[#38435C]/50 flex items-center justify-center mb-4">
-            <BarChart3 size={32} className="text-[#87919E]" />
-          </div>
-          <p className="text-[#EBEBEB] font-medium">Nenhum cliente selecionado</p>
-          <p className="text-[#87919E] text-sm mt-1 max-w-xs">
-            Selecione um cliente acima para visualizar seus KPIs da semana.
-          </p>
-        </div>
+        <EmptyState
+          icon={<BarChart3 size={20} />}
+          title="Nenhum cliente selecionado"
+          description="Selecione um cliente acima para visualizar seus KPIs da semana."
+        />
       ) : !reportData ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <p className="text-[#EBEBEB] font-medium">Cliente não encontrado</p>
-        </div>
+        <EmptyState
+          icon={<BarChart3 size={20} />}
+          title="Cliente não encontrado"
+          description="O cliente selecionado não existe mais ou não está acessível. Volte para a lista e escolha outro."
+          actionLabel="Ver clientes"
+          actionHref="/clients"
+        />
       ) : reportData.metrics.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <BarChart3 size={32} className="text-[#38435C] mb-3" />
-          <p className="text-[#EBEBEB] font-medium">Sem metas configuradas</p>
-          <p className="text-[#87919E] text-sm mt-1 max-w-xs">
-            Configure metas para <strong className="text-[#EBEBEB]">{reportData.client.name}</strong> na página do cliente para visualizar os relatórios.
-          </p>
-          <Link
-            href={`/clients/${reportData.client.slug}`}
-            className="mt-4 inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-[#95BBE2]/15 text-[#95BBE2] text-sm font-medium hover:bg-[#95BBE2]/25 transition-colors"
-          >
-            Ir para o cliente →
-          </Link>
-        </div>
+        <EmptyState
+          icon={<BarChart3 size={20} />}
+          title="Sem metas configuradas"
+          description={`Configure metas para ${reportData.client.name} na página do cliente para visualizar os relatórios de resultado.`}
+          actionLabel="Ir para o cliente →"
+          actionHref={`/clients/${reportData.client.slug}`}
+        />
       ) : (
         <div className="space-y-5">
           {/* Header */}
