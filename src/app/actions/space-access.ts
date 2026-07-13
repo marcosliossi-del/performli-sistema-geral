@@ -6,7 +6,7 @@ import { requireSession } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { normalizeRole } from '@/lib/rbac'
 import { writeAuditLog } from '@/lib/audit'
-import { NAV_SPACE_BY_KEY, NAV_SPACE_KEYS, NAV_SPACES } from '@/lib/nav-spaces'
+import { NAV_SPACE_BY_KEY, NAV_SPACES } from '@/lib/nav-spaces'
 
 /**
  * Actions da ACL de navegação por espaço (decisão do Marcos, 2026-07-13).
@@ -218,6 +218,3 @@ export async function getSpaceAccessAdmin(): Promise<ActionResult<SpaceAccessAdm
     },
   }
 }
-
-/** Reexport das keys canônicas (conveniência para a UI validar seleção). */
-export { NAV_SPACE_KEYS }
