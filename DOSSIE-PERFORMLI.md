@@ -966,3 +966,16 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
 ### 2026-07-13 — Dossiê técnico
 - **Criado** `DOSSIE-PERFORMLI.md` por exploração forense do código real.
+
+### 2026-07-13 — Redesign de IA (Fase 0) + hardening do middleware
+- **Auditoria de navegação:** criado `docs/audit-ia-atual.md` (Fase 0 do
+  redesign de arquitetura de informação; matriz 7 MANTER / 11 ADAPTAR /
+  3 CRIAR; 5 status problemáticos reportados). Passou por autocrítica
+  adversarial — 8 correções aplicadas (StatusSet é semi-ligado, não dark
+  feature; rota órfã `/tasks`; camada middleware documentada). Aguarda
+  aprovação do gate antes da Fase 1.
+- **Fix de segurança (defesa em profundidade):** `/suporte`, `/recorrencias`
+  e `/juridico` adicionados ao `PROTECTED_PREFIX` do `src/middleware.ts` —
+  eram itens de menu sem cobertura do middleware (as páginas já tinham
+  `requireSession()` interno; nenhum acesso indevido possível, mas a 1ª
+  barreira estava furada).
