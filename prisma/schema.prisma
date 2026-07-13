@@ -322,6 +322,7 @@ enum Platform {
   TIKTOK_ADS
   GA4
   NUVEMSHOP
+  GA4SYNC
 }
 
 model PlatformAccount {

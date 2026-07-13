@@ -265,7 +265,7 @@ Relações "soft" (String sem FK, fora do ER): `Task.leadId`/`contractId`,
 `Role` (ADMIN, CS, SUPERVISOR_TRAFEGO, ANALISTA_TRAFEGO, GESTOR_TRAFEGO + legados deprecados
 MANAGER/ANALYST) · `OperationalRole` (HEAD/SUPERVISOR/GESTOR/CRM/CS/ACOMPANHAMENTO — NÃO
 governa autorização) · `ClientStatus` · `BusinessType` · `PipelineStage` · `Platform`
-(META_ADS, GOOGLE_ADS, TIKTOK_ADS, GA4, NUVEMSHOP) · `MetricType` (25 valores: ROAS, CPL, CPA,
+(META_ADS, GOOGLE_ADS, TIKTOK_ADS, GA4, NUVEMSHOP, GA4SYNC) · `MetricType` (25 valores: ROAS, CPL, CPA,
 INVESTMENT, CONVERSIONS, SALES, CTR, CPC, IMPRESSIONS, REACH, FREQUENCY, CLICKS, SPEND,
 FATURAMENTO, TICKET_MEDIO, TAXA_CONVERSAO, CPS, CPM, CAC, MENSAGENS, VISITAS_PERFIL,
 LIGACOES, AGENDAMENTOS, LEADS, SEGUIDORES) · `GoalPeriod` · `HealthStatus` (OTIMO/REGULAR/RUIM)
@@ -726,6 +726,41 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-13 — DAL consome `aggregateSnapshots` para receita/ROAS (AL-2/F-01, fatia 2/2)
+- **`src/lib/dal.ts`** deixou de recomputar receita/ROAS GA4-only inline. Todos os
+  pontos de **FATURAMENTO/ROAS canônicos** passaram a chamar a fonte única
+  `aggregateSnapshots(snaps, metric, businessType)` (health-scorer), que roteia
+  por `businessType` (ECOMMERCE→GA4/GA4SYNC, LOCAL/B2B→Meta) e aplica a
+  precedência GA4SYNC>GA4. Helper `toAgg` adapta snapshots de `select` reduzido
+  ao shape `AggregatableSnapshot`.
+- **Pontos migrados:** `getClientsOperationalTable` (roas), `_fetchClientsList`
+  (monthRevenue/monthRoas), `getClientKPIs` (faturamento/roas canônicos),
+  `getClientMetricHistory` (roas/ticketMédio por dia), `getClientDailyRevenue`
+  (receita por dia), `_fetchMonthlyComparison` (receita/roas por mês),
+  `getManagerStats` (receita/ROAS/prevSales por cliente), `getAgencyOverview`
+  (receita/ROAS por cliente + rollups). `businessType` obtido do próprio
+  `findMany`/`include` existente ou via `select` adicionado (sem N+1).
+- **Mantidos inline de propósito** (documentado no código): `getClientCampaigns`
+  (breakdown por campanha em `CampaignSnapshot`), `getClientSalesFunnel` (funil
+  GA4, sem receita/ROAS) e o breakdown `roasMeta/roasGoogle/roasTiktok` do
+  `getClientKPIs` (exibição por plataforma).
+- **Sem mudança de número** para ECOMMERCE sem GA4Sync (retorna a mesma soma GA4);
+  LOCAL/B2B passam a refletir Meta e ECOMMERCE com GA4Sync passa a refletir a loja.
+
+### 2026-07-13 — Persistência da receita GA4Sync no MetricSnapshot (fatia 1/2)
+- **Enum** `Platform` ganhou o valor `GA4SYNC` (migration aditiva/idempotente
+  `20260713140000_platform_ga4sync`, `ALTER TYPE ... ADD VALUE IF NOT EXISTS`).
+- **Novo serviço** `src/services/ga4sync/sync.ts`: `syncGa4SyncAccount(clientId)`
+  (resolve storeId; sem loja → skip sem erro; upsert PlatformAccount GA4SYNC sem
+  token; SyncLog RUNNING→SUCCESS/FAILED; upsert MetricSnapshot por dia com
+  `conversionValue=revenue`, `conversions=orders`, `date` em meia-noite UTC) e
+  `syncAllGa4SyncAccounts()` (clientes ACTIVE, try/catch por cliente, resumo
+  synced/skipped/failed; se sem chave, log claro e retorno vazio — não quebra o cron).
+- **Cron** `daily` ganhou Step 2c2 (`syncAllGa4SyncAccounts`), isolado em
+  try/catch, após Nuvemshop/GA4, gravando `summary.ga4sync`.
+- **Não** altera `aggregateSnapshots`/KPIs — o consumo da nova fonte é a fatia 2.
+  ⚠️ Shape do timeline pende conferência contra `/openapi.json`.
+
 ### 2026-07-13 — Auditoria forense + primeira onda de correções (críticos)
 - **Criado** `AUDITORIA-PERFORMLI.md` (33 achados; 4 críticos). Este dossiê passou
   a ser consultado antes de qualquer ação e atualizado após qualquer mudança.
@@ -746,6 +781,34 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
   descarta a receita real da Nuvemshop. Aguarda decisão de produto sobre a fonte
   de verdade (ver §12.3). AL-2/AL-3/AL-4 (fuso e divergência DAL) e demais
   achados médios/dívida seguem em aberto na auditoria.
+
+### 2026-07-13 — CR-1: faturamento e-commerce autoritativo via GA4Sync
+- **Decisão de produto (Marcos):** para clientes que usam GA4Sync (têm loja
+  Nuvemshop visível pela chave), o faturamento vem do GA4Sync; sem GA4Sync,
+  continua vindo do GA4.
+- **Schema:** valor `GA4SYNC` adicionado ao enum `Platform` (migration aditiva
+  `20260713140000_platform_ga4sync`, `ADD VALUE IF NOT EXISTS`). Agora são
+  **11 integrações** (soma GA4Sync como fonte que aterrissa no MetricSnapshot).
+- **Sync:** `src/services/ga4sync/sync.ts` — por cliente ativo com loja
+  resolvível, puxa `timeline` (série diária) do GA4Sync e faz upsert de
+  `MetricSnapshot` (platform=GA4SYNC, date UTC, conversionValue=revenue,
+  conversions=orders), com PlatformAccount própria, SyncLog, try/catch por
+  cliente e heartbeat. Step isolado no cron `daily` (após Nuvemshop/GA4).
+- **Agregação:** `aggregateSnapshots` (health-scorer) passou a aplicar
+  precedência **GA4SYNC > GA4 POR DIA** para ECOMMERCE (FATURAMENTO/SALES/
+  CONVERSIONS/TICKET_MEDIO/ROAS). Merge por-dia evita subcontagem em janelas que
+  cruzam o limite de sync e elimina dupla contagem GA4+GA4SYNC no mesmo dia.
+  Cliente ECOMMERCE sem GA4Sync fica idêntico ao anterior (GA4).
+- **AL-2 corrigido junto:** a DAL parou de recomputar receita/ROAS GA4-only
+  inline (8 funções) e passou a usar `aggregateSnapshots` — assim LOCAL/B2B
+  passam a medir por Meta (alinhado ao Client 360) e ECOMMERCE reflete GA4Sync.
+- **Ressalva:** o `timeline` do GA4Sync dá receita diária (não *net* por dia);
+  a *netRevenue* líquida só existe no agregado de período (`kpis`). Se for
+  necessária a líquida diária, é passo futuro (depende do GA4Sync expor).
+- **Verificação:** 2 ciclos de QA adversarial (o 1º pegou subcontagem por
+  cobertura parcial; corrigido com merge por-dia + propagação de `date`).
+  Egress ao GA4Sync bloqueado no dev — build validado na Vercel; runtime quando
+  o cron rodar em produção.
 
 ### 2026-07-13 — Dossiê técnico
 - **Criado** `DOSSIE-PERFORMLI.md` por exploração forense do código real.
