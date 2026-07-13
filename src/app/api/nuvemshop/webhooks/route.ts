@@ -133,8 +133,21 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Atualiza MetricSnapshot para o dia do pedido (se pago)
-    if (transformed.paymentStatus === 'PAID') {
+    // Atualiza MetricSnapshot para o dia do pedido.
+    // AL-5: além do caminho PAID, o recálculo do dia TAMBÉM roda em
+    // cancelamento/estorno (order/cancelled, ou order/updated que resultou em
+    // REFUNDED/VOIDED, ou pedido com cancelledAt). Como a soma abaixo considera
+    // SÓ os pedidos PAID do dia, ao recomputar o pedido que deixou de ser PAID
+    // sai da soma naturalmente — evitando receita inflada até o próximo full-sync.
+    // O dia recalculado é sempre o do orderCreatedAt do pedido do evento.
+    const isPaid = transformed.paymentStatus === 'PAID'
+    const isCancelOrRefund =
+      event === 'order/cancelled' ||
+      transformed.paymentStatus === 'REFUNDED' ||
+      transformed.paymentStatus === 'VOIDED' ||
+      transformed.status === 'CANCELLED' ||
+      transformed.cancelledAt != null
+    if (isPaid || isCancelOrRefund) {
       const dateKey = transformed.orderCreatedAt.toISOString().split('T')[0]
       const date = new Date(dateKey + 'T00:00:00Z')
 

@@ -782,6 +782,26 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
   de verdade (ver §12.3). AL-2/AL-3/AL-4 (fuso e divergência DAL) e demais
   achados médios/dívida seguem em aberto na auditoria.
 
+### 2026-07-13 — Onda média de correções da auditoria (7 achados)
+- **AL-3**: `realizado.ts` MTD passou a usar bound UTC-midnight (`-01T00:00:00Z`)
+  em vez de `saoPauloDayStart` (03:00Z) — o dia 1 do mês volta ao MTD. Ramo
+  SEMANA_FECHADA (getWeekRange) segue com AL-4.
+- **ME-3**: `computeAchievementPct` retorna null (em vez de Infinity) quando
+  métrica de custo tem `actual<=0`; o call site pula a persistência do
+  HealthScore (mantém a coluna não-nulável).
+- **AL-5**: webhook Nuvemshop recalcula o snapshot do dia também em
+  cancelamento/estorno (não só em PAID) — receita não fica inflada até o full-sync.
+- **ME-10**: sync GA4 passou a atualizar `spend/cpc/roas/cpl` no re-sync (bloco
+  update tinha paridade incompleta com o create).
+- **ME-13**: `sync/ga4` e `sync/google-ads` usam `isCronAuthorized` (timing-safe),
+  como `sync/meta` — fim da comparação crua de `CRON_SECRET`.
+- **ME-11**: upload de conhecimento valida `application/pdf` + teto de 20 MB antes
+  de bufferizar.
+- **A-06**: `createClient` revalida `/clients` e `/cockpit` — cliente novo aparece
+  na hora, sem esperar o TTL do cache.
+- QA adversarial 7/7 APROVADO. **Aberto:** AL-4 (getWeekRange/getMonthRange no
+  fuso do servidor) fica para PR isolada.
+
 ### 2026-07-13 — CR-1: faturamento e-commerce autoritativo via GA4Sync
 - **Decisão de produto (Marcos):** para clientes que usam GA4Sync (têm loja
   Nuvemshop visível pela chave), o faturamento vem do GA4Sync; sem GA4Sync,

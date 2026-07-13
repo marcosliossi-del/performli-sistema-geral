@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { syncGA4Account, syncAllGA4Accounts } from '@/services/ga4/sync'
 import { getSession } from '@/lib/session'
+import { isCronAuthorized } from '@/lib/cron-auth'
 
 /**
  * POST /api/sync/ga4
@@ -26,7 +27,9 @@ export async function POST(request: NextRequest) {
   let sessionUserId: string | null = null
 
   if (cronSecret) {
-    if (cronSecret !== process.env.CRON_SECRET) {
+    // ME-13: comparação TIMING-SAFE via isCronAuthorized (=== cru vaza tempo de
+    // comparação). Fallback de sessão de staff abaixo permanece inalterado.
+    if (!isCronAuthorized(request)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     isCron = true

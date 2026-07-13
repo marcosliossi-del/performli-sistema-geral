@@ -8,6 +8,10 @@ import { prisma } from '@/lib/prisma'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+// ME-11: teto de tamanho por PDF (20 MB). Barra o arquivo ANTES de
+// arrayBuffer() para não carregar payload gigante em memória / mandar à Anthropic.
+const MAX_PDF_BYTES = 20 * 1024 * 1024
+
 // ── Text chunking ─────────────────────────────────────────────────────────────
 
 function chunkText(text: string): string[] {
@@ -112,8 +116,19 @@ export async function POST(request: NextRequest) {
     }[] = []
 
     for (const file of files) {
-      if (!file.name.toLowerCase().endsWith('.pdf')) {
+      // ME-11: validar extensão E content-type real (não confiar só no nome).
+      if (!file.name.toLowerCase().endsWith('.pdf') || file.type !== 'application/pdf') {
         results.push({ filename: file.name, success: false, error: 'Apenas arquivos PDF são suportados' })
+        continue
+      }
+
+      // ME-11: impor teto de tamanho ANTES de ler o arquivo em memória.
+      if (file.size > MAX_PDF_BYTES) {
+        results.push({
+          filename: file.name,
+          success: false,
+          error: `Arquivo acima do limite de 20 MB (enviado: ${(file.size / (1024 * 1024)).toFixed(1)} MB)`,
+        })
         continue
       }
 

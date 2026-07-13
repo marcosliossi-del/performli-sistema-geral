@@ -113,7 +113,7 @@ Quebram funcionalidade, vazam dados entre tenants ou corrompem métricas.
 - `aggregateSnapshots` roteia por `businessType` (LOCAL/B2B usam Meta); a tabela operacional da DAL faz `revenue = ga4Rev` para todos. Para LOCAL/B2B o ROAS/faturamento da lista **diverge** do valor canônico de `getRealizado`. O comentário `// GA4-only — single source of truth` contradiz `health-scorer.ts:106-114`. Reintrodução do S2-014.
 - **Correção:** a DAL deve chamar `aggregateSnapshots`/`getRealizadoForMetrics` em vez de recomputar inline.
 
-### AL-3 — `realizado.ts` (fonte canônica) exclui o dia 1 do mês em todo MTD e mistura convenções de fuso
+### AL-3 — `realizado.ts` (fonte canônica) exclui o dia 1 do mês em todo MTD e mistura convenções de fuso — ✅ CORRIGIDO (2026-07-13, MTD; SEMANA_FECHADA/getWeekRange fica com AL-4)
 - **Arquivo:** `src/lib/metas/realizado.ts:68-71,104-105,130`. **Confiança:** CONFIRMADO (verificado).
 - `saoPauloDayStart('2026-07-01')` = `2026-07-01T03:00:00Z`; `MetricSnapshot.date` (`@db.Date`) volta `00:00Z`. O filtro `date: { gte: janela.start }` com `03:00Z` **exclui o snapshot do dia 1**. O portal já resolveu isso com `utcDayStart` (`portal/kpis.ts:15-21`). Além disso, o ramo MTD usa SP e o ramo SEMANA_FECHADA usa `getWeekRange` (UTC) — inconsistência interna.
 - **Impacto:** MTD subestima o dia 1 de cada mês e diverge do `HealthScore` (que usa `getMonthRange`, inclui o dia 1).
@@ -124,7 +124,7 @@ Quebram funcionalidade, vazam dados entre tenants ou corrompem métricas.
 - `getDay()`/`setHours()`/`new Date(y,m,1)` usam o runtime (UTC em produção). As janelas "viram" às 00:00 UTC = 21:00 SP do dia anterior. Usado por health-scorer, churn-scorer, weekly-goals-sync, resultado-engine, checkin-monitor. O cron das segundas roda 06:00 BRT e **escapa**; o risco se materializa em acesso **on-demand**/sync manual entre 21:00–23:59 SP. É bomba-relógio se o horário do cron mudar.
 - **Correção:** derivar week/month de `saoPauloDateString(now)` e montar os bounds com aritmética UTC sobre o dia-parede SP.
 
-### AL-5 — Webhook Nuvemshop não estorna cancelamento/reembolso (faturamento inflado intradiário)
+### AL-5 — Webhook Nuvemshop não estorna cancelamento/reembolso (faturamento inflado intradiário) — ✅ CORRIGIDO (2026-07-13)
 - **Arquivo:** `src/app/api/nuvemshop/webhooks/route.ts:137`. **Confiança:** CONFIRMADO.
 - Só recalcula o snapshot quando `paymentStatus === 'PAID'`; eventos `cancelled`/`updated→REFUNDED/VOIDED` pulam o recálculo. A receita do pedido cancelado permanece até o full-sync diário; estorno de pedido de dia anterior nunca dispara recálculo daquele dia.
 - **Correção:** recalcular o dia também em cancelamento/refund (ou recomputar sempre, não só em PAID).

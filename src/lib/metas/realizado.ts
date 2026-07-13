@@ -28,7 +28,6 @@ import { prisma } from '@/lib/prisma'
 import {
   getWeekRange,
   saoPauloDateString,
-  saoPauloDayStart,
   formatSaoPauloDateTime,
 } from '@/lib/utils'
 import { aggregateSnapshots, type AggregatableSnapshot } from '@/services/health-scorer'
@@ -65,9 +64,13 @@ export function resolveJanela(periodo: PeriodoOuJanela, now: Date = new Date()):
     const { start, end } = getWeekRange(new Date(now.getTime() - 7 * 86_400_000))
     return { start, end, label: 'semana passada' }
   }
-  // MTD — 1º dia do mês corrente (00:00 no fuso SP) até agora.
+  // MTD — 1º dia do mês corrente até agora.
+  // AL-3: o dia-parede SP continua definindo QUAL mês/dia-1 (saoPauloDateString),
+  // mas o BOUND de query usa meia-noite UTC (padrão portal/kpis.ts utcDayStart),
+  // porque MetricSnapshot.date é @db.Date (00:00Z). Usar saoPauloDayStart aqui
+  // gerava 03:00Z e EXCLUÍA o snapshot do dia 1 (00:00Z) do MTD.
   const spDay = saoPauloDateString(now) // 'YYYY-MM-DD' (dia-parede SP)
-  const start = saoPauloDayStart(`${spDay.slice(0, 7)}-01`)
+  const start = new Date(`${spDay.slice(0, 7)}-01T00:00:00.000Z`)
   return { start, end: now, label: 'no mês' }
 }
 
