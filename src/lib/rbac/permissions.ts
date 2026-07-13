@@ -38,6 +38,7 @@ export type Module =
   | 'gestaoEquipeMetas'
   | 'gestaoEquipeEquipe'
   | 'inteligencia'
+  | 'conversas'
 
 type ActionSet = readonly Action[]
 type ModuleMatrix = Readonly<Record<Role5, ActionSet>>
@@ -164,6 +165,23 @@ export const PERMISSION_MATRIX = {
     ANALISTA_TRAFEGO: VIEW_ONLY,
     CS: VIEW_ONLY,
     GESTOR_TRAFEGO: VIEW_ONLY, // contexto restrito à carteira via scopeClients()
+  },
+
+  // Conversas (CRM conversacional: inbox WhatsApp, pipeline de leads da loja,
+  // automações, bots, templates, broadcast). Mapeamento do discovery R4 — não
+  // existe papel "CRM/Automação" no RBAC; traduzido para os 5 papéis reais:
+  //  - ADMIN: tudo (configura canais/automações/broadcast).
+  //  - SUPERVISOR_TRAFEGO: opera inbox/pipeline, SEM delete (não apaga histórico).
+  //  - ANALISTA_TRAFEGO: é o "CRM/Automação" — cria/edita automações/bots/templates
+  //    (FULL_CRUD).
+  //  - CS: inbox e leads da carteira, responde e move cards, SEM delete.
+  //  - GESTOR_TRAFEGO: leitura da carteira (escopo via scopeClients no caller).
+  conversas: {
+    ADMIN: FULL_CRUD,
+    SUPERVISOR_TRAFEGO: ['view', 'create', 'update'],
+    ANALISTA_TRAFEGO: FULL_CRUD,
+    CS: ['view', 'create', 'update'],
+    GESTOR_TRAFEGO: VIEW_ONLY, // escopo restrito à carteira via scopeClients()
   },
 } as const satisfies Readonly<Record<Module, ModuleMatrix>>
 
