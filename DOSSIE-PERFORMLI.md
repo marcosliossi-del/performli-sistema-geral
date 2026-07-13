@@ -292,10 +292,10 @@ LIGACOES, AGENDAMENTOS, LEADS, SEGUIDORES) · `GoalPeriod` · `HealthStatus` (OT
 integral no schema (`prisma/schema.prisma`, contagem: 58 `^enum`).
 
 ### 4.5 Migrations
-72 no total, baseline `20260321113638_init`. 5 mais recentes:
-`20260713150000_conversas_foundation`, `20260713140000_platform_ga4sync`,
-`20260706130000_client_portal_users`, `20260704120000_checkin_form_and_chat_mentions`,
-`20260703220000_recurrence_clickup_migration_extensions`.
+73 no total, baseline `20260321113638_init`. 5 mais recentes:
+`20260713160000_nav_space_access`, `20260713150000_conversas_foundation`,
+`20260713140000_platform_ga4sync`, `20260706130000_client_portal_users`,
+`20260704120000_checkin_form_and_chat_mentions`.
 Regra do projeto: migrations preferencialmente **aditivas**.
 
 ---
@@ -753,6 +753,68 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-13 — Atribuição de acesso por espaço (ACL de navegação) — backend
+- **Decisão do Marcos:** como no ClickUp, o ADMIN escolhe QUAIS usuários veem
+  cada "espaço" (grupo da sidebar ou leaf). Semântica: espaço SEM lista custom →
+  visibilidade segue o papel (matriz RBAC intocada); COM lista custom → a lista
+  SUBSTITUI o papel (dá a quem o papel não daria, tira de quem daria); ADMIN
+  sempre vê tudo; vale para navegação E acesso real (link direto bloqueado).
+- **Migration ADITIVA `20260713160000_nav_space_access`:** dois models novos —
+  `NavSpaceMode` (spaceKey PK, custom bool = fonte da verdade do "está em modo
+  custom?") e `NavSpaceAccess` (spaceKey+userId, `@@unique`, FK User cascade =
+  allowlist). Duas tabelas para distinguir "custom + zero linhas = só ADMIN" de
+  "sem modo = padrão por papel" (a presença de linhas não representa lista
+  vazia). Justificativa de model novo: ClientAssignment é POSSE DE CLIENTE, não
+  ACL de UI por `spaceKey`. `permissions.ts` (matriz) NÃO foi tocado — continua
+  o default.
+- **`src/lib/nav-spaces.ts` (puro, client-safe):** mapa canônico spaceKey →
+  {label, kind, hrefs, group} derivado 1:1 do `navigation[]` do Sidebar. Grupos
+  (clientes/operacao/risco/comercial/administrativo/inteligencia) + leaves
+  (ex.: `clientes.checkins`→/check-ins) + fixos individuais `meu-dia`/`cockpit`.
+  Helpers `spaceKeyForPath(pathname)` (leaf mais específica → grupo) e
+  `filterNavByOverrides(role, key, record)` (contrato para a UI).
+- **`src/lib/nav-access.ts` (server-only):** `getNavOverrides(userId)` (1 query
+  por request, React `cache()`), `resolveSpaceVisible` (ADMIN→true; custom→lista;
+  senão→null=cai na matriz), `serializeOverrides` (Record p/ props),
+  `assertPathAccess(session, pathname)` (enforcement de acesso real).
+- **Enforcement:** middleware roda no edge (sem Prisma) → apenas propaga header
+  `x-pathname` (request headers clonados, sem tocar a lógica de auth). O choke
+  point é o layout `src/app/(dashboard)/layout.tsx`, que lê `x-pathname` com
+  `headers()` e chama `assertPathAccess`; negado → `redirect('/cockpit')` (guard
+  anti-loop quando o próprio path já é /cockpit).
+- **Actions ADMIN `src/app/actions/space-access.ts`:** `setSpaceAccessMode`,
+  `setSpaceAccessUsers` (valida usuários ativos), `getSpaceAccessAdmin` (leitura
+  p/ o modal). requireSession + ADMIN estrito + `AuditLog`
+  (`nav_space.mode_custom_on/off`, `nav_space.set_users`) + `revalidatePath('/',
+  'layout')`.
+- **Pendências (fatia seguinte de UI):** Sidebar/CommandPalette/DashboardShell
+  NÃO foram tocados — o shell server-side deve calcular `serializeOverrides` e
+  passar o `Record<spaceKey,boolean>` + o modal de 3 pontinhos consumindo as
+  actions.
+
+### 2026-07-13 — Atribuição de acesso por espaço — UI (padrão ClickUp)
+- **Wiring das overrides:** `src/app/(dashboard)/layout.tsx` calcula
+  `navOverrides = serializeOverrides(await getNavOverrides(session.userId))` e
+  passa via `DashboardShell` (prop `navOverrides?: Record<string,boolean>`) para
+  `Sidebar` e `CommandPalette`. Fecha a pendência da fatia anterior.
+- **Resolução client-side (Sidebar):** mapas `LEAF_SPACE_BY_HREF`/
+  `GROUP_SPACE_BY_HREF` derivados 1:1 de `NAV_SPACES`. `navHrefVisible(href,
+  module,role,overrides)` (exportado, reusado pelo CommandPalette) ESPELHA o
+  `assertPathAccess`: leaf custom decide → senão grupo custom decide → senão
+  `can()`. Um override `true` mostra o item mesmo que a matriz negue o módulo.
+  Grupo aparece se ≥1 filha visível.
+- **Prévia "ver como GESTOR":** simula GESTOR_TRAFEGO SEM overrides
+  (`effectiveOverrides = isPreview ? {} : navOverrides`) — mostra o default por
+  papel, não a lista do ADMIN. Kebab/cadeado só p/ ADMIN real (`showKebab`).
+- **Kebab (⋯) + modal:** `SpaceAccessModal.tsx` (novo, client). Kebab aparece no
+  hover (opacity 0→100, sem deslocar layout) em grupos, leaves de 1º nível,
+  leaves aninhadas e fixos (meu-dia/cockpit). Modal: toggle "Acesso
+  personalizado" (`setSpaceAccessMode`), lista de staff ativo com checkbox +
+  papel + busca (>8), salvar (`setSpaceAccessUsers`), avisos pt-BR, estados
+  loading/vazio/erro. Cadeado discreto no item quando o espaço é custom.
+- **Refresh:** após salvar/alternar, `router.refresh()` (actions já
+  `revalidatePath('/','layout')`). Sem models/endpoints novos; sem deps novas.
+
 ### 2026-07-13 — Redesign IA fatia 3 — grupos visuais de status + filtro/groupBy Categoria
 - **ZERO migração / enum intocado** (spec §3). Os 11 `TaskStatus` viram 6 grupos de
   APRESENTAÇÃO via mapa puro em `src/components/operacional/taskBoard.ts`
@@ -1076,3 +1138,22 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 - Fase 3: verificação estática por papel em docs/checklist-redesign-ia.md;
   1 divergência cosmética (7 grupos, não 6, para não-ADMIN) corrigida na
   proposta. Zero migration em todo o redesign; portal intocado.
+
+### 2026-07-13 — Conversas Fase 2 + Acesso por espaço (conclusão)
+- **Conversas Fase 2** (diretriz: supervisão de vendedores, estágio de leads,
+  monetização): DAL scoped (inbox/thread/pipeline/supervisão agregada) + 7
+  actions (atribuir, status, ler, mover estágio c/ WON/LOST, valor, funil
+  padrão, canal ADMIN c/ token cifrado) + UI `/conversas` (3 visões, janela 24h
+  no composer, polling 30s, mobile). Sidebar: leaf no grupo Comercial; módulo
+  RBAC `conversas`; `/conversas` no PROTECTED_PREFIX. Lacuna registrada:
+  `getAssignableStaff` (dropdown de atendentes deriva dos dados atuais).
+- **Acesso por espaço**: QA reprovou 5 achados; corrigidos — D1 (/cockpit
+  fiscalizado, pouso seguro/tela Acesso restrito sem loop), D2 (`hasSpaceGrant`
+  em 9 guards de página: a lista personalizada agora CONCEDE visualização;
+  escrita segue papel), D3/D4 (docs), D5 (modal fecha na prévia). Re-QA
+  APROVADO. Edge conhecido: custom só no GRUPO não concede em página com guard
+  de leaf (registrado, não regressivo).
+- **Bug meu corrigido no ciclo**: inserção de import em bloco multilinha
+  corrompeu `financeiro/page.tsx` (quebrava build) — corrigido no mesmo push.
+  QA final do Conversas pegou `contactLabel(lead)` com shape errado no
+  PipelineBoard (quebrava build + "Contato sem nome") — corrigido.

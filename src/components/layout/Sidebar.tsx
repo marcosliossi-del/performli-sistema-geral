@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
   Gauge,
@@ -32,10 +32,14 @@ import {
   Headset,
   Settings,
   KeyRound,
+  MoreHorizontal,
+  Lock,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useNav } from './nav-context'
 import { can, normalizeRole, type Module, type Role5 } from '@/lib/rbac'
+import { filterNavByOverrides, NAV_SPACES, NAV_SPACE_BY_KEY } from '@/lib/nav-spaces'
+import { SpaceAccessModal } from './SpaceAccessModal'
 import type { SessionPayload } from '@/lib/session'
 
 type SessionRole = SessionPayload['role']
@@ -122,6 +126,7 @@ const navigation: NavSection[] = [
           { name: 'Estágio da Carteira',     href: '/pipeline',           icon: Kanban,    module: 'comercial' },
           { name: 'Dashboard Comercial',     href: '/comercial/dashboard', icon: BarChart3, module: 'comercial' },
           { name: 'Gerador de Proposta',     href: '/comercial/proposta',  icon: FileText,  module: 'comercial' },
+          { name: 'Conversas',               href: '/conversas',           icon: MessagesSquare, module: 'conversas' },
         ],
       },
       {
@@ -179,16 +184,66 @@ function isLeafActive(pathname: string, href: string): boolean {
   )
 }
 
+// ── Mapas href → spaceKey (derivados 1:1 de NAV_SPACES, fonte canônica) ──────
+// LEAF cobre leaves de grupo + fixos (Meu Dia/Cockpit). GROUP mapeia qualquer
+// href de leaf-filha ao seu grupo (o item de grupo na sidebar usa o href da 1ª
+// filha). Construídos uma vez no módulo — 1 rota = 1 espaço garantido.
+const LEAF_SPACE_BY_HREF: Record<string, string> = {}
+const GROUP_SPACE_BY_HREF: Record<string, string> = {}
+for (const s of NAV_SPACES) {
+  if (s.kind === 'leaf' || s.kind === 'fixed') LEAF_SPACE_BY_HREF[s.hrefs[0]] = s.key
+  else if (s.kind === 'group') for (const h of s.hrefs) GROUP_SPACE_BY_HREF[h] = s.key
+}
+
+/** spaceKey de um item da sidebar por href (grupo tem precedência p/ o kebab). */
+function spaceKeyForGroupHref(href: string): string | undefined {
+  return GROUP_SPACE_BY_HREF[href]
+}
+function spaceKeyForLeafHref(href: string): string | undefined {
+  return LEAF_SPACE_BY_HREF[href]
+}
+
 /**
- * Visibilidade derivada 100% do policy engine. Grupos herdam dos filhos: o grupo
- * aparece se ao menos um filho for visível (sem lista de papéis duplicada).
+ * Visibilidade de uma LEAF combinando overrides + policy engine. Espelha
+ * exatamente o `assertPathAccess` do servidor (nav-access.ts): a leaf custom
+ * decide primeiro; se não for custom, o GRUPO custom decide; só então cai na
+ * matriz RBAC (`can`). "A lista manda": um override `true` mostra o item mesmo
+ * que `can()` negue o módulo dele.
  */
-function itemVisible(item: NavItemDef, role: Role5): boolean {
-  if (item.children && item.children.length > 0) {
-    return item.children.some((c) => itemVisible(c, role))
+export function navHrefVisible(
+  href: string,
+  module: Module | undefined,
+  role: Role5,
+  overrides: Record<string, boolean>,
+): boolean {
+  const leafKey = LEAF_SPACE_BY_HREF[href]
+  if (leafKey) {
+    const ov = filterNavByOverrides(role, leafKey, overrides)
+    if (ov !== null) return ov
+    const groupKey = NAV_SPACE_BY_KEY[leafKey]?.group
+    if (groupKey) {
+      const ovg = filterNavByOverrides(role, groupKey, overrides)
+      if (ovg !== null) return ovg
+    }
   }
-  if (!item.module) return true
-  return can(role, 'view', item.module)
+  if (!module) return true
+  return can(role, 'view', module)
+}
+
+function leafVisible(item: NavItemDef, role: Role5, overrides: Record<string, boolean>): boolean {
+  return navHrefVisible(item.href, item.module, role, overrides)
+}
+
+/**
+ * Visibilidade de qualquer item. Grupos herdam dos filhos: aparecem se ao menos
+ * uma leaf-filha for visível (um override `true` no grupo já torna todas as
+ * filhas visíveis via `leafVisible`).
+ */
+function itemVisible(item: NavItemDef, role: Role5, overrides: Record<string, boolean>): boolean {
+  if (item.children && item.children.length > 0) {
+    return item.children.some((c) => leafVisible(c, role, overrides))
+  }
+  return leafVisible(item, role, overrides)
 }
 
 type Counts = Partial<Record<CountKey, number>>
@@ -198,11 +253,21 @@ interface SidebarProps {
   counts?: Counts
   /** Destino do logo — home do perfil (pouso). Default defensivo: /cockpit. */
   homeHref?: string
+  /**
+   * Overrides da ACL de navegação por espaço (Record<spaceKey, boolean>), só com
+   * espaços em modo custom. Suas CHAVES são os espaços que têm lista
+   * personalizada — usadas também para o indicador (cadeado) do ADMIN.
+   */
+  navOverrides?: Record<string, boolean>
 }
 
-export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
+export function Sidebar({ role, counts, homeHref = '/cockpit', navOverrides = {} }: SidebarProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const { viewMode, setMobileOpen } = useNav()
+
+  // Espaço aberto no modal "Gerenciar acesso" (só ADMIN real — ver showKebab).
+  const [managingSpace, setManagingSpace] = useState<string | null>(null)
 
   // Fecha o drawer mobile ao navegar (a rota muda).
   useEffect(() => {
@@ -213,8 +278,25 @@ export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
   // como gestor. A prévia só REBAIXA (ADMIN→GESTOR_TRAFEGO) — o RBAC real é do
   // backend; aqui é só UX.
   const base = normalizeRole(role)
-  const effectiveRole: Role5 =
-    base === 'ADMIN' && viewMode === 'GESTOR' ? 'GESTOR_TRAFEGO' : base
+  const isPreview = base === 'ADMIN' && viewMode === 'GESTOR'
+  const effectiveRole: Role5 = isPreview ? 'GESTOR_TRAFEGO' : base
+
+  // Na prévia "ver como GESTOR" simulamos o papel GESTOR *sem* overrides: mostra
+  // o default por papel (matriz RBAC), não a lista personalizada do ADMIN real.
+  // Fora da prévia, valem os overrides reais do usuário. (Para o ADMIN real, o
+  // filtro ignora overrides — ADMIN vê tudo; as chaves ainda servem ao cadeado.)
+  const effectiveOverrides = isPreview ? {} : navOverrides
+
+  // Kebab "Gerenciar acesso" + cadeado: SÓ para ADMIN real (nunca na prévia).
+  const showKebab = base === 'ADMIN' && !isPreview
+
+  // QA D5: entrar na prévia fecha o modal de acesso (ele é ferramenta do ADMIN
+  // real; as actions barram server-side de qualquer forma).
+  useEffect(() => {
+    if (isPreview) setManagingSpace(null)
+  }, [isPreview])
+  const isCustomSpace = (spaceKey: string | undefined): boolean =>
+    !!spaceKey && spaceKey in navOverrides
 
   return (
     <aside className="lg-sidebar w-60 flex-shrink-0 h-screen sticky top-0 bg-[#0A1E2C] border-r border-[#38435C] flex flex-col">
@@ -236,7 +318,7 @@ export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
       <nav className="flex-1 overflow-y-auto py-3 px-2.5 space-y-1">
         {navigation
           .map((section, idx) => {
-            const visibleItems = section.items.filter((item) => itemVisible(item, effectiveRole))
+            const visibleItems = section.items.filter((item) => itemVisible(item, effectiveRole, effectiveOverrides))
             if (visibleItems.length === 0) return null
 
             return (
@@ -247,18 +329,53 @@ export function Sidebar({ role, counts, homeHref = '/cockpit' }: SidebarProps) {
                   </p>
                 )}
                 <div className="space-y-0.5">
-                  {visibleItems.map((item) =>
-                    item.children && item.children.some((c) => itemVisible(c, effectiveRole)) ? (
-                      <NavGroup key={item.name} item={item} role={effectiveRole} pathname={pathname} counts={counts} />
-                    ) : (
-                      <NavLeaf key={item.href} item={item} pathname={pathname} counts={counts} />
-                    ),
-                  )}
+                  {visibleItems.map((item) => {
+                    const isGroup = item.children && item.children.some((c) => leafVisible(c, effectiveRole, effectiveOverrides))
+                    if (isGroup) {
+                      const groupKey = spaceKeyForGroupHref(item.href)
+                      return (
+                        <NavGroup
+                          key={item.name}
+                          item={item}
+                          role={effectiveRole}
+                          overrides={effectiveOverrides}
+                          pathname={pathname}
+                          counts={counts}
+                          spaceKey={groupKey}
+                          isCustom={isCustomSpace(groupKey)}
+                          showKebab={showKebab}
+                          onManage={setManagingSpace}
+                        />
+                      )
+                    }
+                    const leafKey = spaceKeyForLeafHref(item.href)
+                    return (
+                      <NavLeaf
+                        key={item.href}
+                        item={item}
+                        pathname={pathname}
+                        counts={counts}
+                        spaceKey={leafKey}
+                        isCustom={isCustomSpace(leafKey)}
+                        showKebab={showKebab}
+                        onManage={setManagingSpace}
+                      />
+                    )
+                  })}
                 </div>
               </div>
             )
           })}
       </nav>
+
+      {/* Modal "Gerenciar acesso" — montado só quando o ADMIN abre um espaço. */}
+      {managingSpace && (
+        <SpaceAccessModal
+          spaceKey={managingSpace}
+          onClose={() => setManagingSpace(null)}
+          onSaved={() => router.refresh()}
+        />
+      )}
 
       {/* Bottom */}
       <div className="p-3 border-t border-[#38435C]">
@@ -303,54 +420,105 @@ function CountBadge({ count, alert }: { count: number; alert?: boolean }) {
   )
 }
 
+/**
+ * Botão kebab (⋯) "Gerenciar acesso". SÓ renderizado para ADMIN real. Fica
+ * absoluto à direita da linha, escondido (opacity-0) até o hover da linha
+ * (group/row) — não desloca o layout. `stopPropagation`/`preventDefault` evitam
+ * navegar (dentro de Link) ou abrir/fechar o grupo (dentro do toggle).
+ */
+function KebabButton({ onManage, spaceKey }: { onManage: (k: string) => void; spaceKey: string }) {
+  return (
+    <button
+      type="button"
+      aria-label="Gerenciar acesso"
+      title="Gerenciar acesso"
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onManage(spaceKey)
+      }}
+      className="absolute right-1 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-6 h-6 rounded-md text-[#647488] hover:text-[#f2f6fa] hover:bg-white/[0.10] opacity-0 group-hover/row:opacity-100 focus:opacity-100 focus:outline-none transition-opacity"
+    >
+      <MoreHorizontal size={14} />
+    </button>
+  )
+}
+
+/** Cadeado discreto ao lado do nome: o espaço tem lista personalizada (só ADMIN). */
+function CustomLock() {
+  return (
+    <Lock
+      size={11}
+      className="flex-shrink-0 text-[#95BBE2]"
+      aria-label="Acesso personalizado"
+    />
+  )
+}
+
 function NavLeaf({
-  item, pathname, counts, nested,
+  item, pathname, counts, nested, spaceKey, isCustom, showKebab, onManage,
 }: {
   item: NavItemDef
   pathname: string
   counts?: Counts
   nested?: boolean
+  spaceKey?: string
+  isCustom?: boolean
+  showKebab?: boolean
+  onManage?: (k: string) => void
 }) {
   const Icon = item.icon
   const isActive = isLeafActive(pathname, item.href)
   const count = item.countKey ? counts?.[item.countKey] ?? 0 : 0
+  const canKebab = showKebab && spaceKey && onManage
 
   return (
-    <Link
-      href={item.href}
-      prefetch
-      className={cn(
-        'group relative flex items-center gap-2.5 rounded-[10px] transition-all duration-200 ease-out active:scale-[0.98]',
-        nested ? 'px-2.5 py-1.5 text-[12.5px]' : 'px-2.5 py-2 text-[13px]',
-        isActive
-          ? 'bg-[#95BBE2]/15 text-[#95BBE2] font-semibold'
-          : 'text-[#a3b2c2] hover:bg-white/[0.05] hover:text-[#f2f6fa] font-medium',
-      )}
-    >
-      {isActive && !nested && (
-        <span className="absolute -left-[2px] top-2 bottom-2 w-[3px] rounded-full bg-gradient-to-b from-[#54e0ee] to-[#22c2d6] shadow-[0_0_10px_rgba(34,194,214,0.5)]" />
-      )}
-      {nested
-        ? <span className="w-[17px] text-center text-[#647488] flex-shrink-0">·</span>
-        : <Icon size={16} className="flex-shrink-0" />}
-      <span className="truncate">{item.name}</span>
-      <CountBadge count={count} alert={item.alert} />
-    </Link>
+    <div className="group/row relative">
+      <Link
+        href={item.href}
+        prefetch
+        className={cn(
+          'group relative flex items-center gap-2.5 rounded-[10px] transition-all duration-200 ease-out active:scale-[0.98]',
+          nested ? 'px-2.5 py-1.5 text-[12.5px]' : 'px-2.5 py-2 text-[13px]',
+          canKebab && 'pr-8',
+          isActive
+            ? 'bg-[#95BBE2]/15 text-[#95BBE2] font-semibold'
+            : 'text-[#a3b2c2] hover:bg-white/[0.05] hover:text-[#f2f6fa] font-medium',
+        )}
+      >
+        {isActive && !nested && (
+          <span className="absolute -left-[2px] top-2 bottom-2 w-[3px] rounded-full bg-gradient-to-b from-[#54e0ee] to-[#22c2d6] shadow-[0_0_10px_rgba(34,194,214,0.5)]" />
+        )}
+        {nested
+          ? <span className="w-[17px] text-center text-[#647488] flex-shrink-0">·</span>
+          : <Icon size={16} className="flex-shrink-0" />}
+        <span className="truncate">{item.name}</span>
+        {isCustom && showKebab && <CustomLock />}
+        <CountBadge count={count} alert={item.alert} />
+      </Link>
+      {showKebab && spaceKey && onManage && <KebabButton onManage={onManage} spaceKey={spaceKey} />}
+    </div>
   )
 }
 
 function NavGroup({
-  item, role, pathname, counts,
+  item, role, overrides, pathname, counts, spaceKey, isCustom, showKebab, onManage,
 }: {
   item: NavItemDef
   role: Role5
+  overrides: Record<string, boolean>
   pathname: string
   counts?: Counts
+  spaceKey?: string
+  isCustom?: boolean
+  showKebab?: boolean
+  onManage?: (k: string) => void
 }) {
   const Icon = item.icon
-  const kids = (item.children ?? []).filter((c) => itemVisible(c, role))
+  const kids = (item.children ?? []).filter((c) => leafVisible(c, role, overrides))
   const childActive = kids.some((c) => pathname === c.href || pathname.startsWith(c.href + '/'))
   const [open, setOpen] = useState(childActive || Boolean(item.defaultOpen))
+  const canKebab = showKebab && spaceKey && onManage
 
   // Badge do grupo = soma dos filhos visíveis com contador, SÓ quando fechado.
   // Aberto, cada leaf mostra o próprio badge (evita dupla contagem). Cor de
@@ -369,23 +537,43 @@ function NavGroup({
 
   return (
     <div>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className={cn(
-          'group w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[13px] font-medium transition-all duration-200 ease-out',
-          childActive ? 'text-[#f2f6fa]' : 'text-[#a3b2c2] hover:bg-white/[0.05] hover:text-[#f2f6fa]',
-        )}
-      >
-        {open
-          ? <ChevronDown size={13} className="flex-shrink-0 text-[#647488]" />
-          : <ChevronRight size={13} className="flex-shrink-0 text-[#647488]" />}
-        <Icon size={16} className="flex-shrink-0" />
-        <span className="truncate">{item.name}</span>
-        <CountBadge count={count} alert={groupAlert} />
-      </button>
+      <div className="group/row relative">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className={cn(
+            'group w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[10px] text-[13px] font-medium transition-all duration-200 ease-out',
+            canKebab && 'pr-8',
+            childActive ? 'text-[#f2f6fa]' : 'text-[#a3b2c2] hover:bg-white/[0.05] hover:text-[#f2f6fa]',
+          )}
+        >
+          {open
+            ? <ChevronDown size={13} className="flex-shrink-0 text-[#647488]" />
+            : <ChevronRight size={13} className="flex-shrink-0 text-[#647488]" />}
+          <Icon size={16} className="flex-shrink-0" />
+          <span className="truncate">{item.name}</span>
+          {isCustom && showKebab && <CustomLock />}
+          <CountBadge count={count} alert={groupAlert} />
+        </button>
+        {showKebab && spaceKey && onManage && <KebabButton onManage={onManage} spaceKey={spaceKey} />}
+      </div>
       {open && (
         <div className="ml-[15px] mt-0.5 mb-0.5 pl-1.5 border-l border-white/[0.06] space-y-0.5">
-          {kids.map((c) => <NavLeaf key={c.name} item={c} pathname={pathname} counts={counts} nested />)}
+          {kids.map((c) => {
+            const leafKey = spaceKeyForLeafHref(c.href)
+            return (
+              <NavLeaf
+                key={c.name}
+                item={c}
+                pathname={pathname}
+                counts={counts}
+                nested
+                spaceKey={leafKey}
+                isCustom={showKebab ? leafKey ? leafKey in overrides : false : false}
+                showKebab={showKebab}
+                onManage={onManage}
+              />
+            )
+          })}
         </div>
       )}
     </div>

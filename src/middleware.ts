@@ -10,7 +10,7 @@ const STAFF_AUDIENCE = 'performli-staff'
 const PORTAL_AUDIENCE = 'performli-portal'
 
 const PUBLIC_ROUTES = ['/login']
-const PROTECTED_PREFIX = ['/cockpit', '/operacional', '/meu-dia', '/validacoes', '/aceite', '/check-ins', '/processos', '/dashboard', '/clients', '/canais', '/t/', '/operations', '/reports', '/anti-churn', '/ai-agents', '/alerts', '/team', '/agency', '/managers', '/pipeline', '/comercial', '/financeiro', '/knowledge', '/settings', '/portal-acessos', '/suporte', '/recorrencias', '/juridico']
+const PROTECTED_PREFIX = ['/cockpit', '/operacional', '/meu-dia', '/validacoes', '/aceite', '/check-ins', '/processos', '/dashboard', '/clients', '/canais', '/t/', '/operations', '/reports', '/anti-churn', '/ai-agents', '/alerts', '/team', '/agency', '/managers', '/pipeline', '/comercial', '/financeiro', '/knowledge', '/settings', '/portal-acessos', '/suporte', '/recorrencias', '/juridico', '/conversas']
 
 function getSecretKey() {
   const secret = process.env.SESSION_SECRET
@@ -74,7 +74,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
-  return NextResponse.next()
+  // Propaga o pathname para os Server Components via header de request. O
+  // middleware roda no edge (sem Prisma), então o enforcement da ACL de
+  // navegação por espaço vive no layout do dashboard, que lê `x-pathname` com
+  // `headers()`. Mudança mínima e não-destrutiva: não altera a lógica de auth,
+  // só anexa um header informativo ao request encaminhado.
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-pathname', pathname)
+  return NextResponse.next({ request: { headers: requestHeaders } })
 }
 
 export const config = {

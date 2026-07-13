@@ -5,6 +5,7 @@ import { formatCurrency, formatNumber } from '@/lib/utils'
 import { healthLabels, healthBgClasses } from '@/lib/health'
 import { HealthStatus } from '@prisma/client'
 import { TrendingUp, TrendingDown, Minus, Users, DollarSign, BarChart2, ShoppingCart, Heart, UserMinus, Clock } from 'lucide-react'
+import { hasSpaceGrant } from '@/lib/nav-access'
 
 function HealthDot({ status }: { status: HealthStatus | null }) {
   if (!status) return <span className="w-2 h-2 rounded-full bg-[#38435C] inline-block" />
@@ -20,7 +21,8 @@ function RoasBadge({ roas }: { roas: number | null }) {
 
 export default async function AgencyPage() {
   const session = await requireSession()
-  if (session.role !== 'ADMIN') redirect('/cockpit')
+  // Guard de papel + grant de espaço (lista personalizada 'dá' acesso — QA D2)
+  if (session.role !== 'ADMIN' && !(await hasSpaceGrant(session.userId, 'administrativo.ceo'))) redirect('/cockpit')
 
   const data = await getAgencyOverview()
   const total = data.health.otimo + data.health.regular + data.health.ruim + data.health.semMeta + data.health.aguardandoDados

@@ -55,6 +55,7 @@ model User {
   responsibleWarRooms  CriticalProtocol[]   @relation("WarRoomResponsible")
   auditLogs            AuditLog[]
   workspaceMemberships WorkspaceMember[]
+  navSpaceAccess       NavSpaceAccess[]
 }
 
 // ─── CLIENTS ─────────────────────────────────────────────────────────────────
@@ -575,6 +576,50 @@ model AuditLog {
   @@index([clientId, createdAt])
   @@index([actorId, createdAt])
   @@index([action, createdAt])
+}
+
+// ─── ACL DE NAVEGAÇÃO POR ESPAÇO (atribuição de acesso — decisão 2026-07-13) ──
+// Sobrepõe a matriz RBAC (permissions.ts) apenas na VISIBILIDADE/acesso de um
+// "espaço" da navegação (grupo da sidebar ou leaf). Semântica aprovada:
+//   • espaço SEM modo custom  → visibilidade segue o papel (matriz, nada muda).
+//   • espaço COM modo custom   → a lista de usuários SUBSTITUI o papel naquele
+//     espaço (dá a quem o papel não daria, tira de quem daria). Lista vazia =
+//     ninguém além do ADMIN.
+//   • ADMIN sempre vê tudo (enforce em nav-access.ts, nunca no banco).
+// Justificativa de model novo (CLAUDE.md): nenhum model existente representa
+// ACL de navegação por usuário. ClientAssignment é POSSE DE CLIENTE (carteira do
+// gestor), semântica distinta — aqui a chave é um `spaceKey` de UI, não Client.
+// Exit strategy ClickUp: substitui o controle "quem vê cada Space/List" que hoje
+// é feito manualmente no ClickUp; o estado canônico passa a viver no Postgres.
+//
+// DUAS tabelas (decisão de modelagem): NavSpaceMode é a fonte da verdade do
+// "este espaço está em modo custom?"; NavSpaceAccess são as linhas da allowlist.
+// Necessário para distinguir "custom + zero linhas = só ADMIN" de "sem modo =
+// padrão por papel" — a mera presença de linhas não representa a lista vazia.
+
+/// Marca um `spaceKey` como estando em modo "lista personalizada". A existência
+/// de uma linha com custom=true liga o override; custom=false ou linha ausente =
+/// volta ao padrão por papel. `spaceKey` é o identificador canônico do espaço
+/// (src/lib/nav-spaces.ts) — NÃO é FK (namespace de UI, não de banco).
+model NavSpaceMode {
+  spaceKey  String   @id
+  custom    Boolean  @default(true)
+  updatedAt DateTime @updatedAt @default(now())
+}
+
+/// Uma linha = "este usuário tem acesso a este espaço" quando o espaço está em
+/// modo custom. Sem efeito se o espaço não estiver em modo custom.
+model NavSpaceAccess {
+  id        String   @id @default(cuid())
+  spaceKey  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([spaceKey, userId])
+  @@index([userId])
+  @@index([spaceKey])
 }
 
 // ─── HISTÓRICO DE PRODUTOS DO CLIENTE (downgrade anti-churn — Fase 3) ─────────

@@ -16,6 +16,7 @@ import { shouldRunToday } from '@/services/recurrence-engine'
 import { parseRecurrenceRule, computeNextOccurrence } from '@/lib/tasks/recurrence'
 import { redirect } from 'next/navigation'
 import { Prisma, type RecurrenceFrequency } from '@prisma/client'
+import { hasSpaceGrant } from '@/lib/nav-access'
 
 // Tela restrita ao ADMIN: pausar/reativar o motor de recorrência afeta a
 // geração de tarefas de toda a agência, então só o administrador tem acesso.
@@ -145,7 +146,8 @@ function daysOverdue(dueDate: Date | null, now: Date): number {
 
 export default async function RecorrenciasPage() {
   const session = await requireSession()
-  if (session.role !== 'ADMIN') redirect('/cockpit')
+  // Guard de papel + grant de espaço (lista personalizada 'dá' acesso — QA D2)
+  if (session.role !== 'ADMIN' && !(await hasSpaceGrant(session.userId, 'operacao.recorrencias'))) redirect('/cockpit')
 
   const allRules = await prisma.taskRecurrenceRule.findMany({
     orderBy: [{ active: 'desc' }, { createdAt: 'asc' }],

@@ -16,11 +16,18 @@ interface DashboardShellProps {
   counts?: SidebarCounts
   /** Destino do logo — home do perfil (pouso). */
   homeHref: string
+  /**
+   * Overrides da ACL de navegação por espaço (Record<spaceKey, boolean>), só com
+   * espaços em modo custom. Repassado a Sidebar e CommandPalette para filtrar a
+   * navegação client-side via `filterNavByOverrides`. Vazio p/ quem não tem
+   * espaço custom aplicável.
+   */
+  navOverrides?: Record<string, boolean>
   /** Slot do parallel route @modal (painel slide-over da task, D-009). */
   modal?: React.ReactNode
 }
 
-export function DashboardShell({ children, session, unreadAlerts, counts, homeHref, modal }: DashboardShellProps) {
+export function DashboardShell({ children, session, unreadAlerts, counts, homeHref, navOverrides, modal }: DashboardShellProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(
     session.role === 'ADMIN' ? 'ADMIN' : 'GESTOR'
   )
@@ -44,7 +51,7 @@ export function DashboardShell({ children, session, unreadAlerts, counts, homeHr
       <div className="ak-app-bg flex h-screen overflow-hidden bg-[#05141C] print:block print:h-auto print:bg-white">
         {/* Sidebar desktop — fixa a partir de lg. Escondida no mobile (vira drawer). */}
         <div className="hidden lg:block print:hidden">
-          <Sidebar role={session.role} counts={counts} homeHref={homeHref} />
+          <Sidebar role={session.role} counts={counts} homeHref={homeHref} navOverrides={navOverrides} />
         </div>
 
         {/* Sidebar mobile — drawer sobreposto (abaixo de lg). */}
@@ -56,7 +63,7 @@ export function DashboardShell({ children, session, unreadAlerts, counts, homeHr
               aria-hidden
             />
             <div className="fixed inset-y-0 left-0 z-50 lg:hidden print:hidden">
-              <Sidebar role={session.role} counts={counts} homeHref={homeHref} />
+              <Sidebar role={session.role} counts={counts} homeHref={homeHref} navOverrides={navOverrides} />
             </div>
           </>
         )}
@@ -74,7 +81,7 @@ export function DashboardShell({ children, session, unreadAlerts, counts, homeHr
           </div>
           <main className="flex-1 overflow-y-auto p-6 print:overflow-visible print:p-4">{children}</main>
         </div>
-        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={session.role} />
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={session.role} navOverrides={navOverrides} />
         <ToastViewport />
         {/* Slot @modal: slide-over da task sobre a view (fixed, não desloca layout). */}
         {modal}
