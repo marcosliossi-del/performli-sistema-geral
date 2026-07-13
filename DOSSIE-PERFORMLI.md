@@ -1157,3 +1157,5 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
   corrompeu `financeiro/page.tsx` (quebrava build) — corrigido no mesmo push.
   QA final do Conversas pegou `contactLabel(lead)` com shape errado no
   PipelineBoard (quebrava build + "Contato sem nome") — corrigido.
+
+<!-- deploy: 2026-07-13 força build de produção (Vercel não promoveu o merge #189) -->
