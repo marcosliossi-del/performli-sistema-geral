@@ -119,7 +119,7 @@ Quebram funcionalidade, vazam dados entre tenants ou corrompem métricas.
 - **Impacto:** MTD subestima o dia 1 de cada mês e diverge do `HealthScore` (que usa `getMonthRange`, inclui o dia 1).
 - **Correção:** usar bound `${mês}-01T00:00:00.000Z` (padrão `utcDayStart`) para casar com `@db.Date`; jamais `saoPauloDayStart` como comparador de coluna `@db.Date`.
 
-### AL-4 — `getWeekRange`/`getMonthRange` calculam a fronteira no fuso do servidor (UTC na Vercel), não em SP
+### AL-4 — `getWeekRange`/`getMonthRange` calculam a fronteira no fuso do servidor (UTC na Vercel), não em SP — ✅ CORRIGIDO (2026-07-13)
 - **Arquivo:** `src/lib/utils.ts:36-53`. **Confiança:** CONFIRMADO (código); impacto ATIVO SUSPEITO.
 - `getDay()`/`setHours()`/`new Date(y,m,1)` usam o runtime (UTC em produção). As janelas "viram" às 00:00 UTC = 21:00 SP do dia anterior. Usado por health-scorer, churn-scorer, weekly-goals-sync, resultado-engine, checkin-monitor. O cron das segundas roda 06:00 BRT e **escapa**; o risco se materializa em acesso **on-demand**/sync manual entre 21:00–23:59 SP. É bomba-relógio se o horário do cron mudar.
 - **Correção:** derivar week/month de `saoPauloDateString(now)` e montar os bounds com aritmética UTC sobre o dia-parede SP.

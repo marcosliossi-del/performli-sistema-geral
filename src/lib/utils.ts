@@ -33,22 +33,34 @@ export function slugify(text: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+// AL-4: a fronteira de semana/mês é calculada no fuso America/Sao_Paulo, NÃO no
+// fuso do runtime (UTC na Vercel). Antes, `getDay()`/`setHours()`/`new Date(y,m,1)`
+// usavam a hora local do servidor, então entre 21:00–23:59 SP (00:00–02:59 UTC do
+// dia seguinte) a semana/mês "virava" cedo — check-in de sábado à noite caía na
+// semana seguinte, cliente aparecia falsamente "sem meta/sem check-in", MTD no
+// mês errado. Agora deriva o dia-parede SP (`saoPauloDateString`) e constrói os
+// bounds em UTC-midnight, casando com colunas `@db.Date` (que voltam 00:00Z).
+// Fora da janela 21:00–23:59 SP o resultado é idêntico ao anterior.
 export function getWeekRange(date: Date = new Date()): { start: Date; end: Date } {
-  const d = new Date(date)
-  const day = d.getDay() // 0=Dom, 6=Sab
-  const start = new Date(d)
-  start.setDate(d.getDate() - day) // domingo da semana
-  start.setHours(0, 0, 0, 0)
+  const spDay = saoPauloDateString(date) // 'YYYY-MM-DD' (dia-parede SP)
+  const anchor = new Date(`${spDay}T00:00:00.000Z`) // meia-noite UTC do dia SP
+  const dow = anchor.getUTCDay() // 0=Dom … 6=Sab (weekday do dia-parede SP)
+  const start = new Date(anchor)
+  start.setUTCDate(anchor.getUTCDate() - dow) // domingo da semana
+  start.setUTCHours(0, 0, 0, 0)
   const end = new Date(start)
-  end.setDate(start.getDate() + 6) // sábado da semana
-  end.setHours(23, 59, 59, 999)
+  end.setUTCDate(start.getUTCDate() + 6) // sábado da semana
+  end.setUTCHours(23, 59, 59, 999)
   return { start, end }
 }
 
 export function getMonthRange(date: Date = new Date()): { start: Date; end: Date } {
-  const start = new Date(date.getFullYear(), date.getMonth(), 1)
-  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0)
-  end.setHours(23, 59, 59, 999)
+  const spDay = saoPauloDateString(date) // 'YYYY-MM-DD' (dia-parede SP)
+  const [y, m] = spDay.split('-').map(Number) // m: 1–12
+  const start = new Date(`${spDay.slice(0, 7)}-01T00:00:00.000Z`)
+  // Date.UTC(y, m, 0): dia 0 do mês seguinte (m é 1-based, então índice m = mês
+  // seguinte 0-based) = último dia do mês corrente.
+  const end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999))
   return { start, end }
 }
 

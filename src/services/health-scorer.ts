@@ -20,7 +20,7 @@
 import { prisma } from '@/lib/prisma'
 import { classifyHealth } from '@/lib/health'
 import { MetricType, HealthStatus, BusinessType } from '@prisma/client'
-import { getWeekRange, getMonthRange } from '@/lib/utils'
+import { getWeekRange, getMonthRange, saoPauloDateString } from '@/lib/utils'
 
 // Item 7 (fallback de meta via ficha do Client): NÃO plugável aqui sem migration.
 // HealthScore.goalId é FK obrigatória (schema:430, parte do unique), então não há
@@ -328,10 +328,15 @@ async function processGoals(
   let updated = 0
   const scores: ScoredMetric[] = []
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const startDay = new Date(periodStart); startDay.setHours(0, 0, 0, 0)
-  const endDay   = new Date(periodEnd);   endDay.setHours(0, 0, 0, 0)
+  // AL-4: ancora "hoje" no UTC-midnight do dia-parede SP — mesmo fuso do
+  // periodStart/End (que getWeekRange/getMonthRange já produzem em UTC-midnight
+  // do dia SP). Sem isso, na janela 21-23h SP o `today` (UTC do runtime) ficava
+  // 1 dia à frente e o pro-rata driftava. startDay/endDay usam a data UTC do
+  // período (que É o dia SP às 00:00Z) — não re-derivar via saoPauloDateString,
+  // pois 00:00Z = 21:00 SP do dia anterior.
+  const today = new Date(`${saoPauloDateString()}T00:00:00.000Z`)
+  const startDay = new Date(periodStart); startDay.setUTCHours(0, 0, 0, 0)
+  const endDay   = new Date(periodEnd);   endDay.setUTCHours(0, 0, 0, 0)
 
   const periodInProgress = today < endDay
   const totalDays   = Math.round((endDay.getTime() - startDay.getTime()) / 86_400_000) + 1
