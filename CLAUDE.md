@@ -6,6 +6,11 @@
 Este arquivo define as regras transversais que **todos** os agentes herdam.
 Nenhum agente pode violar o que está aqui, independente da tarefa.
 
+> **DOSSIÊ TÉCNICO:** antes de qualquer nova feature ou integração, leia
+> `DOSSIE-PERFORMLI.md` (raiz). Após qualquer mudança estrutural (endpoint,
+> model, role, integração, env var, cron), atualize a seção correspondente do
+> dossiê **no mesmo PR/commit**.
+
 ---
 
 ## Contexto do produto
