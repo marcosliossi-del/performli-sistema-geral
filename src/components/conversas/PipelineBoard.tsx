@@ -221,7 +221,7 @@ function LeadCard({
 
   return (
     <div className="rounded-lg border border-[#38435C] bg-[#0A1E2C] p-2.5">
-      <p className="text-sm font-medium text-[#EBEBEB] truncate">{contactLabel(lead)}</p>
+      <p className="text-sm font-medium text-[#EBEBEB] truncate">{contactLabel({ name: lead.contactName, phone: lead.contactPhone })}</p>
       {lead.contactPhone && (
         <p className="text-[11px] text-[#647488] truncate">{lead.contactPhone}</p>
       )}

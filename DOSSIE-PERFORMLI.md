@@ -1138,3 +1138,22 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 - Fase 3: verificação estática por papel em docs/checklist-redesign-ia.md;
   1 divergência cosmética (7 grupos, não 6, para não-ADMIN) corrigida na
   proposta. Zero migration em todo o redesign; portal intocado.
+
+### 2026-07-13 — Conversas Fase 2 + Acesso por espaço (conclusão)
+- **Conversas Fase 2** (diretriz: supervisão de vendedores, estágio de leads,
+  monetização): DAL scoped (inbox/thread/pipeline/supervisão agregada) + 7
+  actions (atribuir, status, ler, mover estágio c/ WON/LOST, valor, funil
+  padrão, canal ADMIN c/ token cifrado) + UI `/conversas` (3 visões, janela 24h
+  no composer, polling 30s, mobile). Sidebar: leaf no grupo Comercial; módulo
+  RBAC `conversas`; `/conversas` no PROTECTED_PREFIX. Lacuna registrada:
+  `getAssignableStaff` (dropdown de atendentes deriva dos dados atuais).
+- **Acesso por espaço**: QA reprovou 5 achados; corrigidos — D1 (/cockpit
+  fiscalizado, pouso seguro/tela Acesso restrito sem loop), D2 (`hasSpaceGrant`
+  em 9 guards de página: a lista personalizada agora CONCEDE visualização;
+  escrita segue papel), D3/D4 (docs), D5 (modal fecha na prévia). Re-QA
+  APROVADO. Edge conhecido: custom só no GRUPO não concede em página com guard
+  de leaf (registrado, não regressivo).
+- **Bug meu corrigido no ciclo**: inserção de import em bloco multilinha
+  corrompeu `financeiro/page.tsx` (quebrava build) — corrigido no mesmo push.
+  QA final do Conversas pegou `contactLabel(lead)` com shape errado no
+  PipelineBoard (quebrava build + "Contato sem nome") — corrigido.
