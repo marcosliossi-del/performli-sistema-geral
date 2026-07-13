@@ -155,7 +155,7 @@ Nomenclatura, padrões, contratos, duplicações. (Funcionais primeiro.)
 ### Duplicação
 - **F-01/AL-2** já contado nos ALTOS (agregação inline vs `aggregateSnapshots`).
 - **F-02 — `formatCurrency` reimplementado ≥8×** (`warroom/prefill.ts:47`, `budget-monitor.ts:101`, `inadimplencia-checker.ts:44`, `asaas-task-reconciler.ts:50`, `oscillation-detector.ts:90`, `portal/format.ts:12`, `comercial/proposta.ts:16`, `ai-client-context.ts:175`) — com casas decimais divergentes. **CONFIRMADO / manutenção.**
-- **B-04/B-08 — cálculo de início-de-mês (`new Date(y,m,1)`) copiado ~40× e `formatDate` 5×**, ignorando `getMonthRange`/`formatSaoPauloDateTime`. **CONFIRMADO.**
+- **B-04/B-08 — cálculo de início-de-mês (`new Date(y,m,1)`) copiado ~40× e `formatDate` 5×**, ignorando `getMonthRange`/`formatSaoPauloDateTime`. **CONFIRMADO.** 🟡 PARCIAL (2026-07-13: os 4 `monthStart` do dal.ts consolidados em getMonthRange; demais cópias/formatDate seguem pendentes).
 - **B-05 — 9 clients HTTP com timeout copiado** (15s/25s/30s, dois mecanismos), sem wrapper central. **CONFIRMADO.**
 - **B-07 — cores de status hardcoded em hex** (`MetasDashboard.tsx`, `MetasBulkTable.tsx`, `email-templates.ts`) + 6 mapas status→cor independentes. **CONFIRMADO.**
 
@@ -256,6 +256,6 @@ Ordem = impacto ÷ esforço. **Nenhuma correção foi aplicada** — cada item v
 15. **Duplicação** — centralizar `formatCurrency`, cores de status, cálculo de mês, e um `fetchWithTimeout` único.
 
 ### Investigar antes de corrigir (SUSPEITOS)
-- **ME-4 (A-04)** — churn conta semanas por entradas presentes, não calendário (pode inflar "crítico" com buraco de dados).
+- **ME-4 (A-04)** — churn conta semanas por entradas presentes, não calendário (pode inflar "crítico" com buraco de dados). ✅ CORRIGIDO (2026-07-13, guarda de adjacência >8d).
 - **AS-2** — resultado-engine marca `resultadoWeek` antes de criar a task de plano de ação; falha parcial deixa cliente crítico sem plano, silenciosamente.
 - **KPI-5** — corrida webhook × daily-sync no mesmo snapshot (last-writer-wins).

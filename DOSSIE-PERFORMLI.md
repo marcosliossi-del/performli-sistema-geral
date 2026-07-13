@@ -809,6 +809,18 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
   de verdade (ver §12.3). AL-2/AL-3/AL-4 (fuso e divergência DAL) e demais
   achados médios/dívida seguem em aberto na auditoria.
 
+### 2026-07-13 — ME-4 (churn) + B-04 residual (fuso na DAL)
+- **ME-4** (CONFIRMADO): `churn-scorer.ts` contava "semanas consecutivas em RUIM"
+  pelas semanas PRESENTES no Map (com HealthScore), sem checar adjacência de
+  calendário — um buraco de dados (gap de sync / cliente novo) fazia semanas
+  não-adjacentes contarem como consecutivas, inflando o Fator 1 (até 40 pts).
+  Adicionada guarda: quebra a cadeia quando o intervalo entre semanas seguidas
+  é > 8 dias. churn-scorer-v2 não tem o padrão (delega ao backtest).
+- **B-04 residual**: os 4 `monthStart` inline (`new Date(y,m,1)`, fuso do
+  runtime) do `dal.ts` (_fetchClientsList, getManagerStats, getAgencyOverview,
+  getAssignmentsData) passaram a usar `getMonthRange(now).start` (SP-aware) —
+  consistente com AL-4. Demais cópias de data/formatCurrency seguem pendentes.
+
 ### 2026-07-13 — AL-4: fronteira de semana/mês no fuso America/Sao_Paulo
 - `getWeekRange`/`getMonthRange` (`src/lib/utils.ts`) passaram a derivar a
   fronteira do **dia-parede SP** (`saoPauloDateString`) e construir os bounds em

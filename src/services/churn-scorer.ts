@@ -112,11 +112,23 @@ export async function scoreClientChurnRisk(clientId: string): Promise<{
     ([a], [b]) => new Date(b).getTime() - new Date(a).getTime()
   )
 
+  // ME-4: conta apenas semanas RUIM ADJACENTES no calendário. sortedWeeks só
+  // contém as semanas PRESENTES no Map (com HealthScore); um buraco (gap de sync
+  // ou cliente novo) faz duas semanas RUIM não-adjacentes parecerem consecutivas
+  // e infla o Fator 1. Se o intervalo entre o início de duas semanas seguidas na
+  // lista for > 8 dias (tolerância p/ imprecisão de fuso), há buraco → break.
   let consecutiveRuimWeeks = 0
-  for (const [, weekScores] of sortedWeeks) {
+  let prevWeekDate: Date | null = null
+  for (const [weekKey, weekScores] of sortedWeeks) {
+    const currWeekDate = new Date(weekKey)
+    if (prevWeekDate !== null) {
+      const gapDays = (prevWeekDate.getTime() - currWeekDate.getTime()) / 86_400_000
+      if (gapDays > 8) break // semana anterior não é adjacente → cadeia quebrada
+    }
     const hasRuim = weekScores.some((s) => s.status === 'RUIM')
     if (hasRuim) {
       consecutiveRuimWeeks++
+      prevWeekDate = currWeekDate
     } else {
       break
     }

@@ -427,7 +427,7 @@ export type ClientListItem = {
 
 async function _fetchClientsList(userId: string, role: string) {
   const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const { start: monthStart } = getMonthRange(now)
   const { start: weekStart } = getWeekRange()
   const fetchFrom = monthStart < weekStart ? monthStart : weekStart
 
@@ -2153,7 +2153,7 @@ export type ManagerStat = {
 export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
   const { start: weekStart, end: weekEnd } = getWeekRange()
   const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const { start: monthStart } = getMonthRange(now)
   const fetchFrom = monthStart < weekStart ? monthStart : weekStart
   const prevWeekStart = new Date(weekStart)
   prevWeekStart.setDate(prevWeekStart.getDate() - 7)
@@ -2993,7 +2993,7 @@ export type AgencyOverview = {
 
 export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
   const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const { start: monthStart } = getMonthRange(now)
   const { start: weekStart } = getWeekRange()
   const fetchFrom = monthStart < weekStart ? monthStart : weekStart
 
@@ -3267,7 +3267,7 @@ export type AssignmentManager = {
 
 export const getAssignmentsData = cache(async () => {
   const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const { start: monthStart } = getMonthRange(now)
   const { start: weekStart } = getWeekRange()
   const fetchFrom = monthStart < weekStart ? monthStart : weekStart
 
