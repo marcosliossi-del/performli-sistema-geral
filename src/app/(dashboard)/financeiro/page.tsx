@@ -14,6 +14,7 @@ import { ExpenseLaunchButton } from '@/components/financeiro/ExpenseLaunchButton
 import { categoryColor, categoryLabel } from '@/components/financeiro/ExpenseModal'
 import { saoPauloDateString, saoPauloDayStart, formatSaoPauloDateTime } from '@/lib/utils'
 import {
+import { hasSpaceGrant } from '@/lib/nav-access'
   TrendingUp, TrendingDown, DollarSign, Users, AlertCircle,
   Clock, Calendar, BarChart3, Percent,
 } from 'lucide-react'
@@ -277,7 +278,8 @@ async function getCashflowData() {
 
 export default async function FinanceiroPage({ searchParams }: PageProps) {
   const session = await requireSession()
-  if (session.role !== 'ADMIN') redirect('/cockpit')
+  // Guard de papel + grant de espaço (lista personalizada 'dá' acesso — QA D2)
+  if (session.role !== 'ADMIN' && !(await hasSpaceGrant(session.userId, 'administrativo.financeiro'))) redirect('/cockpit')
 
   const params = await searchParams
 

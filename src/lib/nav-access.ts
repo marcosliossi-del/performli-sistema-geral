@@ -59,8 +59,10 @@ export const getNavOverrides = cache(async (userId: string): Promise<NavOverride
 /**
  * Serializa os overrides para um `Record<spaceKey, boolean>` que atravessa a
  * fronteira server→client (props). Só inclui espaços custom. O client consome
- * via `filterNavByOverrides`. ADMIN recebe um record vazio de propósito: no
- * client o ADMIN vê tudo (o próprio filtro trata ADMIN antes deste record).
+ * via `filterNavByOverrides`. Nota: o ADMIN recebe o record POPULADO como todo
+ * mundo (getNavOverrides não trata papel) — o "ADMIN vê tudo" é aplicado por
+ * `filterNavByOverrides`/`resolveSpaceVisible`, e a Sidebar usa as chaves deste
+ * record para desenhar o cadeado de "espaço com lista personalizada".
  */
 export function serializeOverrides(overrides: NavOverrides): Record<string, boolean> {
   return Object.fromEntries(overrides.visibleBySpace)
@@ -110,6 +112,28 @@ export async function assertPathAccess(
     return visible // primeiro espaço custom encontrado é decisivo
   }
   return true
+}
+
+/**
+ * A lista personalizada CONCEDE acesso a este usuário neste espaço?
+ * true somente quando o espaço está em modo custom E o usuário está na lista.
+ *
+ * Uso: guards internos de página que hoje exigem papel (ex.: `/team` é
+ * ADMIN-only). A semântica aprovada ("a lista substitui o papel — dá ou tira")
+ * exige que a metade "dá" fure o guard de papel da página:
+ *
+ *   if (session.role !== 'ADMIN' &&
+ *       !(await hasSpaceGrant(session.userId, 'administrativo.equipe'))) redirect(...)
+ *
+ * A metade "tira" já é aplicada antes, pelo `assertPathAccess` do layout.
+ * ATENÇÃO: isto concede a VISUALIZAÇÃO da página; as mutações internas seguem
+ * validando papel na matriz normalmente (grant de espaço não vira grant de
+ * escrita).
+ */
+export async function hasSpaceGrant(userId: string, spaceKey: string): Promise<boolean> {
+  const overrides = await getNavOverrides(userId)
+  if (!overrides.customSpaces.has(spaceKey)) return false
+  return overrides.visibleBySpace.get(spaceKey) === true
 }
 
 // NOTA: `filterNavByOverrides` (contrato para a UI client-side) vive em

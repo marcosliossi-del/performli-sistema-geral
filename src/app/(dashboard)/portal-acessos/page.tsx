@@ -3,6 +3,7 @@ import { requireSession } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import { KeyRound } from 'lucide-react'
 import { PortalAcessosManager } from '@/components/portal-admin/PortalAcessosManager'
+import { hasSpaceGrant } from '@/lib/nav-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,8 @@ export const dynamic = 'force-dynamic'
  */
 export default async function PortalAcessosPage() {
   const session = await requireSession()
-  if (session.role !== 'ADMIN') redirect('/')
+  // Guard de papel + grant de espaço (lista personalizada 'dá' acesso — QA D2)
+  if (session.role !== 'ADMIN' && !(await hasSpaceGrant(session.userId, 'clientes.portal-acessos'))) redirect('/')
 
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },

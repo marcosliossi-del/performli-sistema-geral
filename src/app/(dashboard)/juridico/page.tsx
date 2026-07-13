@@ -6,6 +6,7 @@ import { formatCurrency } from '@/lib/utils'
 import { ContractsTable } from '@/components/juridico/ContractsTable'
 import { ContractFeesBulkTable } from '@/components/juridico/ContractFeesBulkTable'
 import { JuridicoPageTabs } from '@/components/juridico/JuridicoPageTabs'
+import { hasSpaceGrant } from '@/lib/nav-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,7 +79,8 @@ async function getData() {
 export default async function JuridicoPage() {
   const session = await requireSession()
   // Contratos/jurídico são sensíveis: só ADMIN acessa.
-  if (session.role !== 'ADMIN') redirect('/')
+  // Guard de papel + grant de espaço (lista personalizada 'dá' acesso — QA D2)
+  if (session.role !== 'ADMIN' && !(await hasSpaceGrant(session.userId, 'administrativo.juridico'))) redirect('/')
   const { serialized, clients, users, vigentes, renovacoes, expirando, mrr, semFee, feesData } = await getData()
 
   const stats = [

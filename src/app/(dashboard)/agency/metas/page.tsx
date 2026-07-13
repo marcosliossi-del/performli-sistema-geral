@@ -9,6 +9,7 @@ import { SyncWeeklyGoalsButton } from '@/components/agency/SyncWeeklyGoalsButton
 import { normalizeRole, can, stripSensitive } from '@/lib/rbac'
 import { LOCAL_RESULT_METRICS } from '@/lib/metas/metricOptions'
 import type { MetricType } from '@prisma/client'
+import { hasSpaceGrant } from '@/lib/nav-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +18,7 @@ export default async function MetasPage() {
   const role = normalizeRole(session.role)
   // RBAC v2: metas — GESTOR não vê (matriz gestaoEquipeMetas: NONE → redirect);
   // ADMIN vê tudo; SUPERVISOR/ANALISTA/CS leem SEM metas de receita (strip).
-  if (!can(role, 'view', 'gestaoEquipeMetas')) redirect('/cockpit')
+  if (!can(role, 'view', 'gestaoEquipeMetas') && !(await hasSpaceGrant(session.userId, 'administrativo.metas'))) redirect('/cockpit')
 
   const now = new Date()
   const year  = now.getFullYear()

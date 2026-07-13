@@ -3,10 +3,12 @@ import { Users } from 'lucide-react'
 import { TeamMemberRow } from '@/components/team/TeamMemberRow'
 import { InviteUserForm } from '@/components/team/InviteUserForm'
 import { redirect } from 'next/navigation'
+import { hasSpaceGrant } from '@/lib/nav-access'
 
 export default async function TeamPage() {
   const { userId, role } = await requireSession()
-  if (role !== 'ADMIN') redirect('/cockpit')
+  // Guard de papel + grant de espaço (lista personalizada 'dá' acesso — QA D2)
+  if (role !== 'ADMIN' && !(await hasSpaceGrant(userId, 'administrativo.equipe'))) redirect('/cockpit')
 
   const members = await getTeamMembers()
 
