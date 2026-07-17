@@ -753,6 +753,41 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-17 — Auditoria Sistêmica · Lote 4 (Atomicidade conversas/streak)
+Achados A-101, A-102, A-103, A-111, A-120 (ver `MATRIZ.md`). Sem migration.
+- **A-101 — outbound de Conversas atômico** (`src/app/actions/conversas.ts`
+  ~101-124): `conversationMessage.create` + `conversation.update({lastMessageAt})`
+  passam a rodar numa única `prisma.$transaction([...])` (mesmo padrão do inbound
+  em `ingest.ts:257`). O envio à Meta (`sendTextMessage`) continua ANTES da
+  transação — ela cobre só a persistência local; a semântica de erro (retorno
+  `{ ok:false }` por `ConversasApiError`) foi preservada. Antes, um crash entre
+  os dois writes desordenava a inbox (ordenada por `lastMessageAt`).
+- **A-102 — reset de não-lidas sem engolir increment concorrente**
+  (`markConversationRead`, conversas.ts ~250-284): trocado `update({unreadCount:0})`
+  absoluto por `updateMany` guardado pelo `lastInboundAt` lido no início da action.
+  Só zera se NENHUM inbound (que faz `unreadCount:{increment:1}` no ingest) chegou
+  entre a leitura e a escrita; se chegou, o guard não casa e o contador permanece
+  — nunca se perde uma não-lida (auto-corrige na próxima abertura).
+  **Decisão/trade-off:** não há campo "última mensagem vista pelo usuário" no
+  schema; um reset exato por-mensagem exigiria essa coluna (registrado como
+  PENDÊNCIA, fora deste lote — sem migration).
+- **A-103 — streak atômico** (`src/services/health-scorer.ts` `updateStreak`,
+  ~501-550): leitura dos `HealthScore` + escrita do `ClientStatusStreak` movidas
+  para uma `prisma.$transaction` interativa, eliminando a janela em que Board e
+  Client 360 liam estados divergentes. O `try/catch` por cliente do batch
+  (`recalculateAllClientsHealth`, regra 7 do CLAUDE.md) foi preservado.
+- **A-120 — streak no fuso SP** (mesmo arquivo/função): `today` e `sinceDay`
+  passam do `new Date().setHours(0,0,0,0)` (fuso do runtime = UTC, "virava" às
+  21h SP) para o UTC-midnight do dia-parede SP
+  (`new Date(\`${saoPauloDateString()}T00:00:00.000Z\`)` + `setUTCHours`), padrão
+  já usado na linha 337 do próprio arquivo.
+- **A-111 — revalidação da tela de Conversas na ingestão**: `revalidatePath(
+  '/conversas')` adicionado 1x POR BATCH nos route handlers que drenam o outbox
+  (`src/app/api/cron/conversas/route.ts` após o loop, só se `processed>0`;
+  `src/app/api/webhooks/meta-whatsapp/route.ts` após o processamento inline, só se
+  houve evento novo — em `try/catch`, jamais derruba o 200 para a Meta). NÃO foi
+  posto no `processChannelEvent` (per-evento) nem no `ingest.ts` (`server-only`).
+
 ### 2026-07-13 — Navegação editável (sidebar como no ClickUp) — backend
 - **Decisão do Marcos:** a sidebar deixa de ser hardcoded e vira uma ÁRVORE
   PERSISTIDA e GLOBAL (uma só p/ a agência) que o ADMIN organiza como no ClickUp

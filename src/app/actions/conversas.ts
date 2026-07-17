@@ -99,21 +99,29 @@ export async function sendConversationMessage(
   }
 
   const now = new Date()
-  await prisma.conversationMessage.create({
-    data: {
-      conversationId: conversation.id,
-      direction: 'OUT',
-      type: 'TEXT',
-      body: text,
-      waMessageId,
-      status: 'SENT',
-      sentByUserId: session.userId,
-    },
-  })
-  await prisma.conversation.update({
-    where: { id: conversation.id },
-    data: { lastMessageAt: now },
-  })
+  // A-101: persistência local ATÔMICA (mesmo padrão do inbound em ingest.ts:257).
+  // O envio à Meta (sendTextMessage) já ocorreu acima; aqui gravamos a mensagem
+  // e carimbamos a conversa numa ÚNICA transação. Sem isto, um crash entre os
+  // dois deixava a mensagem SENT gravada com o lastMessageAt da conversa
+  // desatualizado — desordenando a inbox (ordenada por lastMessageAt). A mensagem
+  // já saiu na Meta de qualquer forma; a transação cobre só o estado local.
+  await prisma.$transaction([
+    prisma.conversationMessage.create({
+      data: {
+        conversationId: conversation.id,
+        direction: 'OUT',
+        type: 'TEXT',
+        body: text,
+        waMessageId,
+        status: 'SENT',
+        sentByUserId: session.userId,
+      },
+    }),
+    prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: now },
+    }),
+  ])
 
   await writeAuditLog({
     actorId: session.userId,
@@ -247,7 +255,11 @@ export async function markConversationRead(
   if (!can(role, 'update', 'conversas')) {
     return { ok: false, error: 'Você não tem permissão para esta conversa.' }
   }
-  const conversation = await loadConversationClient(conversationId)
+  // Carrega lastInboundAt junto (guard da corrida A-102 abaixo).
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { id: true, clientId: true, lastInboundAt: true },
+  })
   if (!conversation) return { ok: false, error: 'Conversa não encontrada.' }
   try {
     await assertClientMutationAccess(session, conversation.clientId, { allowCS: true })
@@ -255,8 +267,23 @@ export async function markConversationRead(
     return { ok: false, error: err instanceof Error ? err.message : 'Sem permissão para esta conversa.' }
   }
 
-  await prisma.conversation.update({
-    where: { id: conversationId },
+  // A-102: reset GUARDADO em vez de `update({ unreadCount: 0 })` absoluto.
+  // O ingest faz `unreadCount: { increment: 1 }` ao receber inbound. Se um
+  // inbound chegasse entre a leitura desta action e a escrita, o reset absoluto
+  // engoliria esse increment — a mensagem nova nasceria "já lida". O updateMany
+  // condicionado ao lastInboundAt visto na leitura só zera se NENHUM inbound novo
+  // chegou nesse intervalo; se chegou, o guard falha (matchedCount 0) e o
+  // contador permanece — nunca perdemos uma não-lida (na pior hipótese o
+  // contador só zera na próxima abertura, comportamento auto-corrigível).
+  // Trade-off honesto: sem um campo "última mensagem vista pelo usuário" no
+  // schema, este é o guard possível SEM migration. Um reset exato por-mensagem
+  // exigiria essa coluna (registrado como pendência, não implementado neste lote).
+  await prisma.conversation.updateMany({
+    where: {
+      id: conversationId,
+      clientId: conversation.clientId,
+      lastInboundAt: conversation.lastInboundAt,
+    },
     data: { unreadCount: 0 },
   })
   revalidatePath(CONVERSAS_PATH)

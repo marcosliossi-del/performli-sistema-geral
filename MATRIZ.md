@@ -22,9 +22,9 @@
 | A-009 | LACUNA | Status | Cliente OTIMO e PESSIMO ao mesmo tempo | dois eixos: HealthStatus × ClientResultado | resultado-engine + streak | MEDIA | P |
 | A-010 | BUG_DIVERGENCIA | Portal | Funil e faturamento não fecham | funil GA4-only vs faturamento canônico | portal/kpis.ts:173,293-300 | BAIXA | P |
 | A-100 | RISCO_LATENTE | Tarefas | statusId espelho sem constraint; leitura bifurcada | fonte dupla viva | mutate.ts:85-88; panel.ts:140 | MEDIA | M |
-| A-101 | BUG_DIVERGENCIA | Conversas | Inbox desordena após crash no envio | outbound sem $transaction | actions/conversas.ts:101-116 | MEDIA | P |
-| A-102 | BUG_DIVERGENCIA | Conversas | Não-lida some na contagem | increment × set 0 (corrida) | ingest.ts:274; conversas.ts:260 | MEDIA | M |
-| A-103 | RISCO_LATENTE | Streak | Board × Client 360 divergem por janela; vira às 21h | streak fora da transação; setHours UTC | health-scorer.ts:521-542 | MEDIA | M |
+| A-101 | BUG_DIVERGENCIA | Conversas | Inbox desordena após crash no envio | outbound sem $transaction | actions/conversas.ts:101-116 | MEDIA | P | ✅ CORRIGIDO (Lote 4): create+update em `prisma.$transaction` (conversas.ts:101-124) |
+| A-102 | BUG_DIVERGENCIA | Conversas | Não-lida some na contagem | increment × set 0 (corrida) | ingest.ts:274; conversas.ts:260 | MEDIA | M | ✅ CORRIGIDO (Lote 4): `updateMany` guardado por `lastInboundAt` visto — reset só se nenhum inbound chegou no intervalo; sem campo "visto por usuário" no schema, guard sem migration (conversas.ts:250-284) |
+| A-103 | RISCO_LATENTE | Streak | Board × Client 360 divergem por janela; vira às 21h | streak fora da transação; setHours UTC | health-scorer.ts:521-542 | MEDIA | M | ✅ CORRIGIDO (Lote 4): leitura dos scores + escrita do streak em `prisma.$transaction` interativa (health-scorer.ts:501-550); try/catch por cliente da regra 7 preservado no batch |
 | A-104 | LACUNA | Badge check-ins | Badge nunca bate com a tela | Task OPE-06 × ClientWeeklyCheckin | dal.ts:3875 × 1825-1899 | MEDIA | P |
 | A-105 | LACUNA | Badge alertas | Badge maior que o cockpit | badge inclui KPI_DROP/SPIKE; cockpit exclui | dal.ts:3878 × 135 | MEDIA | P |
 | A-106 | LACUNA | Badge alertas | Badge só não-lidos × página com tudo | escopos diferentes | alerts/page.tsx:67-78 | BAIXA | P |
@@ -32,7 +32,7 @@
 | A-108 | LACUNA | Badge suporte | Item conta no badge e some da tela | scope assignedTo OR carteira × só carteira | dal.ts:3863 × page.tsx:23-25 | MEDIA | P |
 | A-109 | BUG_DIVERGENCIA | Fuso/tarefas | Mesma tarefa "atrasada" numa tela e "hoje" na outra (21h-24h SP) | boundary UTC-local × SP | dal.ts:3571-3584,3869 × 1326,3628,3924 | ALTA | M |
 | A-110 | BUG_DIVERGENCIA | Board | KPI topo ≠ lista na mesma tela; filtro vaza entre usuários | localStorage global; KPI sem filtro | taskBoard.ts:55 | MEDIA | P |
-| A-111 | RISCO_LATENTE | Conversas | Vira bug com unstable_cache futuro | ingestão não revalida | ingest.ts:269-277 | BAIXA | P |
+| A-111 | RISCO_LATENTE | Conversas | Vira bug com unstable_cache futuro | ingestão não revalida | ingest.ts:269-277 | BAIXA | P | ✅ CORRIGIDO (Lote 4): `revalidatePath('/conversas')` 1x por batch nos route handlers (cron/conversas/route.ts + webhooks/meta-whatsapp/route.ts), não por evento — evita chamar em contexto server-only do ingest |
 | A-112 | LACUNA | RBAC/Fin | GESTOR com grant vê valores cheios em /financeiro e estripados em /clients | grant sem stripSensitive no DAL financeiro | financeiro/page.tsx:282 | CRITICA | M |
 | A-113 | LACUNA | RBAC/Fin | Vê a tela, toma 401 ao agir | grant na página; API ADMIN-only | summary/route.ts:15 | ALTA | P |
 | A-114 | LACUNA | Financeiro | "Inadimplentes" difere entre /clients e /financeiro | faturas × clientes distintos | clients/page.tsx:41 × financeiro/page.tsx:79-83 | ALTA | P |
@@ -41,7 +41,7 @@
 | A-117 | BUG_DIVERGENCIA | Fuso | Badge Meu Dia muda após 21h SP | endToday UTC-local | dal.ts:3868-3873 | MEDIA | P |
 | A-118 | BUG_DIVERGENCIA | Fuso | /meu-dia desloca 1 dia após 21h | boundary UTC-local | dal.ts:3570-3572 | MEDIA | P |
 | A-119 | BUG_DIVERGENCIA | Fin/Fuso | Endpoint DRE corta o último dia | new Date('YYYY-MM-DD') + lte | summary/route.ts:24-44 | MEDIA | P |
-| A-120 | BUG_DIVERGENCIA | Fuso | Streak vira às 21h SP | setHours runtime | health-scorer.ts:525-526 | BAIXA | P |
+| A-120 | BUG_DIVERGENCIA | Fuso | Streak vira às 21h SP | setHours runtime | health-scorer.ts:525-526 | BAIXA | P | ✅ CORRIGIDO (Lote 4): `today` e `sinceDay` no UTC-midnight do dia-parede SP (`saoPauloDateString()` + setUTCHours), padrão da linha 337 (health-scorer.ts:513,536) |
 
 ## 2. Lotes por causa raiz
 
