@@ -786,6 +786,54 @@ a definição do health-scorer (`aggregateSnapshots`) é a ÚNICA fonte de verda
   numericamente inertes (GA4SYNC/NUVEMSHOP têm spend nulo). Candidatos a
   padronizar via `isAdPlatform` num lote futuro.
 
+### 2026-07-17 — Auditoria Sistêmica · Lotes 2 e 3 (pró-rata/projeção/fuso + badges=telas)
+Achados A-002, A-007, A-008, A-109, A-116, A-117, A-118, A-119 (Lote 2) e
+A-104, A-105, A-106, A-107, A-108 (Lote 3) — ver `MATRIZ.md §2.2`. Sem migration.
+Decisões do dono: P2=A, P4=B, P5=B, P6=A, P7=alinhar (status+scope).
+- **FONTE ÚNICA de dia/pró-rata/projeção — `src/lib/metas/pace.ts` (novo).**
+  `spDayInfo(ref)` → `{ spDayStartUtc (00:00Z do dia-parede SP), daysElapsedInMonth,
+  totalDaysInMonth, daysRemaining }`; `projectMonth(actual, daysElapsed, totalDays)`
+  (run-rate); `periodElapsed(start, end, ref)` (espelha a matemática do scorer p/
+  qualquer período); `proRataExpected(metric, target, daysElapsed, totalDays)` e
+  `liveAchievementPct(...)`. Reusam `PRORATE_METRICS`/`LOWER_IS_BETTER`/
+  `computeAchievementPct` — agora **exportados** de `health-scorer.ts` (o scorer
+  NÃO foi alterado no cálculo; só ganhou `export`).
+- **A-007/A-008 — 4 fórmulas de daysElapsed/projeção unificadas:** `getGoalPaceMetrics`
+  (`dal.ts:2851,2922`), KPI projection (`dal.ts:829-838`: no mês corrente usa SP;
+  MTD explícito mantém daysInRange), `progress.ts:76-83,252-255,279` (SP + projectMonth
+  + proRataExpected), `portal/kpis.ts` loadProjection (SP + projectMonth).
+- **A-002 (P2=A) — alvo pró-rata "esperado até hoje" + pct ao vivo:** Client 360
+  "Metas do Mês" passa a usar `paceExpected`/`paceAchievement` de `getGoalPaceMetrics`
+  (não mais `HealthScore.achievementPct` congelado); meta cheia vira secundária;
+  status/health inalterados (`clients/[slug]/page.tsx:211,633-675`). `getReportData`
+  (weekly, `dal.ts:1264-1281`) ganha `expected` (pró-rata da semana via
+  `periodElapsed`) e `pct` ao vivo (`liveAchievementPct`); UI `/reports` atualizada
+  (`reports/page.tsx:160-171`). **Pendências:** carimbo de atualização por-linha
+  não adicionado (evitar redesign); rótulo "dia N" do Client 360 ainda em
+  `kpis.daysElapsed` (server) — cosmético.
+- **A-109/A-117/A-118 — boundary "hoje" das tarefas no dia-parede SP:**
+  `getSidebarCounts.meuDia` e `getMinhaSemana` passam a usar
+  `startOfTodaySaoPaulo(now)` + 24h (antes fuso do servidor deslocava 1 dia entre
+  21–24h SP; operacional/cockpit/aceite já eram SP).
+- **A-116/A-119 — financeiro no mesmo boundary:** `getOverdueInvoices` e
+  `getFinanceiroData` usam `spDayInfo().spDayStartUtc` (00:00Z do dia SP) como
+  `today` (colunas financeiras são `@db.Date`). `api/financeiro/summary/route.ts`
+  reescreve from/to no padrão SP da página (`saoPauloDayStart`, `to` EXCLUSIVO =
+  dia seguinte) e troca todos os `lte`→`lt` (fim do "corta o último dia" e do DRE
+  divergente do endpoint). Fontes de saída do DRE seguem para o Lote 5 (A-115).
+- **Lote 3 — badges = telas (predicados compartilhados em `dal.ts`):**
+  `taskScopeFor(userId, role)` (assignedTo OR carteira), `OPEN_SUPPORT_STATUSES`,
+  `EXCLUDED_ALERT_TYPES`, `pendingCheckinCount(userId, role)`.
+  - **A-104 (P4=B):** badge check-ins = `pendingCheckinCount` (ativos − submetidos
+    da semana), o MESMO número de `getCheckinStats.semCheckin` (antes contava Task
+    OPE-06, model diferente que nunca batia).
+  - **A-105 (P5=B):** badge alertas exclui KPI_DROP/SPIKE_24H via `EXCLUDED_ALERT_TYPES`
+    (igual ao cockpit).
+  - **A-106 (P6=A):** badge alertas segue só `read:false` — mantido por decisão.
+  - **A-107/A-108 (P7):** badge suporte conta `OPEN_SUPPORT_STATUSES` (abertos) com
+    `taskScopeFor`; a tela `/suporte` adota o MESMO `taskScopeFor` (antes só carteira)
+    e segue listando ≠CANCELADO — item atribuído fora da carteira agora aparece nos dois.
+
 ### 2026-07-17 — Auditoria Sistêmica · Lote 4 (Atomicidade conversas/streak)
 Achados A-101, A-102, A-103, A-111, A-120 (ver `MATRIZ.md`). Sem migration.
 - **A-101 — outbound de Conversas atômico** (`src/app/actions/conversas.ts`

@@ -158,14 +158,16 @@ export default async function ReportsPage({ searchParams }: Props) {
                       {metric.actual !== null ? fmtValue(metric.actual, metric.unit) : '—'}
                     </CardValue>
                     <p className="text-xs text-[#87919E] mb-1.5">
-                      / meta: {fmtValue(metric.target, metric.unit)}
+                      / esperado até hoje: {fmtValue(metric.expected, metric.unit)}
                     </p>
                   </div>
                   {metric.pct !== null && (
                     <>
                       <Progress value={Math.min(metric.pct, 100)} />
+                      {/* A-002 (P2=A): pct AO VIVO contra o alvo pró-rata da
+                          semana; meta cheia da semana como referência secundária. */}
                       <p className="text-xs text-[#87919E]">
-                        {metric.pct}% da meta atingido{metric.lowerIsBetter ? ' (menor = melhor)' : ''}
+                        {metric.pct}% do esperado até hoje{metric.lowerIsBetter ? ' (menor = melhor)' : ''} · meta da semana: {fmtValue(metric.target, metric.unit)}
                       </p>
                     </>
                   )}

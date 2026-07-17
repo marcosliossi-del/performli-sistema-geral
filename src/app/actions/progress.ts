@@ -13,6 +13,7 @@ import {
   costLabelFor,
 } from '@/lib/metas/metricOptions'
 import { isAdPlatform } from '@/services/health-scorer'
+import { spDayInfo, projectMonth, proRataExpected } from '@/lib/metas/pace'
 import type { MetricType, BusinessType } from '@prisma/client'
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -74,12 +75,16 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
   const monthEnd   = new Date(Date.UTC(year, month + 1, 0)) // último dia do mês, 00:00Z
 
   const today      = new Date()
-  const todayDay   = today.getDate()
   const totalDays  = monthEnd.getUTCDate()
-  // If viewing current month use today's day, otherwise use full month
-  const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month
-  const daysElapsed    = isCurrentMonth ? Math.max(1, todayDay) : totalDays
-  const daysRemaining  = isCurrentMonth ? totalDays - todayDay : 0
+  // A-007/A-008: dia decorrido/mês corrente pela FONTE ÚNICA ancorada no
+  // dia-parede SP (antes today.getDate()/getMonth em fuso do servidor deslocava
+  // o pace 1 dia entre 21–24h SP). `spDayStartUtc` é 00:00Z do dia SP → seu
+  // getUTC* devolve o ano/mês/dia-parede SP.
+  const sp = spDayInfo(today)
+  const isCurrentMonth = sp.spDayStartUtc.getUTCFullYear() === year
+    && sp.spDayStartUtc.getUTCMonth() === month
+  const daysElapsed    = isCurrentMonth ? Math.max(1, sp.daysElapsedInMonth) : totalDays
+  const daysRemaining  = isCurrentMonth ? sp.daysRemaining : 0
   const pctMonthElapsed = daysElapsed / totalDays
 
   // Previous month bounds — mesmo padrão UTC-midnight (coerência dia-1 com o
@@ -249,10 +254,9 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
     const gRoas  = goalRoas  ? Number(goalRoas.targetValue)  : null
     const gSpend = goalSpend ? Number(goalSpend.targetValue) : null
 
-    const projection  = revenue > 0 && daysElapsed > 0
-      ? (revenue / daysElapsed) * totalDays
-      : null
-    const pacedGoal   = gFat != null ? (gFat / totalDays) * daysElapsed : null
+    // Projeção/alvo pró-rata pela FONTE ÚNICA (projectMonth/proRataExpected).
+    const projection  = revenue > 0 ? projectMonth(revenue, daysElapsed, totalDays) : null
+    const pacedGoal   = gFat != null ? proRataExpected('FATURAMENTO', gFat, daysElapsed, totalDays) : null
     const pctGoal     = gFat != null && gFat > 0 ? (revenue / gFat) * 100 : null
     const pctSpend    = gSpend != null && gSpend > 0 ? (spend / gSpend) * 100 : null
 
@@ -276,7 +280,7 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
       localPct         = localActual != null && localGoal > 0
         ? (localActual / localGoal) * 100
         : null
-      localPacedGoal   = (localGoal / totalDays) * daysElapsed
+      localPacedGoal   = proRataExpected(localElected.metric, localGoal, daysElapsed, totalDays)
 
       // Custo-alvo correto: CPL p/ LEADS, CPA p/ o resto.
       custoMetricLabel = costLabelFor(localElected.metric)

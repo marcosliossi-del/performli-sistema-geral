@@ -13,6 +13,7 @@ import { SyncAsaasButton } from '@/components/financeiro/SyncAsaasButton'
 import { ExpenseLaunchButton } from '@/components/financeiro/ExpenseLaunchButton'
 import { categoryColor, categoryLabel } from '@/components/financeiro/ExpenseModal'
 import { saoPauloDateString, saoPauloDayStart, formatSaoPauloDateTime } from '@/lib/utils'
+import { spDayInfo } from '@/lib/metas/pace'
 import {
   TrendingUp, TrendingDown, DollarSign, Users, AlertCircle,
   Clock, Calendar, BarChart3, Percent,
@@ -28,7 +29,10 @@ interface PageProps {
 // `to` é o limite superior EXCLUSIVO (início do dia seguinte ao fim do período,
 // no fuso SP). Toda comparação usa `lt: to` / `lt: prevTo`.
 async function getFinanceiroData(from: Date, to: Date) {
-  const today    = new Date()
+  // A-116: "hoje" = 00:00Z do dia-parede SP. Alinha a fila de vencidos
+  // (getOverdueInvoices) e os KPIs de inadimplência/previstos ao MESMO boundary
+  // — as colunas de data financeiras são `@db.Date` (voltam 00:00Z).
+  const today    = spDayInfo().spDayStartUtc
   const duration = to.getTime() - from.getTime()
   const prevFrom = new Date(from.getTime() - duration)
   const prevTo   = from // período anterior termina onde o atual começa (exclusivo)

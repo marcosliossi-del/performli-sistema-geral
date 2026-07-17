@@ -2,6 +2,7 @@ import 'server-only'
 import { unstable_cache } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { saoPauloDateString } from '@/lib/utils'
+import { spDayInfo, projectMonth } from '@/lib/metas/pace'
 import { aggregateSnapshots, type AggregatableSnapshot } from '@/services/health-scorer'
 import { KPI_REGISTRY } from './kpi-registry'
 import type { MetricType, BusinessType } from '@prisma/client'
@@ -363,10 +364,8 @@ async function loadProjection(clientId: string): Promise<PortalProjection> {
   const today = saoPauloDateString() // 'YYYY-MM-DD' parede SP
   const month = today.slice(0, 7)
   const monthStart = `${month}-01`
-  const daysElapsed = Number(today.slice(8, 10)) // dia do mês (inclui hoje)
-  const year = Number(month.slice(0, 4))
-  const monthNum = Number(month.slice(5, 7)) // 1-based
-  const daysInMonth = new Date(Date.UTC(year, monthNum, 0)).getUTCDate()
+  // A-008: dias decorridos/total do mês pela FONTE ÚNICA (dia-parede SP).
+  const { daysElapsedInMonth: daysElapsed, totalDaysInMonth: daysInMonth } = spDayInfo()
 
   const client = await prisma.client.findUnique({
     where: { id: clientId },
@@ -387,15 +386,11 @@ async function loadProjection(clientId: string): Promise<PortalProjection> {
 
   const accumulated = aggregateSnapshots(snaps, 'FATURAMENTO', businessType)
 
-  // Run-rate simples: acumulado ÷ dias decorridos × dias do mês. NÃO reusa
-  // `projetarAlvo` (@/lib/metas/projection): aquele é crescimento MoM (+15%
-  // e-commerce) do fechamento do mês ANTERIOR, não a projeção intra-mês do
-  // ritmo atual pedida aqui. Guarda contra divisão por zero (dia 1 antes do
-  // primeiro sync → daysElapsed>0 sempre, mas defensivo).
-  const value =
-    accumulated != null && daysElapsed > 0
-      ? Math.round((accumulated / daysElapsed) * daysInMonth * 100) / 100
-      : null
+  // Run-rate pela FONTE ÚNICA (projectMonth): acumulado ÷ dias decorridos × dias
+  // do mês. NÃO reusa `projetarAlvo` (@/lib/metas/projection): aquele é
+  // crescimento MoM (+15% e-commerce) do fechamento do mês ANTERIOR, não a
+  // projeção intra-mês do ritmo atual. projectMonth guarda divisão por zero.
+  const value = projectMonth(accumulated, daysElapsed, daysInMonth)
 
   return { value, accumulated, daysElapsed, daysInMonth, month }
 }

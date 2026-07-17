@@ -67,6 +67,35 @@
 | A-006 | ✅ CORRIGIDO | Constante única `NON_AD_PLATFORMS`/`isAdPlatform` (health-scorer); aplicada em `dal.ts:468`, `progress.ts:207`, health-scorer:99. monthSpend/localSpend alinhados à def. canônica. |
 | A-010 | ✅ CORRIGIDO | portal/kpis.ts: etapa "Compraram" via `aggregateSnapshots('CONVERSIONS')` (bate com faturamento/pedidos); topo do funil (sessões/carrinho/checkout) segue GA4-only por não ter análogo canônico. `kpis.ts:169-320` |
 
+## 2.2. Status de correção — Lotes 2 e 3 (Fase 3 / A3)
+
+> Lotes 2 e 3 APROVADOS por Marcos. Decisões: P2=A (alvo pró-rata "esperado até
+> hoje" + pct ao vivo), P4=B (badge check-ins = ClientWeeklyCheckin pendentes),
+> P5=B (badge alertas exclui KPI_DROP/SPIKE), P6=A (badge só não-lidos), P7 =
+> alinhar suporte em status (abertos) E scope (assignedTo OR carteira).
+> Correções em working tree (commit pendente de QA — npm bloqueado no ambiente).
+
+**Fonte única criada:** `src/lib/metas/pace.ts` — `spDayInfo`, `projectMonth`,
+`periodElapsed`, `proRataExpected`, `liveAchievementPct`. Reusa `PRORATE_METRICS`
+/ `LOWER_IS_BETTER` / `computeAchievementPct` (agora exportados de
+`health-scorer.ts`) para não duplicar a régua do cron.
+
+| ID | Status | Correção |
+|---|---|---|
+| A-007 | ✅ CORRIGIDO | `getGoalPaceMetrics` usa `spDayInfo` (daysElapsed/total do mês no dia-parede SP) em vez de `today.getDate()`. `dal.ts:2851` |
+| A-008 | ✅ CORRIGIDO | 4 projeções unificadas em `projectMonth`: `dal.ts:832` (KPI, daysElapsed SP no mês corrente / daysInRange p/ MTD explícito), `dal.ts:2922` (GoalPace), `progress.ts:252`, `portal/kpis.ts` (loadProjection). |
+| A-002 | ✅ CORRIGIDO | P2=A. Client 360 "Metas do Mês" usa `paceExpected` ("esperado até hoje") + `paceAchievement` ao vivo (não mais achievementPct congelado); meta cheia vira secundária; status segue do HealthScore. `clients/[slug]/page.tsx:211,633-675`. `getReportData` (weekly) ganha `expected` (pró-rata da semana via `periodElapsed`) e `pct` ao vivo (`liveAchievementPct`); UI /reports atualizada. `dal.ts:1264-1281`; `reports/page.tsx:160-171`. **Pendência:** carimbo de atualização por-linha não adicionado (exigiria redesign; página já é server-render por request). Rótulo "dia N" no Client 360 ainda usa `kpis.daysElapsed` (server) — cosmético, diverge 1 dia entre 21–24h SP. |
+| A-109 | ✅ CORRIGIDO | Boundary "hoje" das tarefas unificado no dia-parede SP (`startOfTodaySaoPaulo` + 24h) em getMinhaSemana e getSidebarCounts.meuDia (antes já SP em operacional/cockpit/aceite). |
+| A-117 | ✅ CORRIGIDO | `getSidebarCounts` endToday = `startOfTodaySaoPaulo(now)+24h`. `dal.ts` |
+| A-118 | ✅ CORRIGIDO | `getMinhaSemana` startToday = `startOfTodaySaoPaulo`, endToday = +24h. `dal.ts` |
+| A-116 | ✅ CORRIGIDO | `getOverdueInvoices` e `getFinanceiroData` (page) usam `spDayInfo().spDayStartUtc` (00:00Z do dia SP) como `today` — mesmo boundary p/ colunas `@db.Date`. |
+| A-119 | ✅ CORRIGIDO | `api/financeiro/summary` from/to no padrão SP da página (`saoPauloDayStart`, `to` exclusivo = dia seguinte) + todos os `lte`→`lt`; `today` = `spDayStartUtc`. Alinha A-115 parcialmente (fontes de saída ficam p/ Lote 5). |
+| A-104 | ✅ CORRIGIDO | P4=B. Badge check-ins = `pendingCheckinCount` (clientes ativos − submetidos na semana), FONTE ÚNICA reusada por `getCheckinStats.semCheckin`. `dal.ts` |
+| A-105 | ✅ CORRIGIDO | P5=B. Constante `EXCLUDED_ALERT_TYPES` compartilhada; badge alertas exclui KPI_DROP/SPIKE_24H (igual ao cockpit). `dal.ts` |
+| A-106 | ✅ MANTIDO | P6=A. Badge segue só `read:false` (não-lidos); comentário de intenção adicionado. |
+| A-107 | ✅ CORRIGIDO | P7. Badge suporte conta `OPEN_SUPPORT_STATUSES` (abertos ≠CONCLUIDO/CANCELADO), constante compartilhada; a tela segue listando ≠CANCELADO. `dal.ts` |
+| A-108 | ✅ CORRIGIDO | P7. `taskScopeFor` (assignedTo OR carteira) compartilhado entre badge e tela /suporte — item atribuído fora da carteira aparece nos dois. `dal.ts`; `suporte/page.tsx:20-26` |
+
 ## 3. Perguntas ao Marcos (Gate 1 — LACUNAs)
 
 1. **(A-006)** Investimento/ROAS considera: (A) só plataformas de anúncio (recomendado) ou (B) tudo que não é GA4?

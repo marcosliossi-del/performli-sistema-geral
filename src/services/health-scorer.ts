@@ -39,7 +39,10 @@ export const LOWER_IS_BETTER: Set<MetricType> = new Set([
 export const NON_AD_PLATFORMS: readonly string[] = ['GA4', 'GA4SYNC', 'NUVEMSHOP']
 export const isAdPlatform = (platform: string): boolean => !NON_AD_PLATFORMS.includes(platform)
 
-const PRORATE_METRICS: Set<MetricType> = new Set([
+// Exportado como FONTE ÚNICA da proração pró-rata (A-002): a UI (Client 360,
+// /reports) e o utilitário `@/lib/metas/pace` decidem "esperado até hoje" pela
+// MESMA lista que o scorer usa para congelar achievementPct.
+export const PRORATE_METRICS: Set<MetricType> = new Set([
   'FATURAMENTO', 'SALES',
   'SPEND', 'INVESTMENT',
   'LEADS', 'CONVERSIONS',
@@ -299,7 +302,7 @@ function applyTrend(
 
 // ── Core processing ───────────────────────────────────────────────────────────
 
-function computeAchievementPct(actual: number, target: number, lowerIsBetter: boolean): number | null {
+export function computeAchievementPct(actual: number, target: number, lowerIsBetter: boolean): number | null {
   if (target === 0) return 0
   // ME-3: métricas lowerIsBetter (CPL/CPA/CAC/CPC/SPEND/CPS/CPM) dividem target/actual.
   // Com actual <= 0 (sem dado real de custo) isso gerava Infinity persistido em

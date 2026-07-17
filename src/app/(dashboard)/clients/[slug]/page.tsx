@@ -205,10 +205,13 @@ export default async function ClientDetailPage({
   const weeklyGoals = client.goals.filter((g) => g.period === 'WEEKLY')
   const monthlyGoals = client.goals.filter((g) => g.period === 'MONTHLY')
 
-  // S2-014 — FONTE ÚNICA de "realizado no mês": reusa o realizado MTD já
-  // computado por getGoalPaceMetrics (helper src/lib/metas/realizado.ts), a MESMA
-  // base de /agency/metas. NÃO usar HealthScore.actualValue aqui (divergia).
-  const monthlyRealizadoByMetric = new Map(paceGoals.map((p) => [p.metric, p.actualValue]))
+  // S2-014 — FONTE ÚNICA de "realizado no mês": reusa getGoalPaceMetrics (a MESMA
+  // base de /agency/metas). A-002 (P2=A): a linha passa a exibir o alvo PRÓ-RATA
+  // ("esperado até hoje" = paceExpected) e o pct AO VIVO (paceAchievement,
+  // realizado ÷ pró-rata, recalculado a cada request), não mais o achievementPct
+  // congelado no cron. A meta cheia do mês vira informação secundária; o status
+  // (badge de saúde) segue do HealthScore.
+  const paceByMetric = new Map(paceGoals.map((p) => [p.metric, p]))
 
   // Metas da Semana: REALIZADO da fonte única (getRealizado, janela SEMANA_FECHADA),
   // não de HealthScore.actualValue. HealthScore permanece como STATUS.
@@ -633,9 +636,11 @@ export default async function ClientDetailPage({
             {monthlyGoals.map((goal) => {
               const hs = goal.healthScores[0]
               const status = hs?.status ?? null
-              const pct = hs ? Math.round(Number(hs.achievementPct)) : null
-              // Realizado da FONTE ÚNICA (MTD), não de HealthScore.actualValue.
-              const actual = monthlyRealizadoByMetric.get(goal.metric) ?? null
+              const pace = paceByMetric.get(goal.metric)
+              // A-002: realizado ao vivo + alvo pró-rata + pct ao vivo (fonte única).
+              const actual = pace?.actualValue ?? null
+              const expected = pace?.paceExpected ?? null
+              const pct = pace?.paceAchievement != null ? Math.round(pace.paceAchievement) : null
 
               return (
                 <Card key={goal.id}>
@@ -655,17 +660,23 @@ export default async function ClientDetailPage({
                         <span className="text-2xl font-bold text-[#EBEBEB]">
                           {goalValueFormat(goal.metric, actual)}
                         </span>
-                        <span className="text-xs text-[#87919E] mb-1">
-                          / meta: {goalValueFormat(goal.metric, Number(goal.targetValue))}
-                        </span>
+                        {expected !== null && (
+                          <span className="text-xs text-[#87919E] mb-1">
+                            / esperado até hoje: {goalValueFormat(goal.metric, expected)}
+                          </span>
+                        )}
                       </div>
                     ) : (
                       <p className="text-sm text-[#87919E]">Aguardando sync</p>
                     )}
                     {pct !== null && <Progress value={Math.min(pct, 100)} />}
-                    {/* Rótulo honesto: achievementPct é PRORATEADO (ritmo até o
-                        dia N do mês), não % da meta cheia. */}
-                    {pct !== null && <p className="text-xs text-[#87919E]">{pct}% do ritmo (dia {kpis.daysElapsed})</p>}
+                    {/* A-002 (P2=A): pct AO VIVO contra o alvo pró-rata ("esperado
+                        até hoje"); meta cheia do mês como referência secundária. */}
+                    {pct !== null && (
+                      <p className="text-xs text-[#87919E]">
+                        {pct}% do esperado até hoje (dia {kpis.daysElapsed}) · meta do mês: {goalValueFormat(goal.metric, Number(goal.targetValue))}
+                      </p>
+                    )}
                   </div>
                 </Card>
               )

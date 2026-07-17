@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { getAsaasClient } from '@/services/asaas/client'
+import { saoPauloDateString, saoPauloDayStart } from '@/lib/utils'
+import { spDayInfo } from '@/lib/metas/pace'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,17 +19,30 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url)
-  const today = new Date()
-  const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1)
-  const defaultTo   = new Date(today.getFullYear(), today.getMonth() + 1, 0)
 
-  const from = searchParams.get('from') ? new Date(searchParams.get('from')!) : defaultFrom
-  const to   = searchParams.get('to')   ? new Date(searchParams.get('to')!)   : defaultTo
+  // A-119/A-115: bounds no MESMO padrão SP da página /financeiro. `to` é o
+  // limite superior EXCLUSIVO (início do dia SEGUINTE ao fim do período, SP), e
+  // toda comparação usa `lt: to` — antes `new Date('YYYY-MM-DD')` + `lte`
+  // cortava/deslocava o último dia e divergia do DRE da página.
+  const todayStr = saoPauloDateString() // 'YYYY-MM-DD' em SP
+  const [y, m]   = todayStr.split('-').map(Number)
+  const nextY    = m === 12 ? y + 1 : y
+  const nextM    = m === 12 ? 1 : m + 1
+  const fromParam = searchParams.get('from')
+  const toParam   = searchParams.get('to')
 
-  // Previous period (same duration)
+  const from = saoPauloDayStart(fromParam ?? `${todayStr.slice(0, 7)}-01`)
+  const to   = toParam
+    ? new Date(saoPauloDayStart(toParam).getTime() + 86_400_000) // dia seguinte ao fim selecionado
+    : saoPauloDayStart(`${nextY}-${String(nextM).padStart(2, '0')}-01`)
+
+  // "Hoje" (inadimplência/previstos) = 00:00Z do dia-parede SP, igual à página.
+  const today = spDayInfo().spDayStartUtc
+
+  // Período anterior: mesma duração, terminando onde o atual começa (EXCLUSIVO).
   const duration = to.getTime() - from.getTime()
   const prevFrom = new Date(from.getTime() - duration)
-  const prevTo   = new Date(from.getTime() - 1)
+  const prevTo   = from
 
   const [
     payments,
@@ -41,7 +56,7 @@ export async function GET(request: NextRequest) {
     prisma.asaasPayment.findMany({
       where: {
         status: { in: ['RECEIVED', 'CONFIRMED'] },
-        paymentDate: { gte: from, lte: to },
+        paymentDate: { gte: from, lt: to },
       },
       include: { customer: { select: { name: true, clientId: true } } },
     }),
@@ -49,19 +64,19 @@ export async function GET(request: NextRequest) {
     prisma.asaasPayment.aggregate({
       where: {
         status: { in: ['RECEIVED', 'CONFIRMED'] },
-        paymentDate: { gte: prevFrom, lte: prevTo },
+        paymentDate: { gte: prevFrom, lt: prevTo },
       },
       _sum: { value: true },
     }),
     // Saídas realizadas do período: despesas (Expense) — inclui débitos do extrato
     // do Asaas (source=ASAAS) + lançamentos manuais. Fonte única, sem dupla contagem.
     prisma.expense.findMany({
-      where: { date: { gte: from, lte: to } },
+      where: { date: { gte: from, lt: to } },
       select: { value: true, category: true },
     }),
     // Previous period expenses (só soma — aggregate em vez de findMany+reduce)
     prisma.expense.aggregate({
-      where: { date: { gte: prevFrom, lte: prevTo } },
+      where: { date: { gte: prevFrom, lt: prevTo } },
       _sum: { value: true },
     }),
     // Active subscriptions for MRR (include morto removido — name nunca é usado)
@@ -125,7 +140,7 @@ export async function GET(request: NextRequest) {
       _sum: { value: true },
     }),
     prisma.client.count({
-      where: { status: 'CHURNED', updatedAt: { gte: from, lte: to } },
+      where: { status: 'CHURNED', updatedAt: { gte: from, lt: to } },
     }),
   ])
   const clientesInadimplentes = inadimplentes.length
