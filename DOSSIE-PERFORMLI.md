@@ -1425,3 +1425,12 @@ Achados A-101, A-102, A-103, A-111, A-120 (ver `MATRIZ.md`). Sem migration.
   PipelineBoard (quebrava build + "Contato sem nome") — corrigido.
 
 <!-- deploy: 2026-07-13 força build de produção (Vercel não promoveu o merge #189) -->
+
+### 2026-07-17 — Hotfix Client 360 (P2024 em produção)
+- Sintoma: /clients/[slug] caía no error boundary para clientes com muito
+  histórico (ex.: espaco-barbara-issas). Diagnóstico: 19 queries num único
+  Promise.all + queries novas por request (ACL/nav-tree) esgotavam o pool do
+  Prisma em serverless (P2024 provável; log Vercel pendente de confirmação).
+- Fix: Promise.all dividido em 3 grupos sequenciais (pesados isolados);
+  getClienteTarefas com take (200 abertas + 50 concluídas — antes ilimitado);
+  getClientChat tolera P2002 de double-render (relê em vez de derrubar).

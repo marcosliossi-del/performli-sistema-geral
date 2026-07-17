@@ -139,9 +139,21 @@ export default async function ClientDetailPage({
   const activeFrom = from ?? defaultFrom
   const activeTo = to ?? defaultTo
 
-  const [metricHistory, kpis, paceGoals, chat, weeklyReport, reportFunnel, monthlyReport, campaigns, campaignInsight, dailyRevenue, monthlyComparison, interactions, healthHistory, weekComparison, salesFunnel, activeContract, clienteTarefas, resultadoInfo, checkinInfo] = await Promise.all([
+  // Hotfix P2024: os 19 fetches em UM Promise.all esgotavam o pool de conexões
+  // do Prisma em serverless para clientes com muito histórico (a tela caía no
+  // error boundary). Dividido em 3 grupos sequenciais — os mais pesados
+  // (varreduras de MetricSnapshot) isolados no primeiro; latência total sobe
+  // pouco (grupos internamente paralelos), o pico de conexões cai ~3x.
+  const [metricHistory, kpis, dailyRevenue, monthlyComparison, salesFunnel, weekComparison] = await Promise.all([
     getClientMetricHistory(client.id, 14),
     getClientKPIs(client.id, activeFrom, activeTo),
+    getClientDailyRevenue(client.id, activeFrom, activeTo),
+    getClientMonthlyComparison(client.id),
+    getClientSalesFunnel(client.id, activeFrom, activeTo),
+    getWeekScoreComparison(client.id),
+  ])
+
+  const [paceGoals, chat, weeklyReport, reportFunnel, monthlyReport, campaigns, campaignInsight] = await Promise.all([
     getGoalPaceMetrics(client.id),
     getClientChat(client.id),
     getClientWeeklyReport(client.id),
@@ -149,12 +161,11 @@ export default async function ClientDetailPage({
     getClientMonthlyReport(client.id),
     getClientCampaigns(client.id, 7),
     getLatestCampaignInsight(client.id),
-    getClientDailyRevenue(client.id, activeFrom, activeTo),
-    getClientMonthlyComparison(client.id),
+  ])
+
+  const [interactions, healthHistory, activeContract, clienteTarefas, resultadoInfo, checkinInfo] = await Promise.all([
     getClientInteractions(client.id),
     getHealthScoreHistory(client.id, 8),
-    getWeekScoreComparison(client.id),
-    getClientSalesFunnel(client.id, activeFrom, activeTo),
     prisma.contract.findFirst({
       where:   { clientId: client.id, status: { in: ['VIGENTE', 'RENOVACAO', 'RASCUNHO'] } },
       orderBy: [{ status: 'asc' }, { endDate: 'asc' }],

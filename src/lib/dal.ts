@@ -2852,12 +2852,22 @@ export const getClientChat = cache(async (clientId: string) => {
   if (existing) return existing
 
   // Só cria o canal na primeira vez que ele é aberto (idempotente por clientId).
-  return prisma.clientChat.upsert({
-    where: { clientId },
-    create: { clientId },
-    update: {},
-    include: CHAT_INCLUDE,
-  })
+  // Double-render concorrente pode colidir no unique (P2002) — trata como
+  // "outro render criou" e relê, em vez de derrubar a página (hotfix Client 360).
+  try {
+    return await prisma.clientChat.upsert({
+      where: { clientId },
+      create: { clientId },
+      update: {},
+      include: CHAT_INCLUDE,
+    })
+  } catch (err) {
+    if (typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002') {
+      const retry = await prisma.clientChat.findUnique({ where: { clientId }, include: CHAT_INCLUDE })
+      if (retry) return retry
+    }
+    throw err
+  }
 })
 
 // ─── Central de Comunicação (canais internos por cliente) ─────────────────────
@@ -3914,16 +3924,34 @@ export const getClienteTarefas = cache(
       if (!owns) return { abertas: [], concluidasRecentes: [], atrasadasCount: 0 }
     }
 
-    const rows = await prisma.task.findMany({
-      where: { clientId },
-      orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
-      select: {
-        id: true, title: true, status: true, priority: true, type: true, dueDate: true,
-        completedAt: true,
-        user: { select: { name: true } },
-        pop: { select: { code: true } },
-      },
-    })
+    // Hotfix P2024 (Client 360): sem `take`, cliente antigo com recorrências
+    // acumuladas carregava MILHARES de linhas por render e ajudava a esgotar o
+    // pool. Abertas primeiro (todas as relevantes) + concluídas recentes.
+    const [openRows, doneRows] = await Promise.all([
+      prisma.task.findMany({
+        where: { clientId, status: { notIn: ['CONCLUIDO', 'CANCELADO'] } },
+        orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
+        take: 200,
+        select: {
+          id: true, title: true, status: true, priority: true, type: true, dueDate: true,
+          completedAt: true,
+          user: { select: { name: true } },
+          pop: { select: { code: true } },
+        },
+      }),
+      prisma.task.findMany({
+        where: { clientId, status: { in: ['CONCLUIDO', 'CANCELADO'] } },
+        orderBy: [{ completedAt: 'desc' }],
+        take: 50,
+        select: {
+          id: true, title: true, status: true, priority: true, type: true, dueDate: true,
+          completedAt: true,
+          user: { select: { name: true } },
+          pop: { select: { code: true } },
+        },
+      }),
+    ])
+    const rows = [...openRows, ...doneRows]
 
     const map = (t: (typeof rows)[number]): ClienteTarefaRow => ({
       id: t.id,
