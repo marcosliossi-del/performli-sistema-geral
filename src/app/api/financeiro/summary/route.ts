@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { getAsaasClient } from '@/services/asaas/client'
-import { saoPauloDateString, saoPauloDayStart } from '@/lib/utils'
-import { spDayInfo } from '@/lib/metas/pace'
+import { saoPauloDateString } from '@/lib/utils'
+import { spDayInfo, spUtcMidnight } from '@/lib/metas/pace'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,10 +31,10 @@ export async function GET(request: NextRequest) {
   const fromParam = searchParams.get('from')
   const toParam   = searchParams.get('to')
 
-  const from = saoPauloDayStart(fromParam ?? `${todayStr.slice(0, 7)}-01`)
+  const from = spUtcMidnight(fromParam ?? `${todayStr.slice(0, 7)}-01`)
   const to   = toParam
-    ? new Date(saoPauloDayStart(toParam).getTime() + 86_400_000) // dia seguinte ao fim selecionado
-    : saoPauloDayStart(`${nextY}-${String(nextM).padStart(2, '0')}-01`)
+    ? new Date(spUtcMidnight(toParam).getTime() + 86_400_000) // dia seguinte ao fim selecionado
+    : spUtcMidnight(`${nextY}-${String(nextM).padStart(2, '0')}-01`)
 
   // "Hoje" (inadimplência/previstos) = 00:00Z do dia-parede SP, igual à página.
   const today = spDayInfo().spDayStartUtc

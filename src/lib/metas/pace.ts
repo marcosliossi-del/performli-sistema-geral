@@ -120,3 +120,12 @@ export function liveAchievementPct(
   const expected = proRataExpected(metric, rawTarget, daysElapsed, totalDays)
   return computeAchievementPct(actual, expected, LOWER_IS_BETTER.has(metric))
 }
+
+/**
+ * 00:00Z de um dia-parede 'YYYY-MM-DD' — o boundary CORRETO para colunas
+ * @db.Date (que o Prisma devolve em 00:00Z). NUNCA usar saoPauloDayStart
+ * (03:00Z) contra @db.Date: exclui o dia 1 e vaza o dia 1 seguinte (QA Onda B).
+ */
+export function spUtcMidnight(dayStr: string): Date {
+  return new Date(`${dayStr}T00:00:00.000Z`)
+}

@@ -12,8 +12,8 @@ import { PeriodSelector } from '@/components/financeiro/PeriodSelector'
 import { SyncAsaasButton } from '@/components/financeiro/SyncAsaasButton'
 import { ExpenseLaunchButton } from '@/components/financeiro/ExpenseLaunchButton'
 import { categoryColor, categoryLabel } from '@/components/financeiro/ExpenseModal'
-import { saoPauloDateString, saoPauloDayStart, formatSaoPauloDateTime } from '@/lib/utils'
-import { spDayInfo } from '@/lib/metas/pace'
+import { saoPauloDateString, formatSaoPauloDateTime } from '@/lib/utils'
+import { spDayInfo, spUtcMidnight } from '@/lib/metas/pace'
 import {
   TrendingUp, TrendingDown, DollarSign, Users, AlertCircle,
   Clock, Calendar, BarChart3, Percent,
@@ -295,10 +295,10 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
   const nextY    = m === 12 ? y + 1 : y
   const nextM    = m === 12 ? 1 : m + 1
 
-  const from = saoPauloDayStart(params.from ?? `${todayStr.slice(0, 7)}-01`)
+  const from = spUtcMidnight(params.from ?? `${todayStr.slice(0, 7)}-01`)
   const to   = params.to
-    ? new Date(saoPauloDayStart(params.to).getTime() + 86_400_000) // dia seguinte ao fim selecionado
-    : saoPauloDayStart(`${nextY}-${String(nextM).padStart(2, '0')}-01`)
+    ? new Date(spUtcMidnight(params.to).getTime() + 86_400_000) // dia seguinte ao fim selecionado
+    : spUtcMidnight(`${nextY}-${String(nextM).padStart(2, '0')}-01`)
 
   const [data, { cashflow, receitaMedia }, overdueInvoices, clientsWithoutBilling, lastSyncAgg] = await Promise.all([
     getFinanceiroData(from, to),

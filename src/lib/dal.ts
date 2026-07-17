@@ -709,7 +709,11 @@ export const getClientKPIs = cache(async (
   const prevTo       = new Date(rangeFrom.getTime() - 1)           // 1ms before start
   const prevFrom     = new Date(prevTo.getTime() - durationMs)
 
-  const daysInRange  = Math.round(durationMs / 86_400_000) + 1
+  // QA Onda B: no MTD default o rótulo "dia N" segue o dia-parede SP (mesma
+  // âncora do pró-rata/projeção), não o fuso do servidor (off-by-one 21h-24h).
+  const daysInRange  = (!fromStr && !toStr)
+    ? spDayInfo().daysElapsedInMonth
+    : Math.round(durationMs / 86_400_000) + 1
   const daysInMonth  = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
 
   // For projection: only relevant when range starts on 1st of a month
@@ -3942,9 +3946,7 @@ export type SidebarCounts = {
 export const getSidebarCounts = cache(
   async (userId: string, role: string): Promise<SidebarCounts> => {
     const viewAll = canViewAll(role)
-    const taskScope: Prisma.TaskWhereInput = viewAll
-      ? {}
-      : { OR: [{ assignedTo: userId }, { client: { assignments: { some: { userId } } } }] }
+    const taskScope: Prisma.TaskWhereInput = taskScopeFor(userId, role)
     const clientScope: Prisma.ClientWhereInput = viewAll
       ? {}
       : { assignments: { some: { userId } } }
@@ -4003,9 +4005,7 @@ export const getAceiteOperacional = cache(
   async (userId: string, role: string): Promise<AceiteOperacional> => {
     const viewAll = canViewAll(role)
     const now = new Date()
-    const taskScope: Prisma.TaskWhereInput = viewAll
-      ? {}
-      : { OR: [{ assignedTo: userId }, { client: { assignments: { some: { userId } } } }] }
+    const taskScope: Prisma.TaskWhereInput = taskScopeFor(userId, role)
     const clientScope: Prisma.ClientWhereInput = viewAll ? {} : { assignments: { some: { userId } } }
     const openStatus: Prisma.TaskWhereInput['status'] = { notIn: ['CONCLUIDO', 'CANCELADO'] }
     const d30 = new Date(now.getTime() - 30 * 86_400_000)
