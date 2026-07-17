@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
+import { hasSpaceGrant } from '@/lib/nav-access'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/financeiro/cashflow?months=6
  * Returns monthly entrada/saída aggregation for the chart.
+ *
+ * A-113 (P8=B): rota de LEITURA — só agregados mensais (nenhum dado por
+ * cliente), então ADMIN OU grant `administrativo.financeiro` podem ler.
  */
 export async function GET(request: NextRequest) {
   const session = await getSession()
-  if (!session || session.role !== 'ADMIN') {
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  if (session.role !== 'ADMIN' && !(await hasSpaceGrant(session.userId, 'administrativo.financeiro'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

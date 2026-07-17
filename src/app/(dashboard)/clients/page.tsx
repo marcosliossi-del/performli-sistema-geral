@@ -1,6 +1,6 @@
 import { Users, AlertTriangle, UserMinus, UserPlus, DollarSign, TrendingUp, PauseCircle } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
-import { requireSession } from '@/lib/dal'
+import { requireSession, countInadimplentes } from '@/lib/dal'
 import { formatCurrency } from '@/lib/utils'
 import { ClientesTable } from '@/components/clientes/ClientesTable'
 import { normalizeRole, scopeClients } from '@/lib/rbac'
@@ -37,8 +37,11 @@ async function getClientesData(userId: string, role: string) {
     }),
     // Inadimplência (Asaas) é dado financeiro/receita da agência: SÓ ADMIN.
     // Para os demais papéis o contador fica em 0 (não vaza financeiro).
+    // A-114 (P9=B): CLIENTES DISTINTOS vencidos (dueDate<=hoje) — fonte única
+    // compartilhada com /financeiro e o summary (antes /clients contava
+    // FATURAS e divergia da /financeiro).
     isAdmin
-      ? prisma.asaasPayment.count({ where: { status: 'OVERDUE' } })
+      ? countInadimplentes()
       : Promise.resolve(0),
   ])
 
@@ -100,7 +103,7 @@ export default async function ClientsPage() {
       value: isAdmin ? String(kpis.inadimplentes) : '—',
       icon:  AlertTriangle,
       color: '#EF4444',
-      sub:   isAdmin ? 'Com fatura vencida no Asaas' : 'Restrito ao administrador',
+      sub:   isAdmin ? 'Clientes com fatura vencida no Asaas' : 'Restrito ao administrador',
     },
     {
       label: 'Clientes pausados',

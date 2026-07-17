@@ -679,6 +679,16 @@ operacional pt-BR; portal mobile-first (390px) com layout próprio.
   pendente (egress bloqueado no ambiente de dev).
 - `WeeklyReport.deliveredAt` aguarda callback Z-API.
 - Faixa etária/gênero no portal: sem dado no schema (pendência de ingestão dimensional).
+- **A-112/A-113 (pendente de VALIDAÇÃO do dono):** a interpretação conservadora
+  do P8=B (grant financeiro = "visão resumida" só-agregados) está implementada,
+  mas o recorte exato (quais agregados são aceitáveis para um não-ADMIN com
+  grant) aguarda o OK do Marcos — ver §15 (2026-07-17, Lotes 5/6). Se ele
+  quiser MAIS ou MENOS estripado, ajustar `getFinanceiroData(fullAccess)` e o
+  gate das rotas de leitura.
+- **`/api/financeiro/summary` e `/api/financeiro/cashflow` sem consumidor
+  conhecido:** nenhum `fetch` no front os chama (a página `/financeiro` usa RSC
+  direto). Após A-115 estão coerentes com a página, mas são candidatos a
+  remoção — decidir se viram API pública/externa ou se saem do código.
 - Riscos de segurança listados na seção 10.3.
 
 ---
@@ -752,6 +762,60 @@ Recharts · jose · Anthropic SDK · Vercel Cron.
 Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra aqui
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
+
+### 2026-07-17 — Auditoria Sistêmica · Lotes 5 e 6 (Grant × strip financeiro; DRE único; riscos latentes)
+Achados A-112, A-113, A-114, A-115 (Lote 5) e A-100, A-110 (Lote 6). Sem migration
+(revisão estática — `npm` bloqueado). Decisões do Marcos: P8=B, P9=B, P10=B.
+
+- **A-115 / P10=B — DRE canônico único** (`src/lib/dal.ts` `getDreTotals(from,to)`):
+  extraído o cálculo do DRE para função ÚNICA na DAL — saídas = `Expense +
+  asaasTransfer(status=DONE)`, entradas = `netValue` (fallback `value`), deltas do
+  período anterior (mesma duração, exclusivo). Consumida pela página `/financeiro`
+  e pelo endpoint `/api/financeiro/summary` (que somava só `Expense` e usava
+  `value`). Lógica divergente aposentada. **Endpoint `/api/financeiro/summary`
+  e `/cashflow` estão SEM consumidor conhecido no front** (nenhum `fetch` os
+  chama; a página usa RSC direto). Mantidos, agora coerentes; candidatos a
+  remoção futura (ver §12.3).
+- **A-114 / P9=B — inadimplentes = clientes distintos** (`src/lib/dal.ts`
+  `countInadimplentes()`): conta CLIENTES DISTINTOS (`distinct: customerId`) com
+  `status=OVERDUE` e `dueDate<=hoje` (00:00Z do dia-parede SP). Fonte única em
+  `/clients` (antes contava FATURAS via `asaasPayment.count` — divergia),
+  `/financeiro` e `summary`.
+- **A-112/A-113 / P8=B — Grant financeiro (INTERPRETAÇÃO CONSERVADORA — VALIDAR
+  COM MARCOS):** a decisão B ("dados estripados/somente-leitura coerentes com
+  /clients") foi implementada como: **usuário com grant (`hasSpaceGrant(
+  'administrativo.financeiro')`, NÃO ADMIN) vê `/financeiro` em modo VISÃO
+  RESUMIDA / somente leitura.** O que ele VÊ: os AGREGADOS da agência — DRE total
+  (entradas/saídas/lucro/margem), entradas/saídas previstas, MRR, nº de clientes
+  recorrentes/inadimplentes, inadimplência AGREGADA, receita média por cliente,
+  gráficos de fluxo/receita média (mensais) e distribuição de saídas por
+  CATEGORIA. O que ele NÃO VÊ: tabela de movimentações por cliente (`Principais
+  entradas/saídas`), donut "Distribuição de entradas" (top clientes), fila de
+  inadimplência NOMINAL (`InadimplenciaFila`), e os botões de mutação (lançar
+  despesa / sincronizar Asaas). Banner "Visão resumida" no topo.
+  - Implementação: flag `fullAccess = session.role === 'ADMIN'` propagada a
+    `getFinanceiroData(from, to, fullAccess)`; queries por-cliente só rodam com
+    acesso pleno. Rotas de LEITURA (`summary`, `cashflow`) passam a aceitar o
+    grant retornando o MESMO recorte estripado (`distribuicaoEntradas` por
+    cliente = [] no summary). Rotas de MUTAÇÃO (`expenses` POST/GET) seguem ADMIN
+    estrito; a UI esconde os botões (defesa em profundidade).
+  - **Ambiguidade resolvida pelo conservador:** onde a decisão não deixava claro
+    se agregados podiam aparecer, optou-se por MOSTRAR só agregados de agência e
+    OCULTAR todo breakdown por cliente/contrato. Aguarda validação do Marcos.
+- **A-100 — `Task.statusId` write-only** (`src/lib/tasks/panel.ts`,
+  `src/lib/tasks/statusMap.ts`): removida a leitura da coluna espelho no
+  `loadTaskPanel` (fora do `select`); o `statusId` do payload passa a ser
+  derivado do enum via `statusIdFor(task.status)`. NENHUMA leitura depende mais
+  da coluna (fim da fonte dupla viva); o espelho segue sendo ESCRITO pelas
+  mutações até D-004 decidir a fonte canônica. Nota registrada no `statusMap.ts`.
+- **A-110 — prefs de board por usuário + KPI honesto** (`src/components/
+  operacional/taskBoard.ts`, `OperacionalBoard.tsx`): `VIEW_KEY/FILTERS_KEY/
+  KANBAN_GROUP_KEY` ganham sufixo `:${userId}` (load/save recebem `userId` de
+  `currentUser.id`) — filtros/visão não vazam mais entre contas no mesmo
+  navegador; migração suave herda 1x a chave global legada. KPIs do topo
+  (server, contam a carteira INTEIRA de propósito): adicionada a nota "Mostrando
+  N de M tarefas (filtro ativo — os indicadores acima contam a carteira inteira)"
+  no board quando há filtro, eliminando a leitura errada sem mexer no KPI global.
 
 ### 2026-07-17 — Auditoria Sistêmica · Lote 1 (Precedência GA4SYNC nos cálculos inline)
 Achados A-001, A-003, A-004, A-005, A-006, A-010 (ver `MATRIZ.md`). Sem migration.

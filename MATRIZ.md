@@ -95,6 +95,12 @@
 | A-106 | ✅ MANTIDO | P6=A. Badge segue só `read:false` (não-lidos); comentário de intenção adicionado. |
 | A-107 | ✅ CORRIGIDO | P7. Badge suporte conta `OPEN_SUPPORT_STATUSES` (abertos ≠CONCLUIDO/CANCELADO), constante compartilhada; a tela segue listando ≠CANCELADO. `dal.ts` |
 | A-108 | ✅ CORRIGIDO | P7. `taskScopeFor` (assignedTo OR carteira) compartilhado entre badge e tela /suporte — item atribuído fora da carteira aparece nos dois. `dal.ts`; `suporte/page.tsx:20-26` |
+| A-112 | ✅ CORRIGIDO | P8=B (interpretação conservadora registrada no DOSSIE §15). `financeiro/page.tsx`: `fullAccess = role==='ADMIN'` propagado a `getFinanceiroData`. Grant (não-ADMIN) → VISÃO RESUMIDA/somente-leitura: agregados (DRE total, previstas, MRR, inadimplência agregada, receita média) SIM; breakdown por cliente/contrato NÃO (sem `MovimentacoesTable`, sem donut "Distribuição de entradas" por cliente, sem `InadimplenciaFila` nominal); banner "Visão resumida"; botões de mutação (`ExpenseLaunchButton`/`SyncAsaasButton`) só ADMIN. |
+| A-113 | ✅ CORRIGIDO | P8=B. Rotas de LEITURA aceitam grant `administrativo.financeiro` com o MESMO recorte estripado: `api/financeiro/summary` (distribuicaoEntradas por cliente = [] p/ grant) e `api/financeiro/cashflow` (só agregados mensais). Mutação (`expenses` POST) segue ADMIN estrito; UI esconde os botões. |
+| A-114 | ✅ CORRIGIDO | P9=B. `countInadimplentes()` única na DAL (`dal.ts`) = CLIENTES DISTINTOS com OVERDUE e `dueDate<=hoje`. Usada por `/clients` (antes contava FATURAS via `asaasPayment.count`), `/financeiro` e `/api/financeiro/summary`. |
+| A-115 | ✅ CORRIGIDO | P10=B. `getDreTotals(from,to)` única na DAL (`dal.ts`): saídas = `Expense + asaasTransfer(DONE)`, entradas = `netValue`(fallback value), deltas por período anterior. Consumida pela página `/financeiro` e pelo endpoint `/api/financeiro/summary` (lógica divergente aposentada). Boundary A-119/A-116 preservado. |
+| A-100 | ✅ CORRIGIDO | Lote 6. `Task.statusId` = WRITE-ONLY até D-004. `panel.ts` não lê mais a coluna (removido do `select`); deriva do enum via `statusIdFor(task.status)`. Nota no `statusMap.ts`. Espelho segue escrito pelas mutações. |
+| A-110 | ✅ CORRIGIDO | Lote 6. `taskBoard.ts`: `VIEW_KEY/FILTERS_KEY/KANBAN_GROUP_KEY` com sufixo `:${userId}` (load/save recebem `userId` de `currentUser.id` no `OperacionalBoard`); migração suave herda 1x a chave global legada. KPI topo: nota "Mostrando N de M tarefas (filtro ativo…)" no board quando há filtro — os KPIs do topo seguem contando a carteira inteira (saúde global, intencional). |
 
 ## 3. Perguntas ao Marcos (Gate 1 — LACUNAs)
 
@@ -105,6 +111,6 @@
 5. **(A-105)** Badge alertas: (A) inclui ou (B) exclui KPI_DROP/SPIKE (recomendado: B, igual ao cockpit)?
 6. **(A-106)** Badge alertas: (A) só não-lidos (recomendado) ou (B) igual à página?
 7. **(A-107/108)** Badge suporte: alinhar à tela em status E scope (recomendado) ou manter?
-8. **(A-112/113)** Grant financeiro: (A) acesso pleno (APIs passam a aceitar grant) ou (B) dados estripados/somente leitura (recomendado)?
-9. **(A-114)** "Inadimplentes" = (A) nº de faturas ou (B) nº de clientes distintos vencidos (recomendado)?
-10. **(A-115)** Saídas do DRE: (A) só Expense ou (B) Expense + transferências Asaas (recomendado) — e aposentar o endpoint duplicado?
+8. **(A-112/113)** Grant financeiro: (A) acesso pleno (APIs passam a aceitar grant) ou (B) dados estripados/somente leitura (recomendado)? → **DECIDIDO B** (interpretação conservadora — DOSSIE §15; validar com Marcos).
+9. **(A-114)** "Inadimplentes" = (A) nº de faturas ou (B) nº de clientes distintos vencidos (recomendado)? → **DECIDIDO B**.
+10. **(A-115)** Saídas do DRE: (A) só Expense ou (B) Expense + transferências Asaas (recomendado) — e aposentar o endpoint duplicado? → **DECIDIDO B**.

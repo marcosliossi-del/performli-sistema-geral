@@ -51,13 +51,35 @@ const TZ = 'America/Sao_Paulo'
 // ─── View toggle (persistência localStorage, default Lista) ────────────────────
 export type BoardView = 'lista' | 'kanban' | 'calendario' | 'cliente' | 'responsavel' | 'area'
 
+// A-110: prefs de board são POR USUÁRIO. Antes eram chaves globais e vazavam
+// entre contas que compartilham o mesmo navegador (filtro/visão de um aparecia
+// para o outro). A chave ganha o sufixo `:${userId}`. `readNamespaced` faz
+// migração suave: se a chave nova não existe mas a antiga (global) sim, herda o
+// valor uma única vez e passa a gravar só na nova.
 const VIEW_KEY = 'performli.operacional.view'
 const FILTERS_KEY = 'performli.operacional.filters'
 const KANBAN_GROUP_KEY = 'performli.operacional.kanbanGroup'
 
-export function loadView(): BoardView {
+function nsKey(base: string, userId: string): string {
+  return `${base}:${userId}`
+}
+
+/** Lê a chave namespaced; na ausência, herda 1x a chave global legada. */
+function readNamespaced(base: string, userId: string): string | null {
+  if (typeof window === 'undefined') return null
+  const scoped = window.localStorage.getItem(nsKey(base, userId))
+  if (scoped != null) return scoped
+  // Migração suave: valor global legado vira o valor do usuário atual.
+  const legacy = window.localStorage.getItem(base)
+  if (legacy != null) {
+    try { window.localStorage.setItem(nsKey(base, userId), legacy) } catch { /* ignora */ }
+  }
+  return legacy
+}
+
+export function loadView(userId: string): BoardView {
   if (typeof window === 'undefined') return 'lista'
-  const v = window.localStorage.getItem(VIEW_KEY)
+  const v = readNamespaced(VIEW_KEY, userId)
   if (
     v === 'lista' || v === 'kanban' || v === 'calendario' ||
     v === 'cliente' || v === 'responsavel' || v === 'area'
@@ -65,23 +87,23 @@ export function loadView(): BoardView {
   return 'lista'
 }
 
-export function saveView(v: BoardView): void {
+export function saveView(userId: string, v: BoardView): void {
   if (typeof window === 'undefined') return
-  try { window.localStorage.setItem(VIEW_KEY, v) } catch { /* quota/privado: ignora */ }
+  try { window.localStorage.setItem(nsKey(VIEW_KEY, userId), v) } catch { /* quota/privado: ignora */ }
 }
 
 // ─── Agrupamento do Kanban: por status (11) ou por grupo visual (6) ────────────
 // Mesma preferência-por-localStorage das outras prefs de board (view/filtros).
 export type KanbanGrouping = 'status' | 'grupo'
 
-export function loadKanbanGrouping(): KanbanGrouping {
+export function loadKanbanGrouping(userId: string): KanbanGrouping {
   if (typeof window === 'undefined') return 'status'
-  return window.localStorage.getItem(KANBAN_GROUP_KEY) === 'grupo' ? 'grupo' : 'status'
+  return readNamespaced(KANBAN_GROUP_KEY, userId) === 'grupo' ? 'grupo' : 'status'
 }
 
-export function saveKanbanGrouping(g: KanbanGrouping): void {
+export function saveKanbanGrouping(userId: string, g: KanbanGrouping): void {
   if (typeof window === 'undefined') return
-  try { window.localStorage.setItem(KANBAN_GROUP_KEY, g) } catch { /* ignora */ }
+  try { window.localStorage.setItem(nsKey(KANBAN_GROUP_KEY, userId), g) } catch { /* ignora */ }
 }
 
 // ─── Filtros combináveis (AND) — barra única das duas views ────────────────────
@@ -101,10 +123,10 @@ export const EMPTY_FILTERS: TaskFilters = {
   status: [], assignee: [], priority: [], area: [], clientId: '', due: null, search: '',
 }
 
-export function loadFilters(): TaskFilters {
+export function loadFilters(userId: string): TaskFilters {
   if (typeof window === 'undefined') return EMPTY_FILTERS
   try {
-    const raw = window.localStorage.getItem(FILTERS_KEY)
+    const raw = readNamespaced(FILTERS_KEY, userId)
     if (!raw) return EMPTY_FILTERS
     const parsed = JSON.parse(raw) as Partial<TaskFilters>
     return {
@@ -121,9 +143,9 @@ export function loadFilters(): TaskFilters {
   }
 }
 
-export function saveFilters(f: TaskFilters): void {
+export function saveFilters(userId: string, f: TaskFilters): void {
   if (typeof window === 'undefined') return
-  try { window.localStorage.setItem(FILTERS_KEY, JSON.stringify(f)) } catch { /* ignora */ }
+  try { window.localStorage.setItem(nsKey(FILTERS_KEY, userId), JSON.stringify(f)) } catch { /* ignora */ }
 }
 
 export function countActiveFilters(f: TaskFilters): number {

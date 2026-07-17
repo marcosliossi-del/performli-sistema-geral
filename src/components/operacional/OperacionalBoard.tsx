@@ -18,7 +18,7 @@ import { TasksListView } from './TasksListView'
 import { TasksKanbanView } from './TasksKanbanView'
 import {
   applyFilters, loadView, saveView, loadFilters, saveFilters,
-  loadKanbanGrouping, saveKanbanGrouping,
+  loadKanbanGrouping, saveKanbanGrouping, countActiveFilters,
   EMPTY_FILTERS, isOverdue as isOverdueVM,
   type BoardView, type TaskFilters, type BoardHandlers, type KanbanGrouping,
 } from './taskBoard'
@@ -278,15 +278,16 @@ export function OperacionalBoard({
 
   // Preferências persistidas (localStorage) — carregadas só no cliente p/ evitar
   // divergência de hidratação (TaskSavedView sem action de escrita — ver handoff).
+  // A-110: prefs namespaced por usuário (a mesma máquina pode alternar contas).
   useEffect(() => {
-    setView(loadView())
-    setKanbanGrouping(loadKanbanGrouping())
-    setFilters(loadFilters())
+    setView(loadView(currentUser.id))
+    setKanbanGrouping(loadKanbanGrouping(currentUser.id))
+    setFilters(loadFilters(currentUser.id))
     setHydrated(true)
-  }, [])
-  useEffect(() => { if (hydrated) saveView(view) }, [view, hydrated])
-  useEffect(() => { if (hydrated) saveKanbanGrouping(kanbanGrouping) }, [kanbanGrouping, hydrated])
-  useEffect(() => { if (hydrated) saveFilters(filters) }, [filters, hydrated])
+  }, [currentUser.id])
+  useEffect(() => { if (hydrated) saveView(currentUser.id, view) }, [view, hydrated, currentUser.id])
+  useEffect(() => { if (hydrated) saveKanbanGrouping(currentUser.id, kanbanGrouping) }, [kanbanGrouping, hydrated, currentUser.id])
+  useEffect(() => { if (hydrated) saveFilters(currentUser.id, filters) }, [filters, hydrated, currentUser.id])
 
   // Deep-link: ?task=<id> abre o TaskDrawer atual (preservado — não remover).
   useEffect(() => {
@@ -297,6 +298,11 @@ export function OperacionalBoard({
   }, [initialTaskId])
 
   const filtered = useMemo(() => applyFilters(tasks, filters), [tasks, filters])
+  // A-110: os KPIs do topo contam o board INTEIRO (saúde global, intencional).
+  // A lista abaixo é filtrada no cliente — sem sinal, "5 abertas" no KPI e 2
+  // linhas na tela parecem contradição. Mostramos "N de M" quando há filtro
+  // ativo (nota visual mínima que elimina a leitura errada, sem tocar o KPI).
+  const activeFilterCount = countActiveFilters(filters)
 
   // ── Mutação otimista local ────────────────────────────────────────────────
   function patchTask(id: string, patch: Partial<OperacionalTask>) {
@@ -490,6 +496,14 @@ export function OperacionalBoard({
         clientes={clientesOpts}
         areas={areasOpts}
       />
+
+      {/* A-110: contagem "visíveis com o filtro atual" vs. total do board. */}
+      {hydrated && activeFilterCount > 0 && (
+        <p className="text-[11.5px] text-[#87919E] -mt-1">
+          Mostrando <span className="font-semibold text-[#EBEBEB]">{filtered.length}</span> de {tasks.length} tarefas
+          {' '}(filtro ativo — os indicadores acima contam a carteira inteira)
+        </p>
+      )}
 
       {/* Conteúdo — Lista/Kanban sempre renderizam (grupos/colunas vazios ainda
           oferecem a criação rápida); as views legadas mostram o estado vazio. */}

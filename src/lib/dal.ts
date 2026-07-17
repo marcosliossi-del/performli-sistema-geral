@@ -1779,6 +1779,114 @@ export const getClientsWithoutBilling = cache(
   },
 )
 
+/**
+ * A-114 (decisão P9=B, 2026-07-17): "clientes inadimplentes" = nº de CLIENTES
+ * DISTINTOS com fatura vencida (OVERDUE) cuja data de vencimento já passou
+ * (`dueDate <= hoje`). Fonte ÚNICA usada por /clients, /financeiro e pelo
+ * endpoint /api/financeiro/summary — antes /clients contava faturas
+ * (asaasPayment.count) e /financeiro contava clientes distintos, divergindo.
+ *
+ * `distinct: ['customerId']` = 1 cliente Asaas por linha (proxy de cliente da
+ * agência; o boundary "hoje" é 00:00Z do dia-parede SP, igual à fila de
+ * vencidos e aos KPIs financeiros).
+ */
+export const countInadimplentes = cache(async (): Promise<number> => {
+  const today = spDayInfo().spDayStartUtc
+  const rows = await prisma.asaasPayment.findMany({
+    where: { status: 'OVERDUE', dueDate: { lte: today } },
+    distinct: ['customerId'],
+    select: { customerId: true },
+  })
+  return rows.length
+})
+
+// ─── A-115 — DRE canônico único (decisão P10=B) ────────────────────────────────
+
+export type DreTotals = {
+  entradas: number
+  saidasAsaas: number
+  saidasManuais: number
+  saidas: number
+  lucro: number
+  margem: number
+  prevEntradas: number
+  prevSaidas: number
+  prevLucro: number
+  deltaEntradas: number
+  deltaSaidas: number
+  deltaLucro: number
+}
+
+/**
+ * A-115 (decisão P10=B, 2026-07-17): cálculo ÚNICO do DRE, consumido pela página
+ * /financeiro E pelo endpoint /api/financeiro/summary. Antes coexistiam dois
+ * DREs divergentes: a página somava `asaasTransfer(DONE) + Expense` nas saídas e
+ * usava `netValue` nas entradas; o endpoint somava só `Expense` e usava `value`.
+ * Esta função aposenta a lógica divergente — saídas = Expense + asaasTransfer
+ * DONE; entradas = netValue (fallback value).
+ *
+ * `from`/`to` já normalizados pelo caller (SP; `to` EXCLUSIVO). O período
+ * anterior tem a MESMA duração e termina onde o atual começa (exclusivo).
+ */
+export const getDreTotals = cache(async (from: Date, to: Date): Promise<DreTotals> => {
+  const duration = to.getTime() - from.getTime()
+  const prevFrom = new Date(from.getTime() - duration)
+  const prevTo   = from
+
+  const [
+    payments, prevPaymentsAgg,
+    transfersAgg, prevTransfersAgg,
+    expensesAgg, prevExpensesAgg,
+  ] = await Promise.all([
+    prisma.asaasPayment.findMany({
+      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lt: to } },
+      select: { value: true, netValue: true },
+    }),
+    prisma.asaasPayment.aggregate({
+      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: prevFrom, lt: prevTo } },
+      _sum: { value: true },
+    }),
+    prisma.asaasTransfer.aggregate({
+      where: { status: 'DONE', transferDate: { gte: from, lt: to } },
+      _sum: { value: true },
+    }),
+    prisma.asaasTransfer.aggregate({
+      where: { status: 'DONE', transferDate: { gte: prevFrom, lt: prevTo } },
+      _sum: { value: true },
+    }),
+    prisma.expense.aggregate({
+      where: { date: { gte: from, lt: to } },
+      _sum: { value: true },
+    }),
+    prisma.expense.aggregate({
+      where: { date: { gte: prevFrom, lt: prevTo } },
+      _sum: { value: true },
+    }),
+  ])
+
+  const entradas      = payments.reduce((s, p) => s + Number(p.netValue ?? p.value), 0)
+  const saidasAsaas   = Number(transfersAgg._sum.value ?? 0)
+  const saidasManuais = Number(expensesAgg._sum.value ?? 0)
+  const saidas        = saidasAsaas + saidasManuais
+  const lucro         = entradas - saidas
+  const margem        = entradas > 0 ? (lucro / entradas) * 100 : 0
+
+  const prevEntradas = Number(prevPaymentsAgg._sum.value ?? 0)
+  const prevSaidas   = Number(prevTransfersAgg._sum.value ?? 0) + Number(prevExpensesAgg._sum.value ?? 0)
+  const prevLucro    = prevEntradas - prevSaidas
+
+  const pct = (curr: number, prev: number) =>
+    prev === 0 ? (curr > 0 ? 100 : 0) : Math.round(((curr - prev) / prev) * 10000) / 100
+
+  return {
+    entradas, saidasAsaas, saidasManuais, saidas, lucro, margem,
+    prevEntradas, prevSaidas, prevLucro,
+    deltaEntradas: pct(entradas, prevEntradas),
+    deltaSaidas:   pct(saidas, prevSaidas),
+    deltaLucro:    pct(lucro, prevLucro),
+  }
+})
+
 // ─── CSX-13 — Fila anti-churn proativo ─────────────────────────────────────────
 
 export type AntiChurnQueueRow = {

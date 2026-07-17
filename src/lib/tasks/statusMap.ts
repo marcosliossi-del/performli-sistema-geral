@@ -9,6 +9,11 @@ import type { StatusGroup } from '@prisma/client'
  *
  * Os ids st_* são FIXOS e vêm do backfill da migração da Fase 1
  * (20260702000000_tasks_clickup_class). NÃO renomear sem migração de dados.
+ *
+ * A-100 (2026-07-17): `Task.statusId` é WRITE-ONLY até D-004 decidir a fonte
+ * canônica (enum × FK). Todas as mutações continuam escrevendo o espelho, mas
+ * NENHUMA leitura depende mais da coluna — quem precisa do id deriva do enum
+ * via `statusIdFor(status)`. Isso elimina a fonte dupla viva sem migração.
  */
 
 type StatusMapEntry = {

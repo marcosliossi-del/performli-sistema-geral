@@ -3,6 +3,7 @@ import 'server-only'
 import { prisma } from '@/lib/prisma'
 import { parseRecurrenceRule, type RecurrenceRule } from '@/lib/tasks/recurrence'
 import { normalizeRole, can } from '@/lib/rbac'
+import { statusIdFor } from '@/lib/tasks/statusMap'
 import type {
   TaskStatus,
   TaskPriority,
@@ -137,7 +138,9 @@ export async function loadTaskPanel(
       title: true,
       description: true,
       status: true,
-      statusId: true,
+      // A-100: statusId (espelho FK) é WRITE-ONLY até D-004 decidir a fonte
+      // canônica. NENHUMA leitura depende mais da coluna — derivamos do enum
+      // via statusIdFor. As mutações continuam escrevendo o espelho.
       priority: true,
       dueDate: true,
       startDate: true,
@@ -258,7 +261,8 @@ export async function loadTaskPanel(
     title: task.title,
     description: task.description,
     status: task.status,
-    statusId: task.statusId,
+    // A-100: derivado do enum (fonte única), não lido da coluna espelho.
+    statusId: statusIdFor(task.status),
     priority: task.priority,
     dueDate: iso(task.dueDate),
     startDate: iso(task.startDate),
