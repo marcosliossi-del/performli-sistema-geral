@@ -2,8 +2,12 @@
  * Motor de Resultado semanal (CSX/OPE).
  *
  * Roda toda segunda-feira via cron. Para cada cliente ECOMMERCE ativo, calcula o
- * ROAS da ÚLTIMA semana (domingo a sábado) a partir do GA4 (faturamento) e do
- * investimento somado das plataformas de anúncio, e deriva:
+ * ROAS da ÚLTIMA semana (domingo a sábado) a partir da agregação CANÔNICA
+ * (`aggregateSnapshots` do health-scorer): faturamento com precedência
+ * GA4SYNC>GA4 por dia (loja real > atribuído) e investimento só das plataformas
+ * de anúncio (GA4/GA4SYNC/NUVEMSHOP excluídos). A janela é a MESMA de
+ * `realizado.ts` (SEMANA_FECHADA = getWeekRange(hoje-7d)), então
+ * Client.resultadoRoas bate com o realizado exibido nas telas. Deriva:
  *   - Resultado: Ótimo / Bom / Regular / Ruim / Péssimo (vs. ROAS mínimo acordado)
  *   - Etapa: Escala (Ótimo) · Monitoramento (Bom/Regular) · Otimização (Ruim/Péssimo)
  * Quando o Resultado é Ruim/Péssimo, gera um alerta operacional para acompanhamento.
@@ -18,6 +22,7 @@ import { statusIdFor } from '@/lib/tasks/statusMap'
 import { resolveClientOwner } from './owner-resolver'
 import { onResultadoChanged } from './client-lifecycle-automations'
 import { writeAuditLog } from '@/lib/audit'
+import { aggregateSnapshots, type AggregatableSnapshot } from '@/services/health-scorer'
 import type { ClientResultado, ClientEtapa } from '@prisma/client'
 
 // Precedência do alvo de ROAS: Goal(ROAS) vigente > Client.roasMinimo (ficha).
@@ -89,31 +94,49 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
       const snaps = await prisma.metricSnapshot.findMany({
         where: { clientId: c.id, date: { gte: start, lte: end } },
         select: {
+          date: true,
           spend: true,
+          conversions: true,
           conversionValue: true,
           platformAccount: { select: { platform: true } },
         },
       })
 
-      // Faturamento → sempre GA4 (conversionValue). Investimento → plataformas de anúncio.
-      let revenue = 0
-      let spend = 0
-      let hasGa4 = false
-      for (const s of snaps) {
-        if (s.platformAccount.platform === 'GA4') {
-          hasGa4 = true
-          revenue += Number(s.conversionValue ?? 0)
-        } else {
-          spend += Number(s.spend ?? 0)
-        }
-      }
+      // Faturamento e investimento pela agregação CANÔNICA (fonte única). Para
+      // ECOMMERCE: receita = FATURAMENTO (GA4SYNC>GA4 por dia) e spend = SPEND
+      // (só plataformas de anúncio). Assim o número bate com /agency/metas,
+      // Client 360 e o realizado (mesma janela SEMANA_FECHADA).
+      const aggSnaps: AggregatableSnapshot[] = snaps.map((s) => ({
+        date:             s.date,
+        spend:            s.spend,
+        roas:             null,
+        cpl:              null,
+        cpa:              null,
+        ctr:              null,
+        cpc:              null,
+        conversions:      s.conversions,
+        conversionValue:  s.conversionValue,
+        impressions:      null,
+        reach:            null,
+        clicks:           null,
+        frequency:        null,
+        mensagens:        null,
+        landingPageViews: null,
+        platformAccount:  { platform: s.platformAccount.platform },
+      }))
 
-      // S1-005: sem NENHUM snapshot GA4 na janela, a receita é INDETERMINADA
-      // (não medida) — não é 0 real. Tratar como spend<=0: log + pular, nunca
-      // classificar como PÉSSIMO nem gerar Alert/Task de otimização.
-      if (!hasGa4) {
+      const revenue = aggregateSnapshots(aggSnaps, 'FATURAMENTO', 'ECOMMERCE') ?? 0
+      const spend   = aggregateSnapshots(aggSnaps, 'SPEND', 'ECOMMERCE') ?? 0
+      // S1-005 (revisto no Lote 1): a receita é INDETERMINADA (não medida) quando
+      // NÃO há fonte de faturamento na janela. Fonte válida = GA4 OU GA4SYNC (o
+      // cliente só-GA4Sync agora TEM Resultado). Sem nenhuma das duas: log + pula,
+      // nunca classifica PÉSSIMO nem gera Alert/Task de otimização.
+      const hasRevenueSource = snaps.some(
+        (s) => s.platformAccount.platform === 'GA4' || s.platformAccount.platform === 'GA4SYNC',
+      )
+      if (!hasRevenueSource) {
         await prisma.automationLog.create({
-          data: { clientId: c.id, status: 'FALHA', reason: `resultado.semDados — sem GA4 na semana ${windowKey} (faturamento indeterminado)` },
+          data: { clientId: c.id, status: 'FALHA', reason: `resultado.semDados — sem GA4/GA4SYNC na semana ${windowKey} (faturamento indeterminado)` },
         })
         failed++
         continue

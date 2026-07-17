@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { requireSession, getOverdueInvoices, getClientsWithoutBilling } from '@/lib/dal'
+import { requireSession, getOverdueInvoices, getClientsWithoutBilling, getDreTotals, countInadimplentes } from '@/lib/dal'
 import { redirect } from 'next/navigation'
 import { InadimplenciaFila } from '@/components/financeiro/InadimplenciaFila'
 import { prisma } from '@/lib/prisma'
@@ -12,7 +12,8 @@ import { PeriodSelector } from '@/components/financeiro/PeriodSelector'
 import { SyncAsaasButton } from '@/components/financeiro/SyncAsaasButton'
 import { ExpenseLaunchButton } from '@/components/financeiro/ExpenseLaunchButton'
 import { categoryColor, categoryLabel } from '@/components/financeiro/ExpenseModal'
-import { saoPauloDateString, saoPauloDayStart, formatSaoPauloDateTime } from '@/lib/utils'
+import { saoPauloDateString, formatSaoPauloDateTime } from '@/lib/utils'
+import { spDayInfo, spUtcMidnight } from '@/lib/metas/pace'
 import {
   TrendingUp, TrendingDown, DollarSign, Users, AlertCircle,
   Clock, Calendar, BarChart3, Percent,
@@ -27,60 +28,44 @@ interface PageProps {
 
 // `to` é o limite superior EXCLUSIVO (início do dia seguinte ao fim do período,
 // no fuso SP). Toda comparação usa `lt: to` / `lt: prevTo`.
-async function getFinanceiroData(from: Date, to: Date) {
-  const today    = new Date()
-  const duration = to.getTime() - from.getTime()
-  const prevFrom = new Date(from.getTime() - duration)
-  const prevTo   = from // período anterior termina onde o atual começa (exclusivo)
+//
+// A-112 (decisão P8=B, 2026-07-17): `fullAccess` = viewer é ADMIN. Usuário com
+// GRANT de espaço (hasSpaceGrant) recebe VISÃO RESUMIDA/somente-leitura: vê os
+// AGREGADOS da agência (DRE total, previstas, MRR, inadimplência agregada), mas
+// NÃO o breakdown por cliente/contrato — sem "principais entradas/saídas", sem
+// distribuição de entradas por cliente e sem a fila de inadimplência nominal.
+// Interpretação conservadora registrada no DOSSIE §15 para o Marcos validar.
+async function getFinanceiroData(from: Date, to: Date, fullAccess: boolean) {
+  // A-116: "hoje" = 00:00Z do dia-parede SP. Alinha a fila de vencidos
+  // (getOverdueInvoices) e os KPIs de inadimplência/previstos ao MESMO boundary
+  // — as colunas de data financeiras são `@db.Date` (voltam 00:00Z).
+  const today = spDayInfo().spDayStartUtc
 
+  // A-115: DRE canônico único (getDreTotals) — entradas netValue, saídas =
+  // Expense + asaasTransfer(DONE). A-114: inadimplentes = clientes distintos.
   const [
-    payments, prevPayments,
-    transfers, prevTransfersAgg,
-    manualExpenses, prevManualAgg,
+    dre, clientesInadimplentes,
+    transfers, manualExpenses,
     subscriptions, allClients,
-    inadimplentes, inadimplenciaAgg,
-    entradasPrevAgg, saidasPrevAgg,
-    topEntradas, topTransfers,
+    inadimplenciaAgg, entradasPrevAgg, saidasPrevAgg,
+    // Só em acesso pleno (ADMIN): breakdown por cliente / movimentações.
+    payments, topTransfers,
   ] = await Promise.all([
-    prisma.asaasPayment.findMany({
-      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lt: to } },
-      include: {
-        customer: {
-          select: { name: true, client: { select: { name: true, razaoSocial: true } } },
-        },
-      },
-      orderBy: { value: 'desc' },
-    }),
-    prisma.asaasPayment.aggregate({
-      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: prevFrom, lt: prevTo } },
-      _sum: { value: true },
-    }),
-    // Saídas automáticas via sync Asaas (transferências PIX/TED já pagas)
+    getDreTotals(from, to),
+    countInadimplentes(),
+    // Saídas automáticas via sync Asaas (transferências PIX/TED já pagas) — por CATEGORIA
     prisma.asaasTransfer.findMany({
       where: { status: 'DONE', transferDate: { gte: from, lt: to } },
       include: { category: { select: { name: true, color: true } } },
       orderBy: { value: 'desc' },
     }),
-    prisma.asaasTransfer.aggregate({
-      where: { status: 'DONE', transferDate: { gte: prevFrom, lt: prevTo } },
-      _sum: { value: true },
-    }),
-    // Saídas manuais lançadas pelo usuário (salários, impostos, etc.)
+    // Saídas manuais lançadas pelo usuário (salários, impostos, etc.) — por CATEGORIA
     prisma.expense.findMany({
       where: { date: { gte: from, lt: to } },
       orderBy: { value: 'desc' },
     }),
-    prisma.expense.aggregate({
-      where: { date: { gte: prevFrom, lt: prevTo } },
-      _sum: { value: true },
-    }),
     prisma.asaasSubscription.findMany({ where: { status: 'ACTIVE' } }),
     prisma.client.findMany({ where: { status: 'ACTIVE' }, select: { id: true, contractStart: true } }),
-    prisma.asaasPayment.findMany({
-      where: { status: 'OVERDUE', dueDate: { lte: today } },
-      distinct: ['customerId'],
-      select: { customerId: true },
-    }),
     prisma.asaasPayment.aggregate({
       where: { status: 'OVERDUE', dueDate: { lte: today } },
       _sum: { value: true },
@@ -93,35 +78,29 @@ async function getFinanceiroData(from: Date, to: Date) {
       where: { status: 'PENDING', scheduleDate: { gte: today } },
       _sum: { value: true },
     }),
-    prisma.asaasPayment.findMany({
-      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lt: to } },
-      include: {
-        customer: {
-          select: { name: true, client: { select: { name: true, razaoSocial: true } } },
-        },
-      },
-      orderBy: { value: 'desc' },
-      take: 10,
-    }),
-    prisma.asaasTransfer.findMany({
-      where: { status: 'DONE', transferDate: { gte: from, lt: to } },
-      include: { category: { select: { name: true, color: true } } },
-      orderBy: { value: 'desc' },
-      take: 10,
-    }),
+    fullAccess
+      ? prisma.asaasPayment.findMany({
+          where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lt: to } },
+          include: {
+            customer: {
+              select: { name: true, client: { select: { name: true, razaoSocial: true } } },
+            },
+          },
+          orderBy: { value: 'desc' },
+        })
+      : Promise.resolve([] as never[]),
+    fullAccess
+      ? prisma.asaasTransfer.findMany({
+          where: { status: 'DONE', transferDate: { gte: from, lt: to } },
+          include: { category: { select: { name: true, color: true } } },
+          orderBy: { value: 'desc' },
+          take: 10,
+        })
+      : Promise.resolve([] as never[]),
   ])
 
-  // DRE usa valor líquido (netValue) — igual à conciliação —, caindo no bruto
-  // quando o Asaas ainda não informou a taxa. Mantém Lucro/Margem consistentes.
-  const entradas       = payments.reduce((s, p) => s + Number(p.netValue ?? p.value), 0)
-  const prevEntradas   = Number(prevPayments._sum.value ?? 0)
-  const saidasAsaas    = transfers.reduce((s, t) => s + Number(t.value), 0)
-  const saidasManuais  = manualExpenses.reduce((s, e) => s + Number(e.value), 0)
-  const saidas         = saidasAsaas + saidasManuais
-  const prevSaidas     = Number(prevTransfersAgg._sum.value ?? 0) + Number(prevManualAgg._sum.value ?? 0)
-  const lucro          = entradas - saidas
-  const prevLucro      = prevEntradas - prevSaidas
-  const margem         = entradas > 0 ? (lucro / entradas) * 100 : 0
+  const { entradas, saidas, lucro, margem, prevEntradas, prevSaidas, prevLucro,
+    deltaEntradas, deltaSaidas, deltaLucro } = dre
 
   const receitaRecorrente = subscriptions.reduce((s, sub) => {
     const v = Number(sub.value)
@@ -131,9 +110,8 @@ async function getFinanceiroData(from: Date, to: Date) {
     return s + v
   }, 0)
 
-  const clientesRecorrentes   = subscriptions.length
-  const clientesInadimplentes = inadimplentes.length
-  const inadimplenciaValue    = Number(inadimplenciaAgg._sum.value ?? 0)
+  const clientesRecorrentes = subscriptions.length
+  const inadimplenciaValue  = Number(inadimplenciaAgg._sum.value ?? 0)
 
   const tempoMedioMeses = allClients.reduce((sum, c) => {
     if (!c.contractStart) return sum
@@ -143,12 +121,7 @@ async function getFinanceiroData(from: Date, to: Date) {
   const receitaMedia = clientesRecorrentes > 0 ? receitaRecorrente / clientesRecorrentes : 0
   const ltv          = receitaMedia * Math.max(tempoMedioMeses, 1)
 
-  const pct = (curr: number, prev: number) =>
-    prev === 0 ? (curr > 0 ? 100 : 0) : Math.round(((curr - prev) / prev) * 10000) / 100
-
-  // Distribuição entradas por cliente. Preferimos a identidade do cliente
-  // vinculado (fantasia; razão como complemento); sem vínculo, nome cru do Asaas
-  // com indicação "(sem vínculo)" — mesmo padrão da MovimentacoesTable.
+  // Distribuição entradas por cliente (top clientes) — SÓ em acesso pleno.
   const entradaMap = new Map<string, number>()
   for (const p of payments) {
     const linked = p.customer?.client
@@ -157,11 +130,13 @@ async function getFinanceiroData(from: Date, to: Date) {
       : `${p.customer?.name ?? 'Sem cliente'} (sem vínculo)`
     entradaMap.set(k, (entradaMap.get(k) ?? 0) + Number(p.netValue ?? p.value))
   }
-  const distribuicaoEntradas = Array.from(entradaMap.entries())
-    .sort((a, b) => b[1] - a[1]).slice(0, 6)
-    .map(([name, value]) => ({ name, value }))
+  const distribuicaoEntradas = fullAccess
+    ? Array.from(entradaMap.entries())
+        .sort((a, b) => b[1] - a[1]).slice(0, 6)
+        .map(([name, value]) => ({ name, value }))
+    : []
 
-  // Distribuição saídas: Asaas transfers (por FinancialCategory) + manuais (por ExpenseCategory)
+  // Distribuição saídas por CATEGORIA (não expõe cliente) — visível a todos.
   const saidaMap = new Map<string, { value: number; color: string }>()
   for (const t of transfers) {
     const k    = t.category?.name ?? 'Transferências'
@@ -179,25 +154,25 @@ async function getFinanceiroData(from: Date, to: Date) {
     .sort((a, b) => b[1].value - a[1].value).slice(0, 6)
     .map(([name, d]) => ({ name, value: d.value, color: d.color }))
 
-  const allSaidas = [
-    ...topTransfers.map(t => ({
-      name: t.category?.name ?? 'Transferências',
-      description: t.description ?? undefined,
-      value: Number(t.value),
-    })),
-    ...manualExpenses.map(e => ({
-      name: categoryLabel(e.category),
-      description: e.description,
-      value: Number(e.value),
-    })),
-  ].sort((a, b) => b.value - a.value).slice(0, 10)
+  const allSaidas = fullAccess
+    ? [
+        ...topTransfers.map(t => ({
+          name: t.category?.name ?? 'Transferências',
+          description: t.description ?? undefined,
+          value: Number(t.value),
+        })),
+        ...manualExpenses.map(e => ({
+          name: categoryLabel(e.category),
+          description: e.description,
+          value: Number(e.value),
+        })),
+      ].sort((a, b) => b.value - a.value).slice(0, 10)
+    : []
 
   return {
     entradas, saidas, lucro, margem,
     prevEntradas, prevSaidas, prevLucro,
-    deltaEntradas: pct(entradas, prevEntradas),
-    deltaSaidas:   pct(saidas, prevSaidas),
-    deltaLucro:    pct(lucro, prevLucro),
+    deltaEntradas, deltaSaidas, deltaLucro,
     receitaRecorrente,
     receitaMedia,
     ltv,
@@ -209,18 +184,18 @@ async function getFinanceiroData(from: Date, to: Date) {
     saidasPrevistas:   Number(saidasPrevAgg._sum.value ?? 0),
     distribuicaoEntradas,
     distribuicaoSaidas,
-    topEntradas: topEntradas.map(p => {
-      const linked = p.customer?.client
-      return {
-        // Preferimos a identidade do cliente vinculado (fantasia + razão).
-        // Sem vínculo, mantemos o nome cru do Asaas e sinalizamos discretamente.
-        name: linked?.name ?? p.customer?.name ?? 'Sem cliente',
-        razaoSocial: linked?.razaoSocial ?? null,
-        unlinked: !linked,
-        description: p.description ?? undefined,
-        value: Number(p.value),
-      }
-    }),
+    topEntradas: fullAccess
+      ? payments.slice(0, 10).map(p => {
+          const linked = p.customer?.client
+          return {
+            name: linked?.name ?? p.customer?.name ?? 'Sem cliente',
+            razaoSocial: linked?.razaoSocial ?? null,
+            unlinked: !linked,
+            description: p.description ?? undefined,
+            value: Number(p.value),
+          }
+        })
+      : [],
     topSaidas: allSaidas,
   }
 }
@@ -281,6 +256,11 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
   // Guard de papel + grant de espaço (lista personalizada 'dá' acesso — QA D2)
   if (session.role !== 'ADMIN' && !(await hasSpaceGrant(session.userId, 'administrativo.financeiro'))) redirect('/cockpit')
 
+  // A-112 (P8=B): acesso pleno só para ADMIN. Quem chega por grant vê a página
+  // em modo RESUMIDO/somente-leitura — agregados sim, breakdown por cliente não,
+  // botões de mutação escondidos (as APIs de mutação seguem ADMIN-only, A-113).
+  const fullAccess = session.role === 'ADMIN'
+
   const params = await searchParams
 
   // Range normalizado no fuso America/Sao_Paulo: ambos os limites saem de
@@ -291,16 +271,18 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
   const nextY    = m === 12 ? y + 1 : y
   const nextM    = m === 12 ? 1 : m + 1
 
-  const from = saoPauloDayStart(params.from ?? `${todayStr.slice(0, 7)}-01`)
+  const from = spUtcMidnight(params.from ?? `${todayStr.slice(0, 7)}-01`)
   const to   = params.to
-    ? new Date(saoPauloDayStart(params.to).getTime() + 86_400_000) // dia seguinte ao fim selecionado
-    : saoPauloDayStart(`${nextY}-${String(nextM).padStart(2, '0')}-01`)
+    ? new Date(spUtcMidnight(params.to).getTime() + 86_400_000) // dia seguinte ao fim selecionado
+    : spUtcMidnight(`${nextY}-${String(nextM).padStart(2, '0')}-01`)
 
   const [data, { cashflow, receitaMedia }, overdueInvoices, clientsWithoutBilling, lastSyncAgg] = await Promise.all([
-    getFinanceiroData(from, to),
+    getFinanceiroData(from, to, fullAccess),
     getCashflowData(),
-    getOverdueInvoices(session.role),
-    getClientsWithoutBilling(session.role),
+    // Fila nominal de vencidos + ativos sem cobrança: breakdown por cliente →
+    // só em acesso pleno (A-112). No modo resumido não buscamos os nomes.
+    fullAccess ? getOverdueInvoices(session.role) : Promise.resolve([]),
+    fullAccess ? getClientsWithoutBilling(session.role) : Promise.resolve([]),
     prisma.asaasPayment.aggregate({ _max: { syncedAt: true } }),
   ])
 
@@ -332,19 +314,37 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <ExpenseLaunchButton />
-          <SyncAsaasButton />
-        </div>
+        {/* A-112/A-113: mutações (lançar despesa / sincronizar) só ADMIN. */}
+        {fullAccess && (
+          <div className="flex items-center gap-2">
+            <ExpenseLaunchButton />
+            <SyncAsaasButton />
+          </div>
+        )}
       </div>
+
+      {/* A-112: aviso de visão resumida para acesso via grant (não-ADMIN). */}
+      {!fullAccess && (
+        <div className="flex items-start gap-2 rounded-xl border border-[#38435C] bg-[#0D2137] px-4 py-3 text-sm text-[#95BBE2]">
+          <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+          <p>
+            <span className="font-semibold text-[#EBEBEB]">Visão resumida.</span>{' '}
+            Você vê os totais da agência (somente leitura). O detalhamento por
+            cliente, a fila de inadimplência nominal e o lançamento de despesas
+            são restritos ao administrador.
+          </p>
+        </div>
+      )}
 
       {/* Period selector */}
       <Suspense>
         <PeriodSelector />
       </Suspense>
 
-      {/* FIN-19 — Inadimplência: fila de cobrança + ativos sem cobrança */}
-      <InadimplenciaFila overdue={overdueInvoices} withoutBilling={clientsWithoutBilling} />
+      {/* FIN-19 — Inadimplência nominal por cliente: só em acesso pleno (A-112) */}
+      {fullAccess && (
+        <InadimplenciaFila overdue={overdueInvoices} withoutBilling={clientsWithoutBilling} />
+      )}
 
       {/* KPI Row 1 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -443,17 +443,22 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
         <ReceitaMediaChart data={receitaMedia} />
       </div>
 
-      {/* Donut row */}
+      {/* Donut row — "Distribuição de entradas" expõe TOP CLIENTES: só ADMIN (A-112).
+          "Distribuição de saídas" é por categoria (agregado): visível a todos. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <DistribuicaoDonut title="Distribuição de entradas" data={data.distribuicaoEntradas} />
-        <DistribuicaoDonut title="Distribuição de saídas"   data={data.distribuicaoSaidas} />
+        {fullAccess && (
+          <DistribuicaoDonut title="Distribuição de entradas" data={data.distribuicaoEntradas} />
+        )}
+        <DistribuicaoDonut title="Distribuição de saídas" data={data.distribuicaoSaidas} />
       </div>
 
-      {/* Tables row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <MovimentacoesTable title="Principais entradas" rows={data.topEntradas} type="entrada" />
-        <MovimentacoesTable title="Principais saídas"   rows={data.topSaidas}   type="saida" />
-      </div>
+      {/* Tables row — movimentações nominais por cliente/fornecedor: só ADMIN (A-112). */}
+      {fullAccess && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <MovimentacoesTable title="Principais entradas" rows={data.topEntradas} type="entrada" />
+          <MovimentacoesTable title="Principais saídas"   rows={data.topSaidas}   type="saida" />
+        </div>
+      )}
     </div>
   )
 }

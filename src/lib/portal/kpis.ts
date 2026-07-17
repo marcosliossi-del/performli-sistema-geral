@@ -2,6 +2,7 @@ import 'server-only'
 import { unstable_cache } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { saoPauloDateString } from '@/lib/utils'
+import { spDayInfo, projectMonth } from '@/lib/metas/pace'
 import { aggregateSnapshots, type AggregatableSnapshot } from '@/services/health-scorer'
 import { KPI_REGISTRY } from './kpi-registry'
 import type { MetricType, BusinessType } from '@prisma/client'
@@ -162,13 +163,18 @@ function resolveWindows(period: PortalPeriod, now: Date = new Date()): Window {
 // ── Cálculo ───────────────────────────────────────────────────────────────────
 
 /**
- * Soma de um campo cru GA4 (`clicks`=sessões, `newUsers`=clientes novos, etc.)
- * dos snapshots de plataforma GA4. Retorna null quando não há snapshot GA4 ou o
+ * Soma de um campo cru GA4 (`clicks`=sessões, `newUsers`=clientes novos) dos
+ * snapshots de plataforma GA4. Retorna null quando não há snapshot GA4 ou o
  * total é 0 (sem dado no período), coerente com `aggregateSnapshots`.
+ *
+ * A-010 (fonte única POR MÉTRICA): estas métricas de TOPO de funil (sessões,
+ * novos usuários) só existem no GA4 — NÃO têm análogo canônico em
+ * `aggregateSnapshots` e permanecem GA4-only de propósito. Só métricas com
+ * análogo (ex.: CONVERSIONS = "Compraram") migram para a agregação canônica.
  */
 function sumGa4Field(
   snaps: PortalSnapshot[],
-  field: 'clicks' | 'newUsers' | 'addToCarts' | 'checkoutsStarted' | 'conversions',
+  field: 'clicks' | 'newUsers' | 'addToCarts' | 'checkoutsStarted',
 ): number | null {
   const ga4 = snaps.filter((s) => s.platformAccount.platform === 'GA4')
   if (ga4.length === 0) return null
@@ -289,26 +295,36 @@ async function loadFunnel(clientId: string, period: PortalPeriod): Promise<Porta
   const win = resolveWindows(period)
 
   // UMA query, filtrando clientId (defesa em profundidade), só da janela ATUAL
-  // (o funil não compara com período anterior). Só GA4 tem as etapas.
+  // (o funil não compara com período anterior). Traz GA4 (etapas do funil) E
+  // GA4SYNC (pedidos autoritativos da loja) para a etapa "Compraram" canônica.
   const rows = await prisma.metricSnapshot.findMany({
     where: {
       clientId,
       date: { gte: utcDayStart(win.start), lte: utcDayStart(win.end) },
-      platformAccount: { platform: 'GA4' },
     },
-    select: { clicks: true, addToCarts: true, checkoutsStarted: true, conversions: true },
+    include: { platformAccount: { select: { platform: true } } },
   })
 
+  // Etapas de TOPO do funil (sessões, add-to-cart, checkout) só existem no GA4 —
+  // não têm análogo canônico e permanecem GA4-only (fonte única POR MÉTRICA, não
+  // homogeneização cega). A etapa final "Compraram" tem análogo canônico
+  // (CONVERSIONS) e passa pela MESMA agregação das telas internas — precedência
+  // GA4SYNC>GA4 por dia — para BATER com o card de faturamento/pedidos (A-010).
+  const ga4 = rows.filter((r) => r.platformAccount.platform === 'GA4')
   let sessoes = 0
   let carrinho = 0
   let checkout = 0
-  let compras = 0
-  for (const r of rows) {
+  for (const r of ga4) {
     sessoes += r.clicks != null ? Number(r.clicks) : 0
     carrinho += r.addToCarts != null ? Number(r.addToCarts) : 0
     checkout += r.checkoutsStarted != null ? Number(r.checkoutsStarted) : 0
-    compras += r.conversions != null ? Number(r.conversions) : 0
   }
+  // Portal = lojista ECOMMERCE: CONVERSIONS canônico (GA4SYNC>GA4 por dia).
+  const compras = aggregateSnapshots(
+    rows as unknown as AggregatableSnapshot[],
+    'CONVERSIONS',
+    'ECOMMERCE',
+  ) ?? 0
 
   const stages: FunnelStage[] = [
     { key: 'sessoes', label: 'Visitas', value: sessoes },
@@ -348,10 +364,8 @@ async function loadProjection(clientId: string): Promise<PortalProjection> {
   const today = saoPauloDateString() // 'YYYY-MM-DD' parede SP
   const month = today.slice(0, 7)
   const monthStart = `${month}-01`
-  const daysElapsed = Number(today.slice(8, 10)) // dia do mês (inclui hoje)
-  const year = Number(month.slice(0, 4))
-  const monthNum = Number(month.slice(5, 7)) // 1-based
-  const daysInMonth = new Date(Date.UTC(year, monthNum, 0)).getUTCDate()
+  // A-008: dias decorridos/total do mês pela FONTE ÚNICA (dia-parede SP).
+  const { daysElapsedInMonth: daysElapsed, totalDaysInMonth: daysInMonth } = spDayInfo()
 
   const client = await prisma.client.findUnique({
     where: { id: clientId },
@@ -372,15 +386,11 @@ async function loadProjection(clientId: string): Promise<PortalProjection> {
 
   const accumulated = aggregateSnapshots(snaps, 'FATURAMENTO', businessType)
 
-  // Run-rate simples: acumulado ÷ dias decorridos × dias do mês. NÃO reusa
-  // `projetarAlvo` (@/lib/metas/projection): aquele é crescimento MoM (+15%
-  // e-commerce) do fechamento do mês ANTERIOR, não a projeção intra-mês do
-  // ritmo atual pedida aqui. Guarda contra divisão por zero (dia 1 antes do
-  // primeiro sync → daysElapsed>0 sempre, mas defensivo).
-  const value =
-    accumulated != null && daysElapsed > 0
-      ? Math.round((accumulated / daysElapsed) * daysInMonth * 100) / 100
-      : null
+  // Run-rate pela FONTE ÚNICA (projectMonth): acumulado ÷ dias decorridos × dias
+  // do mês. NÃO reusa `projetarAlvo` (@/lib/metas/projection): aquele é
+  // crescimento MoM (+15% e-commerce) do fechamento do mês ANTERIOR, não a
+  // projeção intra-mês do ritmo atual. projectMonth guarda divisão por zero.
+  const value = projectMonth(accumulated, daysElapsed, daysInMonth)
 
   return { value, accumulated, daysElapsed, daysInMonth, month }
 }

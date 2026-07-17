@@ -1,4 +1,4 @@
-import { requireSession, getClientsForSelect } from '@/lib/dal'
+import { requireSession, getClientsForSelect, taskScopeFor } from '@/lib/dal'
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@prisma/client'
 import type { SupportCardData } from '@/components/suporte/SupportBoard'
@@ -6,23 +6,21 @@ import type { SupportRow } from '@/components/suporte/SupportList'
 import { SupportViews } from '@/components/suporte/SupportViews'
 import { NewSupportDemand } from '@/components/suporte/NewSupportDemand'
 import { Headset } from 'lucide-react'
-import { normalizeRole } from '@/lib/rbac'
 
 export const dynamic = 'force-dynamic'
 
 export default async function SuportePage() {
   const session = await requireSession()
 
-  // Escopo por papel: staff amplo (ADMIN/CS/SUPERVISOR/ANALISTA) enxerga tudo;
-  // só GESTOR fica restrito a demandas de clientes atribuídos. A segurança real
-  // das mutações vive no backend; aqui é só recorte de leitura.
-  const isViewAll = normalizeRole(session.role) !== 'GESTOR_TRAFEGO'
+  // A-108: escopo por papel via FONTE ÚNICA `taskScopeFor` — o MESMO predicado
+  // do badge da sidebar (staff amplo vê tudo; GESTOR vê `assignedTo` OU carteira).
+  // Antes a tela filtrava só por carteira e uma demanda atribuída fora da carteira
+  // contava no badge mas sumia daqui. A tela segue mostrando ≠CANCELADO (inclui
+  // CONCLUIDO); o badge conta só os status ABERTOS (OPEN_SUPPORT_STATUSES).
   const where: Prisma.TaskWhereInput = {
     isSupport: true,
     status: { not: 'CANCELADO' },
-    ...(isViewAll
-      ? {}
-      : { client: { assignments: { some: { userId: session.userId } } } }),
+    ...taskScopeFor(session.userId, session.role),
   }
 
   const tasks = await prisma.task.findMany({

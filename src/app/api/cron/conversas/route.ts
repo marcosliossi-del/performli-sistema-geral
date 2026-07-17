@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { isCronAuthorized } from '@/lib/cron-auth'
 import { recordCronHeartbeat } from '@/lib/cron-heartbeat'
@@ -45,6 +46,14 @@ export async function GET(request: NextRequest) {
         summary.failed += 1
         console.error(`[cron/conversas] evento ${event.id} lançou inesperadamente:`, err)
       }
+    }
+
+    // A-111: revalida a tela de Conversas UMA vez por batch (não por evento) —
+    // só se algo mudou de fato. Preserva a consistência quando /conversas
+    // (ou seus KPIs) passar a usar unstable_cache. revalidatePath é suportado
+    // em route handler no Next 16.
+    if (summary.processed > 0) {
+      revalidatePath('/conversas')
     }
 
     await recordCronHeartbeat('CONVERSAS') // regra #9 — nunca lança

@@ -9,8 +9,9 @@ import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
 import { normalizeRole, stripSensitive, scopeClients, isRevenueMetric } from './rbac'
 import { readCronHeartbeat, CRON_STALE_HOURS } from './cron-heartbeat'
 import { getRealizadoForMetrics } from './metas/realizado'
+import { spDayInfo, projectMonth, proRataExpected, liveAchievementPct, periodElapsed } from './metas/pace'
 import { RATE_METRICS } from '@/services/weekly-goals-sync'
-import { LOWER_IS_BETTER, aggregateSnapshots, type AggregatableSnapshot } from '@/services/health-scorer'
+import { LOWER_IS_BETTER, aggregateSnapshots, isAdPlatform, type AggregatableSnapshot } from '@/services/health-scorer'
 import { deriveOverallStatus, selectCanonicalScores } from './health-derive'
 import { ALERT_GOVERNANCE, GOVERNANCE_ROLE_LABELS, ALERT_TYPE_LABELS as ALERT_HEALTH_LABELS } from './alerts/governance-config'
 
@@ -32,6 +33,56 @@ export const requireSession = cache(async () => {
  */
 function canViewAll(role: string): boolean {
   return normalizeRole(role) !== 'GESTOR_TRAFEGO'
+}
+
+// ── Fonte única de escopo/predicados compartilhados entre BADGE e TELA (Lote 3) ──
+
+/**
+ * Escopo de POSSE de tarefas: staff amplo vê tudo; GESTOR vê o que está
+ * atribuído a si (`assignedTo`) OU é da carteira (`client.assignments`). Fonte
+ * única usada por getSidebarCounts, getAceiteOperacional e pela tela /suporte
+ * (A-108: badge e tela passam a compartilhar exatamente este predicado).
+ */
+export function taskScopeFor(userId: string, role: string): Prisma.TaskWhereInput {
+  return canViewAll(role)
+    ? {}
+    : { OR: [{ assignedTo: userId }, { client: { assignments: { some: { userId } } } }] }
+}
+
+/**
+ * Status "abertos" de uma demanda de SUPORTE (A-107): exclui CONCLUIDO e
+ * CANCELADO. Fonte única do que o badge conta como pendente — a tela /suporte
+ * continua listando ≠CANCELADO (inclui CONCLUIDO), mas o badge só conta estes.
+ */
+export const OPEN_SUPPORT_STATUSES: TaskStatus[] = [
+  'A_FAZER', 'EM_ANDAMENTO', 'AJUSTES_SOLICITADOS', 'EM_VALIDACAO', 'AGUARDANDO_CLIENTE',
+]
+
+/**
+ * Tipos de alerta de variação 24h (KPI_DROP/SPIKE): efêmeros, exibidos em bloco
+ * próprio no cockpit. Excluídos do contador de "alertas não lidos" (A-105) para
+ * o badge bater com o cockpit (fonte única desta lista).
+ */
+const EXCLUDED_ALERT_TYPES: AlertType[] = ['KPI_DROP_24H', 'KPI_SPIKE_24H']
+
+/**
+ * Check-ins semanais PENDENTES (A-104): clientes ativos (role-scoped por
+ * carteira) que ainda não submeteram o check-in da semana corrente. Fonte única
+ * — o badge da sidebar e o card do cockpit (getCheckinStats.semCheckin) usam
+ * ESTE predicado (antes o badge contava Task OPE-06, um model diferente).
+ */
+async function pendingCheckinCount(userId: string, role: string): Promise<number> {
+  const { start: weekStart } = getWeekRange()
+  const clientScope: Prisma.ClientWhereInput = canViewAll(role)
+    ? { status: 'ACTIVE' }
+    : { status: 'ACTIVE', assignments: { some: { userId } } }
+  const [activeClients, submitted] = await Promise.all([
+    prisma.client.count({ where: clientScope }),
+    prisma.clientWeeklyCheckin.count({
+      where: { weekStart, status: { not: 'PENDENTE' }, client: clientScope },
+    }),
+  ])
+  return Math.max(0, activeClients - submitted)
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -132,16 +183,16 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
     }),
     prisma.alert.findMany({
       where: canViewAll(role)
-        ? { read: false, type: { notIn: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] } }
-        : { read: false, type: { notIn: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, client: { assignments: { some: { userId } } } },
+        ? { read: false, type: { notIn: EXCLUDED_ALERT_TYPES } }
+        : { read: false, type: { notIn: EXCLUDED_ALERT_TYPES }, client: { assignments: { some: { userId } } } },
       include: { client: { select: { name: true, slug: true } } },
       orderBy: { createdAt: 'desc' },
       take: 5,
     }),
     prisma.alert.findMany({
       where: canViewAll(role)
-        ? { type: { in: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, createdAt: { gte: todayStart } }
-        : { type: { in: ['KPI_DROP_24H', 'KPI_SPIKE_24H'] }, createdAt: { gte: todayStart }, client: { assignments: { some: { userId } } } },
+        ? { type: { in: EXCLUDED_ALERT_TYPES }, createdAt: { gte: todayStart } }
+        : { type: { in: EXCLUDED_ALERT_TYPES }, createdAt: { gte: todayStart }, client: { assignments: { some: { userId } } } },
       include: { client: { select: { name: true, slug: true } } },
       orderBy: { createdAt: 'desc' },
       take: 10,
@@ -465,7 +516,11 @@ async function _fetchClientsList(userId: string, role: string) {
   for (const s of allSnaps) {
     if (!snapsByClient.has(s.clientId)) snapsByClient.set(s.clientId, [])
     snapsByClient.get(s.clientId)!.push(toAgg(s))
-    if (s.platformAccount.platform !== 'GA4') {
+    // monthSpend na definição CANÔNICA (A-006): só plataformas de anúncio.
+    // `isAdPlatform` exclui GA4/GA4SYNC/NUVEMSHOP — antes `!== 'GA4'` deixava
+    // GA4SYNC/NUVEMSHOP no somatório (spend nulo hoje, mas divergente por design
+    // de monthRoas, que já usa aggregateSnapshots→isAdPlatform).
+    if (isAdPlatform(s.platformAccount.platform)) {
       spendByClient.set(s.clientId, (spendByClient.get(s.clientId) ?? 0) + Number(s.spend ?? 0))
     }
   }
@@ -654,7 +709,11 @@ export const getClientKPIs = cache(async (
   const prevTo       = new Date(rangeFrom.getTime() - 1)           // 1ms before start
   const prevFrom     = new Date(prevTo.getTime() - durationMs)
 
-  const daysInRange  = Math.round(durationMs / 86_400_000) + 1
+  // QA Onda B: no MTD default o rótulo "dia N" segue o dia-parede SP (mesma
+  // âncora do pró-rata/projeção), não o fuso do servidor (off-by-one 21h-24h).
+  const daysInRange  = (!fromStr && !toStr)
+    ? spDayInfo().daysElapsedInMonth
+    : Math.round(durationMs / 86_400_000) + 1
   const daysInMonth  = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
 
   // For projection: only relevant when range starts on 1st of a month
@@ -767,8 +826,18 @@ export const getClientKPIs = cache(async (
   const pctChange = (c: number | null, p: number | null): number | null =>
     c !== null && p !== null && p !== 0 ? ((c - p) / Math.abs(p)) * 100 : null
 
-  const projecaoMes = isMTD && daysInRange > 0 && curr.revenue > 0
-    ? (curr.revenue / daysInRange) * daysInMonth
+  // A-008: projeção pela FONTE ÚNICA (projectMonth). No mês corrente (range
+  // default, sem fromStr), os dias decorridos/total vêm do dia-parede SP; para
+  // um mês MTD explícito (fromStr passado) mantém-se daysInRange/daysInMonth do
+  // período pedido (comportamento anterior para janelas históricas).
+  const sp = spDayInfo(today)
+  const isCurrentSpMonth = isMTD && !fromStr
+  const projecaoMes = isMTD && curr.revenue > 0
+    ? projectMonth(
+        curr.revenue,
+        isCurrentSpMonth ? sp.daysElapsedInMonth : daysInRange,
+        isCurrentSpMonth ? sp.totalDaysInMonth : daysInMonth,
+      )
     : null
 
   const fmtShort = (d: Date) =>
@@ -1191,16 +1260,30 @@ export const getReportData = cache(async (
     { start: weekStart, end: weekEnd, label: 'na semana selecionada' },
   )
 
+  // A-002 (P2=A): o alvo comparado passa a ser o PRÓ-RATA "esperado até hoje"
+  // (proporcional aos dias decorridos da semana selecionada) e o pct é
+  // recalculado AO VIVO (realizado ÷ esperado), não mais o achievementPct
+  // congelado no cron. O status (badge) segue vindo do HealthScore. Elapsed da
+  // semana pela fonte única (dia-parede SP): semana passada → esperado = meta cheia.
+  const { totalDays: weekTotalDays, daysElapsed: weekDaysElapsed } = periodElapsed(weekStart, weekEnd)
+
   const metrics = visibleGoals
     .map((g) => {
     const hs = g.healthScores[0]
+    const rawTarget = Number(g.targetValue)
+    const actual = realizadoByMetric.get(g.metric)?.valor ?? null
+    const livePct = actual !== null
+      ? liveAchievementPct(g.metric, actual, rawTarget, weekDaysElapsed, weekTotalDays)
+      : null
     return {
       metric: g.metric,
       label: metricLabels[g.metric] ?? g.metric,
-      target: Number(g.targetValue),
-      actual: realizadoByMetric.get(g.metric)?.valor ?? null,
+      target: rawTarget,
+      // "esperado até hoje" (alvo pró-rata da semana em andamento).
+      expected: proRataExpected(g.metric, rawTarget, weekDaysElapsed, weekTotalDays),
+      actual,
       status: hs?.status ?? null,
-      pct: hs ? Math.round(Number(hs.achievementPct)) : null,
+      pct: livePct !== null ? Math.round(livePct) : null,
       lowerIsBetter: ['CPL', 'CPA', 'CPC'].includes(g.metric),
       unit: ['CPL', 'CPA', 'CPC', 'INVESTMENT', 'SPEND'].includes(g.metric)
         ? 'R$'
@@ -1640,8 +1723,10 @@ export const getOverdueInvoices = cache(
   async (role: string): Promise<OverdueInvoiceRow[]> => {
     if (!canViewAll(role)) return []
 
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    // A-116: boundary "hoje" = 00:00Z do dia-parede SP (dueDate é `@db.Date`,
+    // volta 00:00Z). Mesmo instante usado pelos KPIs de /financeiro — antes a
+    // fila usava meia-noite do fuso do servidor e divergia na virada do dia.
+    const today = spDayInfo().spDayStartUtc
 
     const payments = await prisma.asaasPayment.findMany({
       where: { status: 'OVERDUE', dueDate: { lte: today } },
@@ -1693,6 +1778,114 @@ export const getClientsWithoutBilling = cache(
     })
   },
 )
+
+/**
+ * A-114 (decisão P9=B, 2026-07-17): "clientes inadimplentes" = nº de CLIENTES
+ * DISTINTOS com fatura vencida (OVERDUE) cuja data de vencimento já passou
+ * (`dueDate <= hoje`). Fonte ÚNICA usada por /clients, /financeiro e pelo
+ * endpoint /api/financeiro/summary — antes /clients contava faturas
+ * (asaasPayment.count) e /financeiro contava clientes distintos, divergindo.
+ *
+ * `distinct: ['customerId']` = 1 cliente Asaas por linha (proxy de cliente da
+ * agência; o boundary "hoje" é 00:00Z do dia-parede SP, igual à fila de
+ * vencidos e aos KPIs financeiros).
+ */
+export const countInadimplentes = cache(async (): Promise<number> => {
+  const today = spDayInfo().spDayStartUtc
+  const rows = await prisma.asaasPayment.findMany({
+    where: { status: 'OVERDUE', dueDate: { lte: today } },
+    distinct: ['customerId'],
+    select: { customerId: true },
+  })
+  return rows.length
+})
+
+// ─── A-115 — DRE canônico único (decisão P10=B) ────────────────────────────────
+
+export type DreTotals = {
+  entradas: number
+  saidasAsaas: number
+  saidasManuais: number
+  saidas: number
+  lucro: number
+  margem: number
+  prevEntradas: number
+  prevSaidas: number
+  prevLucro: number
+  deltaEntradas: number
+  deltaSaidas: number
+  deltaLucro: number
+}
+
+/**
+ * A-115 (decisão P10=B, 2026-07-17): cálculo ÚNICO do DRE, consumido pela página
+ * /financeiro E pelo endpoint /api/financeiro/summary. Antes coexistiam dois
+ * DREs divergentes: a página somava `asaasTransfer(DONE) + Expense` nas saídas e
+ * usava `netValue` nas entradas; o endpoint somava só `Expense` e usava `value`.
+ * Esta função aposenta a lógica divergente — saídas = Expense + asaasTransfer
+ * DONE; entradas = netValue (fallback value).
+ *
+ * `from`/`to` já normalizados pelo caller (SP; `to` EXCLUSIVO). O período
+ * anterior tem a MESMA duração e termina onde o atual começa (exclusivo).
+ */
+export const getDreTotals = cache(async (from: Date, to: Date): Promise<DreTotals> => {
+  const duration = to.getTime() - from.getTime()
+  const prevFrom = new Date(from.getTime() - duration)
+  const prevTo   = from
+
+  const [
+    payments, prevPaymentsAgg,
+    transfersAgg, prevTransfersAgg,
+    expensesAgg, prevExpensesAgg,
+  ] = await Promise.all([
+    prisma.asaasPayment.findMany({
+      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lt: to } },
+      select: { value: true, netValue: true },
+    }),
+    prisma.asaasPayment.aggregate({
+      where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: prevFrom, lt: prevTo } },
+      _sum: { value: true },
+    }),
+    prisma.asaasTransfer.aggregate({
+      where: { status: 'DONE', transferDate: { gte: from, lt: to } },
+      _sum: { value: true },
+    }),
+    prisma.asaasTransfer.aggregate({
+      where: { status: 'DONE', transferDate: { gte: prevFrom, lt: prevTo } },
+      _sum: { value: true },
+    }),
+    prisma.expense.aggregate({
+      where: { date: { gte: from, lt: to } },
+      _sum: { value: true },
+    }),
+    prisma.expense.aggregate({
+      where: { date: { gte: prevFrom, lt: prevTo } },
+      _sum: { value: true },
+    }),
+  ])
+
+  const entradas      = payments.reduce((s, p) => s + Number(p.netValue ?? p.value), 0)
+  const saidasAsaas   = Number(transfersAgg._sum.value ?? 0)
+  const saidasManuais = Number(expensesAgg._sum.value ?? 0)
+  const saidas        = saidasAsaas + saidasManuais
+  const lucro         = entradas - saidas
+  const margem        = entradas > 0 ? (lucro / entradas) * 100 : 0
+
+  const prevEntradas = Number(prevPaymentsAgg._sum.value ?? 0)
+  const prevSaidas   = Number(prevTransfersAgg._sum.value ?? 0) + Number(prevExpensesAgg._sum.value ?? 0)
+  const prevLucro    = prevEntradas - prevSaidas
+
+  const pct = (curr: number, prev: number) =>
+    prev === 0 ? (curr > 0 ? 100 : 0) : Math.round(((curr - prev) / prev) * 10000) / 100
+
+  return {
+    entradas, saidasAsaas, saidasManuais, saidas, lucro, margem,
+    prevEntradas, prevSaidas, prevLucro,
+    deltaEntradas: pct(entradas, prevEntradas),
+    deltaSaidas:   pct(saidas, prevSaidas),
+    deltaLucro:    pct(lucro, prevLucro),
+  }
+})
 
 // ─── CSX-13 — Fila anti-churn proativo ─────────────────────────────────────────
 
@@ -1886,11 +2079,10 @@ export const getCheckinStats = cache(
       ? { status: 'ACTIVE' }
       : { status: 'ACTIVE', assignments: { some: { userId } } }
 
-    const [activeClients, submitted, aguardandoRevisao, reprovados] = await Promise.all([
-      prisma.client.count({ where: clientScope }),
-      prisma.clientWeeklyCheckin.count({
-        where: { weekStart, status: { not: 'PENDENTE' }, client: clientScope },
-      }),
+    // A-104: "sem check-in" vem da FONTE ÚNICA `pendingCheckinCount` — o MESMO
+    // número que o badge da sidebar mostra (antes o badge contava Task OPE-06).
+    const [semCheckin, aguardandoRevisao, reprovados] = await Promise.all([
+      pendingCheckinCount(userId, role),
       prisma.clientWeeklyCheckin.count({
         where: { weekStart, status: 'PREENCHIDO', client: clientScope },
       }),
@@ -1900,7 +2092,7 @@ export const getCheckinStats = cache(
     ])
 
     return {
-      semCheckin: Math.max(0, activeClients - submitted),
+      semCheckin,
       aguardandoRevisao,
       reprovados,
     }
@@ -2660,12 +2852,22 @@ export const getClientChat = cache(async (clientId: string) => {
   if (existing) return existing
 
   // Só cria o canal na primeira vez que ele é aberto (idempotente por clientId).
-  return prisma.clientChat.upsert({
-    where: { clientId },
-    create: { clientId },
-    update: {},
-    include: CHAT_INCLUDE,
-  })
+  // Double-render concorrente pode colidir no unique (P2002) — trata como
+  // "outro render criou" e relê, em vez de derrubar a página (hotfix Client 360).
+  try {
+    return await prisma.clientChat.upsert({
+      where: { clientId },
+      create: { clientId },
+      update: {},
+      include: CHAT_INCLUDE,
+    })
+  } catch (err) {
+    if (typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002') {
+      const retry = await prisma.clientChat.findUnique({ where: { clientId }, include: CHAT_INCLUDE })
+      if (retry) return retry
+    }
+    throw err
+  }
 })
 
 // ─── Central de Comunicação (canais internos por cliente) ─────────────────────
@@ -2765,8 +2967,10 @@ export type GoalPaceMetrics = {
 
 export const getGoalPaceMetrics = cache(async (clientId: string): Promise<GoalPaceMetrics[]> => {
   const today = new Date()
-  const daysElapsed = today.getDate()
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+  // A-007/A-008: dias decorridos/total do mês pela FONTE ÚNICA ancorada no
+  // dia-parede SP (antes today.getDate()/getMonth em fuso do servidor divergia
+  // do achievementPct SP entre 21–24h SP).
+  const { daysElapsedInMonth: daysElapsed, totalDaysInMonth: daysInMonth } = spDayInfo(today)
   const { start: monthStart, end: monthEnd } = getMonthRange(today)
 
   const client = await prisma.client.findUnique({
@@ -2834,11 +3038,10 @@ export const getGoalPaceMetrics = cache(async (clientId: string): Promise<GoalPa
             : null
         : null
     // Projeção só faz sentido para métricas acumulativas; RATE já é uma média.
+    // Fonte única de run-rate (projectMonth), ancorada no dia-parede SP.
     const projectedMonth = isRate
       ? actualValue
-      : actualValue !== null && daysElapsed > 0
-        ? (actualValue / daysElapsed) * daysInMonth
-        : null
+      : projectMonth(actualValue, daysElapsed, daysInMonth)
 
     return {
       goalId: goal.id,
@@ -3567,8 +3770,11 @@ export const getMinhaSemana = cache(async (userId: string): Promise<MinhaSemana>
     popCode: t.pop?.code ?? null,
   }))
 
+  // A-118/A-109: boundary de "hoje" no dia-parede SP (antes fuso do servidor
+  // deslocava /meu-dia 1 dia entre 21–24h SP). startToday = 00:00 SP; endToday
+  // = +24h. Casa com o mesmo padrão do badge Meu Dia e do aceite operacional.
   const now = new Date()
-  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const startToday = startOfTodaySaoPaulo(now)
   const endToday = new Date(startToday.getTime() + 86_400_000)
   const { end: weekEnd } = getWeekRange(now)
 
@@ -3718,16 +3924,34 @@ export const getClienteTarefas = cache(
       if (!owns) return { abertas: [], concluidasRecentes: [], atrasadasCount: 0 }
     }
 
-    const rows = await prisma.task.findMany({
-      where: { clientId },
-      orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
-      select: {
-        id: true, title: true, status: true, priority: true, type: true, dueDate: true,
-        completedAt: true,
-        user: { select: { name: true } },
-        pop: { select: { code: true } },
-      },
-    })
+    // Hotfix P2024 (Client 360): sem `take`, cliente antigo com recorrências
+    // acumuladas carregava MILHARES de linhas por render e ajudava a esgotar o
+    // pool. Abertas primeiro (todas as relevantes) + concluídas recentes.
+    const [openRows, doneRows] = await Promise.all([
+      prisma.task.findMany({
+        where: { clientId, status: { notIn: ['CONCLUIDO', 'CANCELADO'] } },
+        orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
+        take: 200,
+        select: {
+          id: true, title: true, status: true, priority: true, type: true, dueDate: true,
+          completedAt: true,
+          user: { select: { name: true } },
+          pop: { select: { code: true } },
+        },
+      }),
+      prisma.task.findMany({
+        where: { clientId, status: { in: ['CONCLUIDO', 'CANCELADO'] } },
+        orderBy: [{ completedAt: 'desc' }],
+        take: 50,
+        select: {
+          id: true, title: true, status: true, priority: true, type: true, dueDate: true,
+          completedAt: true,
+          user: { select: { name: true } },
+          pop: { select: { code: true } },
+        },
+      }),
+    ])
+    const rows = [...openRows, ...doneRows]
 
     const map = (t: (typeof rows)[number]): ClienteTarefaRow => ({
       id: t.id,
@@ -3858,25 +4082,31 @@ export type SidebarCounts = {
 export const getSidebarCounts = cache(
   async (userId: string, role: string): Promise<SidebarCounts> => {
     const viewAll = canViewAll(role)
-    const taskScope: Prisma.TaskWhereInput = viewAll
-      ? {}
-      : { OR: [{ assignedTo: userId }, { client: { assignments: { some: { userId } } } }] }
+    const taskScope: Prisma.TaskWhereInput = taskScopeFor(userId, role)
     const clientScope: Prisma.ClientWhereInput = viewAll
       ? {}
       : { assignments: { some: { userId } } }
 
+    // A-117/A-109: "hoje" no dia-parede SP (00:00 SP + 24h), não fuso do
+    // servidor — o badge Meu Dia deixa de saltar 1 dia entre 21–24h SP.
     const now = new Date()
-    const endToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+    const endToday = new Date(startOfTodaySaoPaulo(now).getTime() + 86_400_000)
     const openStatus: Prisma.TaskWhereInput['status'] = { notIn: ['CONCLUIDO', 'CANCELADO'] }
 
     const [meuDia, abertas, checkins, validacoes, warRooms, alertas, suporte] = await Promise.all([
       prisma.task.count({ where: { assignedTo: userId, status: openStatus, dueDate: { lt: endToday } } }),
       prisma.task.count({ where: { ...taskScope, status: openStatus } }),
-      prisma.task.count({ where: { ...taskScope, status: openStatus, pop: { code: 'OPE-06' } } }),
+      // A-104: badge = check-ins semanais PENDENTES (mesmo predicado da tela),
+      // não Task OPE-06 (model diferente que nunca batia com o board).
+      pendingCheckinCount(userId, role),
       prisma.task.count({ where: { ...taskScope, status: { in: ['AGUARDANDO_CS', 'EM_VALIDACAO'] } } }),
       prisma.criticalProtocol.count({ where: { status: { not: 'ENCERRADO' }, client: clientScope } }),
-      prisma.alert.count({ where: { read: false, client: clientScope } }),
-      prisma.task.count({ where: { ...taskScope, isSupport: true, status: { in: ['A_FAZER', 'EM_ANDAMENTO', 'AJUSTES_SOLICITADOS'] } } }),
+      // A-105: exclui KPI_DROP/SPIKE_24H (mesma lista do cockpit) — badge deixa
+      // de ser maior que o número exibido na tela.
+      prisma.alert.count({ where: { read: false, type: { notIn: EXCLUDED_ALERT_TYPES }, client: clientScope } }),
+      // A-107/A-108: mesmo predicado da tela /suporte — status ABERTOS
+      // (≠CONCLUIDO/CANCELADO) e escopo `assignedTo OR carteira` (taskScope).
+      prisma.task.count({ where: { ...taskScope, isSupport: true, status: { in: OPEN_SUPPORT_STATUSES } } }),
     ])
 
     return { meuDia, abertas, checkins, validacoes, warRooms, alertas, suporte }
@@ -3911,9 +4141,7 @@ export const getAceiteOperacional = cache(
   async (userId: string, role: string): Promise<AceiteOperacional> => {
     const viewAll = canViewAll(role)
     const now = new Date()
-    const taskScope: Prisma.TaskWhereInput = viewAll
-      ? {}
-      : { OR: [{ assignedTo: userId }, { client: { assignments: { some: { userId } } } }] }
+    const taskScope: Prisma.TaskWhereInput = taskScopeFor(userId, role)
     const clientScope: Prisma.ClientWhereInput = viewAll ? {} : { assignments: { some: { userId } } }
     const openStatus: Prisma.TaskWhereInput['status'] = { notIn: ['CONCLUIDO', 'CANCELADO'] }
     const d30 = new Date(now.getTime() - 30 * 86_400_000)

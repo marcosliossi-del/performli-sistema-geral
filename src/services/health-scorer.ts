@@ -31,7 +31,18 @@ export const LOWER_IS_BETTER: Set<MetricType> = new Set([
   'CPL', 'CPA', 'CAC', 'CPC', 'SPEND', 'CPS', 'CPM',
 ])
 
-const PRORATE_METRICS: Set<MetricType> = new Set([
+// Definição CANÔNICA de investimento/ROAS (decisão do dono, Pergunta 1 = A): só
+// plataformas de ANÚNCIO contam como spend. GA4/GA4SYNC/NUVEMSHOP são fontes de
+// RECEITA (spend nulo) e NUNCA entram no investimento nem no denominador do ROAS.
+// Fonte única desta lista — todo cálculo inline de spend deve usar `isAdPlatform`
+// em vez de repetir `!== 'GA4'` (que vazava GA4SYNC/NUVEMSHOP no conjunto "ads").
+export const NON_AD_PLATFORMS: readonly string[] = ['GA4', 'GA4SYNC', 'NUVEMSHOP']
+export const isAdPlatform = (platform: string): boolean => !NON_AD_PLATFORMS.includes(platform)
+
+// Exportado como FONTE ÚNICA da proração pró-rata (A-002): a UI (Client 360,
+// /reports) e o utilitário `@/lib/metas/pace` decidem "esperado até hoje" pela
+// MESMA lista que o scorer usa para congelar achievementPct.
+export const PRORATE_METRICS: Set<MetricType> = new Set([
   'FATURAMENTO', 'SALES',
   'SPEND', 'INVESTMENT',
   'LEADS', 'CONVERSIONS',
@@ -88,9 +99,7 @@ export function aggregateSnapshots(
   // `ads` = plataformas de ANÚNCIO (spend/impressões). GA4/GA4SYNC/NUVEMSHOP têm
   // spend nulo, então incluí-los aqui não corrompe totalSpend/adImpressions —
   // mas os excluímos por clareza: são fontes de RECEITA, não de investimento.
-  const ads  = snapshots.filter(
-    (x) => !['GA4', 'GA4SYNC', 'NUVEMSHOP'].includes(x.platformAccount.platform),
-  )
+  const ads  = snapshots.filter((x) => isAdPlatform(x.platformAccount.platform))
   const meta = snapshots.filter((x) => x.platformAccount.platform === 'META_ADS')
   // GA4SYNC: receita AUTORITATIVA da loja (Nuvemshop via API GA4Sync), persistida
   // no MetricSnapshot pelo sync. Quando o cliente ECOMMERCE tem dado GA4Sync na
@@ -293,7 +302,7 @@ function applyTrend(
 
 // ── Core processing ───────────────────────────────────────────────────────────
 
-function computeAchievementPct(actual: number, target: number, lowerIsBetter: boolean): number | null {
+export function computeAchievementPct(actual: number, target: number, lowerIsBetter: boolean): number | null {
   if (target === 0) return 0
   // ME-3: métricas lowerIsBetter (CPL/CPA/CAC/CPC/SPEND/CPS/CPM) dividem target/actual.
   // Com actual <= 0 (sem dado real de custo) isso gerava Infinity persistido em
@@ -502,44 +511,53 @@ async function updateStreak(clientId: string): Promise<void> {
   const { start: weekStart }  = getWeekRange()
   const { start: monthStart } = getMonthRange()
 
-  const healthScores = await prisma.healthScore.findMany({
-    where: {
-      clientId,
-      OR: [
-        { period: 'WEEKLY',  periodStart: { gte: weekStart } },
-        { period: 'MONTHLY', periodStart: { gte: monthStart } },
-      ],
-    },
-    select: { status: true, period: true },
-  })
+  // A-120: "hoje" ancorado no UTC-midnight do dia-parede SP (mesmo padrão da
+  // linha 337). `new Date().setHours(0,0,0,0)` zerava no fuso do RUNTIME (UTC),
+  // fazendo o streak "virar de dia" às 21h SP — divergindo do resto do sistema.
+  const today = new Date(`${saoPauloDateString()}T00:00:00.000Z`)
 
-  const weeklyScores  = healthScores.filter((s) => s.period === 'WEEKLY')
-  const monthlyScores = healthScores.filter((s) => s.period === 'MONTHLY')
-  const scores = weeklyScores.length > 0 ? weeklyScores : monthlyScores
-  if (scores.length === 0) return
-
-  const status: HealthStatus =
-    scores.some((s) => s.status === 'RUIM')    ? 'RUIM'    :
-    scores.some((s) => s.status === 'REGULAR') ? 'REGULAR' : 'OTIMO'
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  const existing = await prisma.clientStatusStreak.findUnique({ where: { clientId } })
-
-  if (existing && existing.status === status) {
-    const sinceDay = new Date(existing.since)
-    sinceDay.setHours(0, 0, 0, 0)
-    const days = Math.floor((today.getTime() - sinceDay.getTime()) / 86_400_000) + 1
-    await prisma.clientStatusStreak.update({ where: { clientId }, data: { days } })
-  } else {
-    const prevStatus = existing?.status ?? null
-    await prisma.clientStatusStreak.upsert({
-      where:  { clientId },
-      update: { status, prevStatus, since: today, days: 1 },
-      create: { clientId, status, prevStatus: prevStatus ?? undefined, since: today, days: 1 },
+  // A-103: leitura dos HealthScores + escrita do ClientStatusStreak na MESMA
+  // transação. Sem isto, o Board e o Client 360 podiam ler estados divergentes
+  // durante a janela entre o findMany e o update/upsert do streak.
+  await prisma.$transaction(async (tx) => {
+    const healthScores = await tx.healthScore.findMany({
+      where: {
+        clientId,
+        OR: [
+          { period: 'WEEKLY',  periodStart: { gte: weekStart } },
+          { period: 'MONTHLY', periodStart: { gte: monthStart } },
+        ],
+      },
+      select: { status: true, period: true },
     })
-  }
+
+    const weeklyScores  = healthScores.filter((s) => s.period === 'WEEKLY')
+    const monthlyScores = healthScores.filter((s) => s.period === 'MONTHLY')
+    const scores = weeklyScores.length > 0 ? weeklyScores : monthlyScores
+    if (scores.length === 0) return
+
+    const status: HealthStatus =
+      scores.some((s) => s.status === 'RUIM')    ? 'RUIM'    :
+      scores.some((s) => s.status === 'REGULAR') ? 'REGULAR' : 'OTIMO'
+
+    const existing = await tx.clientStatusStreak.findUnique({ where: { clientId } })
+
+    if (existing && existing.status === status) {
+      // sinceDay no MESMO fuso de `today` (UTC-midnight SP) — setUTCHours, não
+      // setHours, para não reintroduzir o drift de fuso do A-120.
+      const sinceDay = new Date(existing.since)
+      sinceDay.setUTCHours(0, 0, 0, 0)
+      const days = Math.floor((today.getTime() - sinceDay.getTime()) / 86_400_000) + 1
+      await tx.clientStatusStreak.update({ where: { clientId }, data: { days } })
+    } else {
+      const prevStatus = existing?.status ?? null
+      await tx.clientStatusStreak.upsert({
+        where:  { clientId },
+        update: { status, prevStatus, since: today, days: 1 },
+        create: { clientId, status, prevStatus: prevStatus ?? undefined, since: today, days: 1 },
+      })
+    }
+  })
 }
 
 // ── Batch ─────────────────────────────────────────────────────────────────────

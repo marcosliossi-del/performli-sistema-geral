@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
 import { getAsaasClient } from '@/services/asaas/client'
+import { saoPauloDateString } from '@/lib/utils'
+import { spDayInfo, spUtcMidnight } from '@/lib/metas/pace'
+import { getDreTotals, countInadimplentes } from '@/lib/dal'
+import { hasSpaceGrant } from '@/lib/nav-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,60 +13,68 @@ export const dynamic = 'force-dynamic'
  * GET /api/financeiro/summary?from=YYYY-MM-DD&to=YYYY-MM-DD
  * Returns aggregated financial KPIs for the given period.
  * Falls back to current month if no params.
+ *
+ * A-113 (P8=B): rota de LEITURA — aceita ADMIN OU grant de espaço
+ * (`administrativo.financeiro`). Grant recebe o MESMO recorte ESTRIPADO da
+ * página (agregados sim; `distribuicaoEntradas` por cliente = []).
+ * A-115 (P10=B): DRE vem de `getDreTotals` (fonte única com a página).
+ * NOTA: endpoint sem consumidor conhecido (registrado no DOSSIE §15).
  */
 export async function GET(request: NextRequest) {
   const session = await getSession()
-  if (!session || session.role !== 'ADMIN') {
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const fullAccess = session.role === 'ADMIN'
+  if (!fullAccess && !(await hasSpaceGrant(session.userId, 'administrativo.financeiro'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const { searchParams } = new URL(request.url)
-  const today = new Date()
-  const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1)
-  const defaultTo   = new Date(today.getFullYear(), today.getMonth() + 1, 0)
 
-  const from = searchParams.get('from') ? new Date(searchParams.get('from')!) : defaultFrom
-  const to   = searchParams.get('to')   ? new Date(searchParams.get('to')!)   : defaultTo
+  // A-119/A-115: bounds no MESMO padrão SP da página /financeiro. `to` é o
+  // limite superior EXCLUSIVO (início do dia SEGUINTE ao fim do período, SP), e
+  // toda comparação usa `lt: to` — antes `new Date('YYYY-MM-DD')` + `lte`
+  // cortava/deslocava o último dia e divergia do DRE da página.
+  const todayStr = saoPauloDateString() // 'YYYY-MM-DD' em SP
+  const [y, m]   = todayStr.split('-').map(Number)
+  const nextY    = m === 12 ? y + 1 : y
+  const nextM    = m === 12 ? 1 : m + 1
+  const fromParam = searchParams.get('from')
+  const toParam   = searchParams.get('to')
 
-  // Previous period (same duration)
-  const duration = to.getTime() - from.getTime()
-  const prevFrom = new Date(from.getTime() - duration)
-  const prevTo   = new Date(from.getTime() - 1)
+  const from = spUtcMidnight(fromParam ?? `${todayStr.slice(0, 7)}-01`)
+  const to   = toParam
+    ? new Date(spUtcMidnight(toParam).getTime() + 86_400_000) // dia seguinte ao fim selecionado
+    : spUtcMidnight(`${nextY}-${String(nextM).padStart(2, '0')}-01`)
 
+  // "Hoje" (inadimplência/previstos) = 00:00Z do dia-parede SP, igual à página.
+  const today = spDayInfo().spDayStartUtc
+  // (Período anterior/deltas agora vivem em getDreTotals — fonte única A-115.)
+
+  // A-115: DRE canônico único (mesma função da página) — saídas = Expense +
+  // asaasTransfer(DONE); entradas = netValue. Aposenta a lógica divergente que
+  // vivia aqui (só Expense / value). Distribuição por cliente/categoria abaixo
+  // usa queries próprias (leitura de apoio ao donut).
   const [
+    dre,
     payments,
-    prevPayments,
     expenses,
-    prevExpenses,
     subscriptions,
     allClients,
   ] = await Promise.all([
-    // Current period payments
-    prisma.asaasPayment.findMany({
-      where: {
-        status: { in: ['RECEIVED', 'CONFIRMED'] },
-        paymentDate: { gte: from, lte: to },
-      },
-      include: { customer: { select: { name: true, clientId: true } } },
-    }),
-    // Previous period payments (só soma — aggregate em vez de findMany+reduce)
-    prisma.asaasPayment.aggregate({
-      where: {
-        status: { in: ['RECEIVED', 'CONFIRMED'] },
-        paymentDate: { gte: prevFrom, lte: prevTo },
-      },
-      _sum: { value: true },
-    }),
-    // Saídas realizadas do período: despesas (Expense) — inclui débitos do extrato
-    // do Asaas (source=ASAAS) + lançamentos manuais. Fonte única, sem dupla contagem.
+    getDreTotals(from, to),
+    // Payments só para a distribuição por cliente (donut) — estripada p/ grant.
+    fullAccess
+      ? prisma.asaasPayment.findMany({
+          where: { status: { in: ['RECEIVED', 'CONFIRMED'] }, paymentDate: { gte: from, lt: to } },
+          include: { customer: { select: { name: true, clientId: true } } },
+        })
+      : Promise.resolve([] as never[]),
+    // Expenses para a distribuição de saídas por categoria (agregado — visível a todos).
     prisma.expense.findMany({
-      where: { date: { gte: from, lte: to } },
+      where: { date: { gte: from, lt: to } },
       select: { value: true, category: true },
-    }),
-    // Previous period expenses (só soma — aggregate em vez de findMany+reduce)
-    prisma.expense.aggregate({
-      where: { date: { gte: prevFrom, lte: prevTo } },
-      _sum: { value: true },
     }),
     // Active subscriptions for MRR (include morto removido — name nunca é usado)
     prisma.asaasSubscription.findMany({
@@ -75,17 +87,8 @@ export async function GET(request: NextRequest) {
     }),
   ])
 
-  // ── Entradas ──────────────────────────────────────────────────────────────
-  const entradas     = payments.reduce((s, p) => s + Number(p.value), 0)
-  const prevEntradas = Number(prevPayments._sum.value ?? 0)
-
-  // ── Saídas realizadas (despesas: extrato Asaas + manuais) ───────────────────
-  const saidas     = expenses.reduce((s, e) => s + Number(e.value), 0)
-  const prevSaidas = Number(prevExpenses._sum.value ?? 0)
-
-  // ── Lucro ─────────────────────────────────────────────────────────────────
-  const lucro     = entradas - saidas
-  const prevLucro = prevEntradas - prevSaidas
+  // ── DRE (fonte única A-115) ─────────────────────────────────────────────────
+  const { entradas, saidas, lucro } = dre
 
   // ── MRR / Receita Recorrente ───────────────────────────────────────────────
   const receitaRecorrente = subscriptions.reduce((s, sub) => {
@@ -101,17 +104,13 @@ export async function GET(request: NextRequest) {
 
   // Queries independentes agrupadas (antes rodavam em série)
   const [
-    inadimplentes,
+    clientesInadimplentes,      // A-114: clientes distintos vencidos (fonte única)
     inadimplenciaValue,
     entradasPrevistas,
     saidasPrevistas,
     churnedThisPeriod,
   ] = await Promise.all([
-    prisma.asaasPayment.findMany({
-      where: { status: 'OVERDUE', dueDate: { lte: today } },
-      distinct: ['customerId'],
-      select: { customerId: true },
-    }),
+    countInadimplentes(),
     prisma.asaasPayment.aggregate({
       where: { status: 'OVERDUE', dueDate: { lte: today } },
       _sum: { value: true },
@@ -125,10 +124,9 @@ export async function GET(request: NextRequest) {
       _sum: { value: true },
     }),
     prisma.client.count({
-      where: { status: 'CHURNED', updatedAt: { gte: from, lte: to } },
+      where: { status: 'CHURNED', updatedAt: { gte: from, lt: to } },
     }),
   ])
-  const clientesInadimplentes = inadimplentes.length
 
   // ── Receita média por cliente ─────────────────────────────────────────────
   const receitaMediaPorCliente = clientesRecorrentes > 0
@@ -148,12 +146,13 @@ export async function GET(request: NextRequest) {
   // (entradasPrevistas / saidasPrevistas agregados no Promise.all acima)
 
   // ── Distribuição entradas por cliente (para donut) ────────────────────────
+  // A-113: expõe TOP CLIENTES → estripado no grant (`payments` vem [] p/ não-ADMIN).
   const entradaByCustomer = new Map<string, number>()
   for (const p of payments) {
     const label = p.customer?.name ?? 'Sem cliente'
     entradaByCustomer.set(label, (entradaByCustomer.get(label) ?? 0) + Number(p.value))
   }
-  const distribuicaoEntradas = buildTop5(entradaByCustomer)
+  const distribuicaoEntradas = fullAccess ? buildTop5(entradaByCustomer) : []
 
   // ── Distribuição saídas por categoria (despesas) ──────────────────────────
   const saidaByCategory = new Map<string, { value: number; color: string }>()
@@ -196,10 +195,10 @@ export async function GET(request: NextRequest) {
     churnRate: Math.round(churnRate * 100) / 100,
     distribuicaoEntradas,
     distribuicaoSaidas,
-    // Period-over-period deltas (%)
-    deltaEntradas: pct(entradas, prevEntradas),
-    deltaSaidas:   pct(saidas, prevSaidas),
-    deltaLucro:    pct(lucro, prevLucro),
+    // Period-over-period deltas (%) — da fonte única A-115.
+    deltaEntradas: dre.deltaEntradas,
+    deltaSaidas:   dre.deltaSaidas,
+    deltaLucro:    dre.deltaLucro,
   })
 }
 
@@ -211,11 +210,6 @@ const EXPENSE_CATEGORY: Record<string, { label: string; color: string }> = {
   CONTABILIDADE: { label: 'Contabilidade', color: '#e3ad45' },
   ESCRITORIO:    { label: 'Escritório',    color: '#34c97a' },
   OUTROS:        { label: 'Outros',        color: '#647488' },
-}
-
-function pct(current: number, previous: number): number {
-  if (previous === 0) return current > 0 ? 100 : 0
-  return Math.round(((current - previous) / previous) * 10000) / 100
 }
 
 function buildTop5(map: Map<string, number>) {

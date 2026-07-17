@@ -2,13 +2,18 @@
 
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
-import { saoPauloDayStart } from '@/lib/utils'
-import { getRealizadoBatch, type Realizado } from '@/lib/metas/realizado'
+import {
+  getRealizadoBatch,
+  type Realizado,
+  type PeriodoOuJanela,
+} from '@/lib/metas/realizado'
 import {
   LOCAL_RESULT_METRICS,
   LOCAL_RESULT_METRIC_SET,
   costLabelFor,
 } from '@/lib/metas/metricOptions'
+import { isAdPlatform } from '@/services/health-scorer'
+import { spDayInfo, projectMonth, proRataExpected } from '@/lib/metas/pace'
 import type { MetricType, BusinessType } from '@prisma/client'
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -36,10 +41,10 @@ export type ClientProgress = {
   custoRealizado: number | null    // spend ÷ realizado (custo por resultado no mês)
   periodoLabel: string             // rótulo de período da fonte única ("no mês")
   // Actuals (current month to date)
-  revenue: number        // GA4 only
-  spend: number          // ad platforms only
-  purchases: number      // GA4 only
-  sessions: number       // GA4 only
+  revenue: number        // ECOM: canônico (GA4SYNC>GA4/dia) · LOCAL: GA4
+  spend: number          // ad platforms only (exclui GA4/GA4SYNC/NUVEMSHOP)
+  purchases: number      // ECOM: canônico (CONVERSIONS GA4SYNC>GA4/dia) · LOCAL: GA4
+  sessions: number       // GA4 only (sem análogo canônico)
   ctr: number | null     // avg CTR from ads
   cpc: number | null     // avg CPC from ads
   roas: number | null    // revenue / spend
@@ -62,29 +67,30 @@ export type ClientProgress = {
 export async function fetchMonthProgress(year: number, month: number): Promise<ClientProgress[]> {
   await requireSession()
 
-  // S2-014 (borda): fronteira INFERIOR do mês alinhada ao fuso São Paulo, igual
-  // ao helper canônico realizado.ts (resolveJanela → saoPauloDayStart). `month`
-  // é 0-indexado (getMonth), por isso `month + 1` no rótulo YYYY-MM-DD.
-  // MetricSnapshot.date é @db.Date, então a comparação usa só a parte de data;
-  // o alinhamento evita divergência quando o servidor não roda em UTC e casa a
-  // borda exatamente com /agency/metas. monthEnd permanece local: é usado apenas
-  // como limite superior de mês PASSADO (parte de data) e para totalDays via
-  // getDate() — mantê-lo preserva os números históricos.
-  const monthStart = saoPauloDayStart(`${year}-${pad(month + 1)}-01`)
-  const monthEnd   = new Date(year, month + 1, 0)
+  // QA Onda A (A-004/A-005): bounds contra MetricSnapshot.date (@db.Date =
+  // 00:00Z) DEVEM ser UTC-midnight do dia-parede — o padrão AL-3/AL-4. O
+  // saoPauloDayStart anterior (03:00Z) EXCLUÍA o snapshot do dia 1 do mês,
+  // divergindo do gráfico de 6 meses (bucket calendário UTC).
+  const monthStart = new Date(`${year}-${pad(month + 1)}-01T00:00:00.000Z`)
+  const monthEnd   = new Date(Date.UTC(year, month + 1, 0)) // último dia do mês, 00:00Z
 
   const today      = new Date()
-  const todayDay   = today.getDate()
-  const totalDays  = monthEnd.getDate()
-  // If viewing current month use today's day, otherwise use full month
-  const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month
-  const daysElapsed    = isCurrentMonth ? Math.max(1, todayDay) : totalDays
-  const daysRemaining  = isCurrentMonth ? totalDays - todayDay : 0
+  const totalDays  = monthEnd.getUTCDate()
+  // A-007/A-008: dia decorrido/mês corrente pela FONTE ÚNICA ancorada no
+  // dia-parede SP (antes today.getDate()/getMonth em fuso do servidor deslocava
+  // o pace 1 dia entre 21–24h SP). `spDayStartUtc` é 00:00Z do dia SP → seu
+  // getUTC* devolve o ano/mês/dia-parede SP.
+  const sp = spDayInfo(today)
+  const isCurrentMonth = sp.spDayStartUtc.getUTCFullYear() === year
+    && sp.spDayStartUtc.getUTCMonth() === month
+  const daysElapsed    = isCurrentMonth ? Math.max(1, sp.daysElapsedInMonth) : totalDays
+  const daysRemaining  = isCurrentMonth ? sp.daysRemaining : 0
   const pctMonthElapsed = daysElapsed / totalDays
 
-  // Previous month bounds
-  const prevStart = new Date(year, month - 1, 1)
-  const prevEnd   = new Date(year, month, 0)
+  // Previous month bounds — mesmo padrão UTC-midnight (coerência dia-1 com o
+  // mês exibido; QA Onda A).
+  const prevStart = new Date(Date.UTC(year, month - 1, 1))
+  const prevEnd   = new Date(Date.UTC(year, month, 0))
 
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
@@ -122,22 +128,24 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
     },
   })
 
-  // Prev month snapshots for comparison (GA4 only for revenue accuracy)
-  const prevSnaps = await prisma.metricSnapshot.findMany({
-    where: {
-      clientId: { in: clients.map((c) => c.id) },
-      date: { gte: prevStart, lte: prevEnd },
-      platformAccount: { platform: 'GA4' },
-    },
-    select: { clientId: true, conversionValue: true, conversions: true },
-  })
+  // Mês anterior (comparação/tendência A-004): fonte CANÔNICA, não GA4-only.
+  // Para ECOMMERCE, faturamento/pedidos vêm de getRealizadoBatch (janela do mês
+  // anterior) — precedência GA4SYNC>GA4 por dia, igual ao mês corrente. Assim a
+  // seta mês-a-mês compara duas grandezas na MESMA base (antes: mês atual
+  // GA4SYNC vs anterior GA4-only). Clientes LOCAL/B2B seguem via a mesma
+  // agregação (aggregateSnapshots roteia por businessType).
+  const ecomForBatch = clients
+    .filter((c) => c.businessType === 'ECOMMERCE')
+    .map((c) => ({ id: c.id, businessType: c.businessType }))
 
-  const prevByClient = new Map<string, { revenue: number; purchases: number }>()
-  for (const s of prevSnaps) {
-    const cur = prevByClient.get(s.clientId) ?? { revenue: 0, purchases: 0 }
-    cur.revenue    += Number(s.conversionValue ?? 0)
-    cur.purchases  += Number(s.conversions ?? 0)
-    prevByClient.set(s.clientId, cur)
+  const janelaPrev: PeriodoOuJanela = { start: prevStart, end: prevEnd, label: 'mês anterior' }
+  let prevFatBatch:   Map<string, Realizado> | null = null
+  let prevPurchBatch: Map<string, Realizado> | null = null
+  if (ecomForBatch.length > 0) {
+    ;[prevFatBatch, prevPurchBatch] = await Promise.all([
+      getRealizadoBatch(ecomForBatch, 'FATURAMENTO', janelaPrev),
+      getRealizadoBatch(ecomForBatch, 'CONVERSIONS', janelaPrev),
+    ])
   }
 
   // ── Métrica-resultado principal dos clientes local/B2B ────────────────────
@@ -177,45 +185,52 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
     }
   }
 
-  // ── Realizado ECOM (faturamento/investimento/ROAS) via fonte única ────────
-  // Mesma definição que estava duplicada aqui (GA4 conversionValue, spend das
-  // contas de mídia, revenue÷spend), agora servida por getRealizadoBatch — assim
-  // não diverge de /agency/metas na primeira mudança de aggregateSnapshots.
-  // SEM N+1: três queries (uma por métrica), não uma por cliente.
-  // Só se aplica ao MÊS CORRENTE (janela MTD do helper) e a clientes ECOMMERCE;
-  // meses passados e clientes LOCAL preservam o cálculo local e seus números.
+  // ── Realizado ECOM (faturamento/investimento/ROAS/pedidos) via fonte única ─
+  // Agregação canônica (aggregateSnapshots via getRealizadoBatch): faturamento
+  // GA4SYNC>GA4 por dia, investimento só das plataformas de anúncio, revenue÷spend.
+  // SEM N+1: quatro queries (uma por métrica), não uma por cliente.
+  // Aplica-se ao MÊS CORRENTE (janela MTD) E a MESES PASSADOS (janela explícita
+  // do mês exibido) — antes o histórico caía no cálculo GA4-only e divergia do
+  // gráfico de 6 meses (A-005). Clientes LOCAL seguem o cálculo local.
+  const janelaMes: PeriodoOuJanela = isCurrentMonth
+    ? 'MTD'
+    : { start: monthStart, end: monthEnd, label: 'no mês' }
   let fatBatch:   Map<string, Realizado> | null = null
   let spendBatch: Map<string, Realizado> | null = null
   let roasBatch:  Map<string, Realizado> | null = null
-  if (isCurrentMonth) {
-    const ecomForBatch = clients
-      .filter((c) => c.businessType === 'ECOMMERCE')
-      .map((c) => ({ id: c.id, businessType: c.businessType }))
-    if (ecomForBatch.length > 0) {
-      ;[fatBatch, spendBatch, roasBatch] = await Promise.all([
-        getRealizadoBatch(ecomForBatch, 'FATURAMENTO', 'MTD'),
-        getRealizadoBatch(ecomForBatch, 'SPEND', 'MTD'),
-        getRealizadoBatch(ecomForBatch, 'ROAS', 'MTD'),
-      ])
-    }
+  let purchBatch: Map<string, Realizado> | null = null
+  if (ecomForBatch.length > 0) {
+    ;[fatBatch, spendBatch, roasBatch, purchBatch] = await Promise.all([
+      getRealizadoBatch(ecomForBatch, 'FATURAMENTO', janelaMes),
+      getRealizadoBatch(ecomForBatch, 'SPEND', janelaMes),
+      getRealizadoBatch(ecomForBatch, 'ROAS', janelaMes),
+      getRealizadoBatch(ecomForBatch, 'CONVERSIONS', janelaMes),
+    ])
   }
 
   const labelByMetric = new Map(LOCAL_RESULT_METRICS.map((m) => [m.value, m.label]))
 
   return clients.map((c): ClientProgress => {
     const ga4  = c.metricSnapshots.filter((x) => x.platformAccount.platform === 'GA4')
-    const ads  = c.metricSnapshots.filter((x) => x.platformAccount.platform !== 'GA4')
+    // `ads` = plataformas de ANÚNCIO (spend). Exclui GA4/GA4SYNC/NUVEMSHOP via a
+    // constante canônica (A-006): antes `!== 'GA4'` deixava GA4SYNC/NUVEMSHOP no
+    // conjunto, divergindo da definição de spend do health-scorer/dal.
+    const ads  = c.metricSnapshots.filter((x) => isAdPlatform(x.platformAccount.platform))
 
     const localRevenue = ga4.reduce((s, x) => s + Number(x.conversionValue ?? 0), 0)
-    const purchases    = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    const localPurchases = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
     const sessions     = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
     const localSpend   = ads.reduce((s, x) => s + Number(x.spend ?? 0), 0)
 
-    // Faturamento/investimento vêm da fonte única no mês corrente (ECOM); nos
-    // demais casos mantém o cálculo local (idêntico em definição para ECOM).
+    // Faturamento/investimento/pedidos vêm da fonte única (ECOM, mês corrente E
+    // passado); clientes LOCAL mantêm o cálculo local (GA4 receita, ads spend).
     const isEcom  = c.businessType === 'ECOMMERCE'
     const revenue = isEcom && fatBatch   ? (fatBatch.get(c.id)?.valor   ?? 0) : localRevenue
     const spend   = isEcom && spendBatch ? (spendBatch.get(c.id)?.valor ?? 0) : localSpend
+    // Pedidos canônicos (A-003): CONVERSIONS com precedência GA4SYNC>GA4 por dia,
+    // não a soma GA4-only. Garante que ticket médio (revenue÷purchases) bata com
+    // o Client 360. LOCAL preserva a contagem GA4.
+    const purchases = isEcom && purchBatch ? (purchBatch.get(c.id)?.valor ?? 0) : localPurchases
 
     // clicks = link clicks from ad platforms (outbound link clicks, not all clicks)
     const adClicks      = ads.reduce((s, x) => s + (x.clicks ?? 0), 0)
@@ -239,10 +254,9 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
     const gRoas  = goalRoas  ? Number(goalRoas.targetValue)  : null
     const gSpend = goalSpend ? Number(goalSpend.targetValue) : null
 
-    const projection  = revenue > 0 && daysElapsed > 0
-      ? (revenue / daysElapsed) * totalDays
-      : null
-    const pacedGoal   = gFat != null ? (gFat / totalDays) * daysElapsed : null
+    // Projeção/alvo pró-rata pela FONTE ÚNICA (projectMonth/proRataExpected).
+    const projection  = revenue > 0 ? projectMonth(revenue, daysElapsed, totalDays) : null
+    const pacedGoal   = gFat != null ? proRataExpected('FATURAMENTO', gFat, daysElapsed, totalDays) : null
     const pctGoal     = gFat != null && gFat > 0 ? (revenue / gFat) * 100 : null
     const pctSpend    = gSpend != null && gSpend > 0 ? (spend / gSpend) * 100 : null
 
@@ -266,7 +280,7 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
       localPct         = localActual != null && localGoal > 0
         ? (localActual / localGoal) * 100
         : null
-      localPacedGoal   = (localGoal / totalDays) * daysElapsed
+      localPacedGoal   = proRataExpected(localElected.metric, localGoal, daysElapsed, totalDays)
 
       // Custo-alvo correto: CPL p/ LEADS, CPA p/ o resto.
       custoMetricLabel = costLabelFor(localElected.metric)
@@ -278,10 +292,13 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
         : null
     }
 
-    const prev = prevByClient.get(c.id)
-    const prevRevenue     = prev ? prev.revenue : null
-    const prevTicketMedio = prev && prev.purchases > 0 && prev.revenue > 0
-      ? prev.revenue / prev.purchases
+    // Mês anterior canônico (A-004): mesma base do mês corrente. Para ECOM vem
+    // dos batches do mês anterior (GA4SYNC>GA4 por dia); LOCAL fica sem histórico
+    // aqui (a tendência de LOCAL não usa faturamento/ticket de e-commerce).
+    const prevRevenue  = isEcom && prevFatBatch ? (prevFatBatch.get(c.id)?.valor ?? null) : null
+    const prevPurchases = isEcom && prevPurchBatch ? (prevPurchBatch.get(c.id)?.valor ?? 0) : 0
+    const prevTicketMedio = prevRevenue != null && prevRevenue > 0 && prevPurchases > 0
+      ? prevRevenue / prevPurchases
       : null
 
     return {

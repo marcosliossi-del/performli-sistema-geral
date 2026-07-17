@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { processChannelEvent } from '@/services/conversas/ingest'
@@ -139,6 +140,17 @@ export async function POST(request: NextRequest) {
       await processChannelEvent(event)
     } catch (err) {
       console.error('[meta-whatsapp] processamento inline falhou (evento fica p/ o cron):', err)
+    }
+  }
+
+  // A-111: revalida /conversas UMA vez por batch (após o processamento inline),
+  // não por evento. Só quando houve item novo neste POST. Best-effort — jamais
+  // derruba a resposta 200 para a Meta.
+  if (createdEventIds.length > 0) {
+    try {
+      revalidatePath('/conversas')
+    } catch (err) {
+      console.error('[meta-whatsapp] revalidatePath /conversas falhou (ignorado):', err)
     }
   }
 

@@ -679,6 +679,16 @@ operacional pt-BR; portal mobile-first (390px) com layout próprio.
   pendente (egress bloqueado no ambiente de dev).
 - `WeeklyReport.deliveredAt` aguarda callback Z-API.
 - Faixa etária/gênero no portal: sem dado no schema (pendência de ingestão dimensional).
+- **A-112/A-113 (pendente de VALIDAÇÃO do dono):** a interpretação conservadora
+  do P8=B (grant financeiro = "visão resumida" só-agregados) está implementada,
+  mas o recorte exato (quais agregados são aceitáveis para um não-ADMIN com
+  grant) aguarda o OK do Marcos — ver §15 (2026-07-17, Lotes 5/6). Se ele
+  quiser MAIS ou MENOS estripado, ajustar `getFinanceiroData(fullAccess)` e o
+  gate das rotas de leitura.
+- **`/api/financeiro/summary` e `/api/financeiro/cashflow` sem consumidor
+  conhecido:** nenhum `fetch` no front os chama (a página `/financeiro` usa RSC
+  direto). Após A-115 estão coerentes com a página, mas são candidatos a
+  remoção — decidir se viram API pública/externa ou se saem do código.
 - Riscos de segurança listados na seção 10.3.
 
 ---
@@ -752,6 +762,176 @@ Recharts · jose · Anthropic SDK · Vercel Cron.
 Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra aqui
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
+
+### 2026-07-17 — Auditoria Sistêmica · Lotes 5 e 6 (Grant × strip financeiro; DRE único; riscos latentes)
+Achados A-112, A-113, A-114, A-115 (Lote 5) e A-100, A-110 (Lote 6). Sem migration
+(revisão estática — `npm` bloqueado). Decisões do Marcos: P8=B, P9=B, P10=B.
+
+- **A-115 / P10=B — DRE canônico único** (`src/lib/dal.ts` `getDreTotals(from,to)`):
+  extraído o cálculo do DRE para função ÚNICA na DAL — saídas = `Expense +
+  asaasTransfer(status=DONE)`, entradas = `netValue` (fallback `value`), deltas do
+  período anterior (mesma duração, exclusivo). Consumida pela página `/financeiro`
+  e pelo endpoint `/api/financeiro/summary` (que somava só `Expense` e usava
+  `value`). Lógica divergente aposentada. **Endpoint `/api/financeiro/summary`
+  e `/cashflow` estão SEM consumidor conhecido no front** (nenhum `fetch` os
+  chama; a página usa RSC direto). Mantidos, agora coerentes; candidatos a
+  remoção futura (ver §12.3).
+- **A-114 / P9=B — inadimplentes = clientes distintos** (`src/lib/dal.ts`
+  `countInadimplentes()`): conta CLIENTES DISTINTOS (`distinct: customerId`) com
+  `status=OVERDUE` e `dueDate<=hoje` (00:00Z do dia-parede SP). Fonte única em
+  `/clients` (antes contava FATURAS via `asaasPayment.count` — divergia),
+  `/financeiro` e `summary`.
+- **A-112/A-113 / P8=B — Grant financeiro (INTERPRETAÇÃO CONSERVADORA — VALIDAR
+  COM MARCOS):** a decisão B ("dados estripados/somente-leitura coerentes com
+  /clients") foi implementada como: **usuário com grant (`hasSpaceGrant(
+  'administrativo.financeiro')`, NÃO ADMIN) vê `/financeiro` em modo VISÃO
+  RESUMIDA / somente leitura.** O que ele VÊ: os AGREGADOS da agência — DRE total
+  (entradas/saídas/lucro/margem), entradas/saídas previstas, MRR, nº de clientes
+  recorrentes/inadimplentes, inadimplência AGREGADA, receita média por cliente,
+  gráficos de fluxo/receita média (mensais) e distribuição de saídas por
+  CATEGORIA. O que ele NÃO VÊ: tabela de movimentações por cliente (`Principais
+  entradas/saídas`), donut "Distribuição de entradas" (top clientes), fila de
+  inadimplência NOMINAL (`InadimplenciaFila`), e os botões de mutação (lançar
+  despesa / sincronizar Asaas). Banner "Visão resumida" no topo.
+  - Implementação: flag `fullAccess = session.role === 'ADMIN'` propagada a
+    `getFinanceiroData(from, to, fullAccess)`; queries por-cliente só rodam com
+    acesso pleno. Rotas de LEITURA (`summary`, `cashflow`) passam a aceitar o
+    grant retornando o MESMO recorte estripado (`distribuicaoEntradas` por
+    cliente = [] no summary). Rotas de MUTAÇÃO (`expenses` POST/GET) seguem ADMIN
+    estrito; a UI esconde os botões (defesa em profundidade).
+  - **Ambiguidade resolvida pelo conservador:** onde a decisão não deixava claro
+    se agregados podiam aparecer, optou-se por MOSTRAR só agregados de agência e
+    OCULTAR todo breakdown por cliente/contrato. Aguarda validação do Marcos.
+- **A-100 — `Task.statusId` write-only** (`src/lib/tasks/panel.ts`,
+  `src/lib/tasks/statusMap.ts`): removida a leitura da coluna espelho no
+  `loadTaskPanel` (fora do `select`); o `statusId` do payload passa a ser
+  derivado do enum via `statusIdFor(task.status)`. NENHUMA leitura depende mais
+  da coluna (fim da fonte dupla viva); o espelho segue sendo ESCRITO pelas
+  mutações até D-004 decidir a fonte canônica. Nota registrada no `statusMap.ts`.
+- **A-110 — prefs de board por usuário + KPI honesto** (`src/components/
+  operacional/taskBoard.ts`, `OperacionalBoard.tsx`): `VIEW_KEY/FILTERS_KEY/
+  KANBAN_GROUP_KEY` ganham sufixo `:${userId}` (load/save recebem `userId` de
+  `currentUser.id`) — filtros/visão não vazam mais entre contas no mesmo
+  navegador; migração suave herda 1x a chave global legada. KPIs do topo
+  (server, contam a carteira INTEIRA de propósito): adicionada a nota "Mostrando
+  N de M tarefas (filtro ativo — os indicadores acima contam a carteira inteira)"
+  no board quando há filtro, eliminando a leitura errada sem mexer no KPI global.
+
+### 2026-07-17 — Auditoria Sistêmica · Lote 1 (Precedência GA4SYNC nos cálculos inline)
+Achados A-001, A-003, A-004, A-005, A-006, A-010 (ver `MATRIZ.md`). Sem migration.
+Decisão do dono (Pergunta 1 = A): investimento/ROAS = SÓ plataformas de anúncio;
+a definição do health-scorer (`aggregateSnapshots`) é a ÚNICA fonte de verdade.
+- **A-001 — Resultado semanal canônico** (`src/services/resultado-engine.ts`
+  ~94-148): substituído o cálculo inline GA4-only por `aggregateSnapshots`
+  (FATURAMENTO com precedência GA4SYNC>GA4 por dia; SPEND só de plataformas de
+  anúncio). O branch `!hasGa4 → FALHA/pular` virou `hasRevenueSource` (GA4 **OU**
+  GA4SYNC). **⚠️ `Client.resultadoRoas` MUDA de valor para clientes com dados
+  GA4Sync — esperado e desejado** (loja real > atribuído): o número passa a bater
+  com /agency/metas, Client 360 e o realizado. Clientes ECOMMERCE **só-GA4Sync**,
+  que antes ficavam sem Resultado (`resultado.semDados`), agora são classificados
+  e entram em War Room/alertas quando o ROAS real fica abaixo da meta.
+- **A-003/A-004/A-005 — progress.ts sem ramos GA4-only** (`src/app/actions/progress.ts`):
+  purchases/ticket, mês anterior e meses históricos passam pela mesma fonte
+  canônica do mês corrente. `getRealizadoBatch` foi ampliado para aceitar janela
+  explícita (`realizado.ts:149`), servindo meses passados com a MESMA agregação
+  (fim da divergência com o gráfico de 6 meses). Padrão batch preservado (sem N+1).
+- **A-006 — definição única de spend** (`NON_AD_PLATFORMS`/`isAdPlatform`
+  exportados de `health-scorer.ts`): aplicada em `dal.ts:468` (monthSpend),
+  `progress.ts:207` (localSpend) e no próprio `aggregateSnapshots`. Antes
+  `!== 'GA4'` deixava GA4SYNC/NUVEMSHOP no conjunto "ads" (hoje spend nulo, mas
+  divergente por design de `monthRoas`).
+- **A-010 — funil do portal fecha com o faturamento** (`src/lib/portal/kpis.ts`):
+  etapa "Compraram" via `aggregateSnapshots('CONVERSIONS', 'ECOMMERCE')`
+  (GA4SYNC>GA4/dia); topo do funil (sessões/carrinho/checkout) segue GA4-only por
+  não ter análogo canônico — fonte única POR MÉTRICA, não homogeneização cega.
+- **Fora de escopo (reportado, não corrigido):** os demais `!== 'GA4'` em cálculos
+  de spend (`dal.ts:698,984,1052,2287`, `api/sync/stream/route.ts:159`,
+  `weekly-report-generator.ts:761`) são a mesma classe do A-006, mas hoje
+  numericamente inertes (GA4SYNC/NUVEMSHOP têm spend nulo). Candidatos a
+  padronizar via `isAdPlatform` num lote futuro.
+
+### 2026-07-17 — Auditoria Sistêmica · Lotes 2 e 3 (pró-rata/projeção/fuso + badges=telas)
+Achados A-002, A-007, A-008, A-109, A-116, A-117, A-118, A-119 (Lote 2) e
+A-104, A-105, A-106, A-107, A-108 (Lote 3) — ver `MATRIZ.md §2.2`. Sem migration.
+Decisões do dono: P2=A, P4=B, P5=B, P6=A, P7=alinhar (status+scope).
+- **FONTE ÚNICA de dia/pró-rata/projeção — `src/lib/metas/pace.ts` (novo).**
+  `spDayInfo(ref)` → `{ spDayStartUtc (00:00Z do dia-parede SP), daysElapsedInMonth,
+  totalDaysInMonth, daysRemaining }`; `projectMonth(actual, daysElapsed, totalDays)`
+  (run-rate); `periodElapsed(start, end, ref)` (espelha a matemática do scorer p/
+  qualquer período); `proRataExpected(metric, target, daysElapsed, totalDays)` e
+  `liveAchievementPct(...)`. Reusam `PRORATE_METRICS`/`LOWER_IS_BETTER`/
+  `computeAchievementPct` — agora **exportados** de `health-scorer.ts` (o scorer
+  NÃO foi alterado no cálculo; só ganhou `export`).
+- **A-007/A-008 — 4 fórmulas de daysElapsed/projeção unificadas:** `getGoalPaceMetrics`
+  (`dal.ts:2851,2922`), KPI projection (`dal.ts:829-838`: no mês corrente usa SP;
+  MTD explícito mantém daysInRange), `progress.ts:76-83,252-255,279` (SP + projectMonth
+  + proRataExpected), `portal/kpis.ts` loadProjection (SP + projectMonth).
+- **A-002 (P2=A) — alvo pró-rata "esperado até hoje" + pct ao vivo:** Client 360
+  "Metas do Mês" passa a usar `paceExpected`/`paceAchievement` de `getGoalPaceMetrics`
+  (não mais `HealthScore.achievementPct` congelado); meta cheia vira secundária;
+  status/health inalterados (`clients/[slug]/page.tsx:211,633-675`). `getReportData`
+  (weekly, `dal.ts:1264-1281`) ganha `expected` (pró-rata da semana via
+  `periodElapsed`) e `pct` ao vivo (`liveAchievementPct`); UI `/reports` atualizada
+  (`reports/page.tsx:160-171`). **Pendências:** carimbo de atualização por-linha
+  não adicionado (evitar redesign); rótulo "dia N" do Client 360 ainda em
+  `kpis.daysElapsed` (server) — cosmético.
+- **A-109/A-117/A-118 — boundary "hoje" das tarefas no dia-parede SP:**
+  `getSidebarCounts.meuDia` e `getMinhaSemana` passam a usar
+  `startOfTodaySaoPaulo(now)` + 24h (antes fuso do servidor deslocava 1 dia entre
+  21–24h SP; operacional/cockpit/aceite já eram SP).
+- **A-116/A-119 — financeiro no mesmo boundary:** `getOverdueInvoices` e
+  `getFinanceiroData` usam `spDayInfo().spDayStartUtc` (00:00Z do dia SP) como
+  `today` (colunas financeiras são `@db.Date`). `api/financeiro/summary/route.ts`
+  reescreve from/to no padrão SP da página (`saoPauloDayStart`, `to` EXCLUSIVO =
+  dia seguinte) e troca todos os `lte`→`lt` (fim do "corta o último dia" e do DRE
+  divergente do endpoint). Fontes de saída do DRE seguem para o Lote 5 (A-115).
+- **Lote 3 — badges = telas (predicados compartilhados em `dal.ts`):**
+  `taskScopeFor(userId, role)` (assignedTo OR carteira), `OPEN_SUPPORT_STATUSES`,
+  `EXCLUDED_ALERT_TYPES`, `pendingCheckinCount(userId, role)`.
+  - **A-104 (P4=B):** badge check-ins = `pendingCheckinCount` (ativos − submetidos
+    da semana), o MESMO número de `getCheckinStats.semCheckin` (antes contava Task
+    OPE-06, model diferente que nunca batia).
+  - **A-105 (P5=B):** badge alertas exclui KPI_DROP/SPIKE_24H via `EXCLUDED_ALERT_TYPES`
+    (igual ao cockpit).
+  - **A-106 (P6=A):** badge alertas segue só `read:false` — mantido por decisão.
+  - **A-107/A-108 (P7):** badge suporte conta `OPEN_SUPPORT_STATUSES` (abertos) com
+    `taskScopeFor`; a tela `/suporte` adota o MESMO `taskScopeFor` (antes só carteira)
+    e segue listando ≠CANCELADO — item atribuído fora da carteira agora aparece nos dois.
+
+### 2026-07-17 — Auditoria Sistêmica · Lote 4 (Atomicidade conversas/streak)
+Achados A-101, A-102, A-103, A-111, A-120 (ver `MATRIZ.md`). Sem migration.
+- **A-101 — outbound de Conversas atômico** (`src/app/actions/conversas.ts`
+  ~101-124): `conversationMessage.create` + `conversation.update({lastMessageAt})`
+  passam a rodar numa única `prisma.$transaction([...])` (mesmo padrão do inbound
+  em `ingest.ts:257`). O envio à Meta (`sendTextMessage`) continua ANTES da
+  transação — ela cobre só a persistência local; a semântica de erro (retorno
+  `{ ok:false }` por `ConversasApiError`) foi preservada. Antes, um crash entre
+  os dois writes desordenava a inbox (ordenada por `lastMessageAt`).
+- **A-102 — reset de não-lidas sem engolir increment concorrente**
+  (`markConversationRead`, conversas.ts ~250-284): trocado `update({unreadCount:0})`
+  absoluto por `updateMany` guardado pelo `lastInboundAt` lido no início da action.
+  Só zera se NENHUM inbound (que faz `unreadCount:{increment:1}` no ingest) chegou
+  entre a leitura e a escrita; se chegou, o guard não casa e o contador permanece
+  — nunca se perde uma não-lida (auto-corrige na próxima abertura).
+  **Decisão/trade-off:** não há campo "última mensagem vista pelo usuário" no
+  schema; um reset exato por-mensagem exigiria essa coluna (registrado como
+  PENDÊNCIA, fora deste lote — sem migration).
+- **A-103 — streak atômico** (`src/services/health-scorer.ts` `updateStreak`,
+  ~501-550): leitura dos `HealthScore` + escrita do `ClientStatusStreak` movidas
+  para uma `prisma.$transaction` interativa, eliminando a janela em que Board e
+  Client 360 liam estados divergentes. O `try/catch` por cliente do batch
+  (`recalculateAllClientsHealth`, regra 7 do CLAUDE.md) foi preservado.
+- **A-120 — streak no fuso SP** (mesmo arquivo/função): `today` e `sinceDay`
+  passam do `new Date().setHours(0,0,0,0)` (fuso do runtime = UTC, "virava" às
+  21h SP) para o UTC-midnight do dia-parede SP
+  (`new Date(\`${saoPauloDateString()}T00:00:00.000Z\`)` + `setUTCHours`), padrão
+  já usado na linha 337 do próprio arquivo.
+- **A-111 — revalidação da tela de Conversas na ingestão**: `revalidatePath(
+  '/conversas')` adicionado 1x POR BATCH nos route handlers que drenam o outbox
+  (`src/app/api/cron/conversas/route.ts` após o loop, só se `processed>0`;
+  `src/app/api/webhooks/meta-whatsapp/route.ts` após o processamento inline, só se
+  houve evento novo — em `try/catch`, jamais derruba o 200 para a Meta). NÃO foi
+  posto no `processChannelEvent` (per-evento) nem no `ingest.ts` (`server-only`).
 
 ### 2026-07-13 — Navegação editável (sidebar como no ClickUp) — backend
 - **Decisão do Marcos:** a sidebar deixa de ser hardcoded e vira uma ÁRVORE
@@ -1245,3 +1425,12 @@ da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
   PipelineBoard (quebrava build + "Contato sem nome") — corrigido.
 
 <!-- deploy: 2026-07-13 força build de produção (Vercel não promoveu o merge #189) -->
+
+### 2026-07-17 — Hotfix Client 360 (P2024 em produção)
+- Sintoma: /clients/[slug] caía no error boundary para clientes com muito
+  histórico (ex.: espaco-barbara-issas). Diagnóstico: 19 queries num único
+  Promise.all + queries novas por request (ACL/nav-tree) esgotavam o pool do
+  Prisma em serverless (P2024 provável; log Vercel pendente de confirmação).
+- Fix: Promise.all dividido em 3 grupos sequenciais (pesados isolados);
+  getClienteTarefas com take (200 abertas + 50 concluídas — antes ilimitado);
+  getClientChat tolera P2002 de double-render (relê em vez de derrubar).
