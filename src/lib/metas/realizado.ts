@@ -7,12 +7,17 @@
  * Client 360 × Client.resultadoRoas na anti-churn), e o ROAS aparecia em 3
  * períodos distintos sem rótulo. Isso fazia os números divergirem entre telas.
  *
- * Aqui existe UMA regra canônica:
- *  - FATURAMENTO / SALES (e-commerce) → Σ GA4 conversionValue (bruto) da janela.
+ * Aqui existe UMA regra canônica (toda via `aggregateSnapshots` do health-scorer,
+ * para não haver duas contas divergentes):
+ *  - FATURAMENTO / SALES (e-commerce) → receita com precedência GA4SYNC>GA4 POR
+ *    DIA (loja real via GA4Sync > atribuído GA4); cliente só-GA4Sync é medido.
  *  - Métricas de anúncio (LEADS/MENSAGENS/CONVERSIONS/SPEND/…) → soma das
- *    plataformas de anúncio, via a MESMA agregação do health-scorer
- *    (`aggregateSnapshots`), para não haver duas contas divergentes.
+ *    plataformas de anúncio (GA4/GA4SYNC/NUVEMSHOP excluídos do investimento).
  *  - ROAS → revenue ÷ spend da MESMA janela (nunca mistura semana com MTD).
+ *
+ * A janela SEMANA_FECHADA é IDÊNTICA à do resultado-engine (getWeekRange(hoje-7d))
+ * e ambos consomem `aggregateSnapshots`: por isso Client.resultadoRoas volta a
+ * bater com o realizado desta fonte (promessa restaurada no Lote 1).
  *
  * Janelas padronizadas (fuso America/Sao_Paulo, reusando os helpers de utils):
  *  - MTD             → 1º dia do mês corrente (00:00 SP) até agora.
@@ -149,7 +154,11 @@ export async function getRealizadoForMetrics(
 export async function getRealizadoBatch(
   clients: Array<{ id: string; businessType: BusinessType }>,
   metric: MetricType,
-  periodo: RealizadoPeriodo,
+  // Aceita período canônico OU janela explícita {start,end,label}: telas com
+  // navegação de mês (ex.: /agency/metas em meses PASSADOS) passam a janela do
+  // mês exibido e continuam usando a MESMA agregação canônica — só a fatia de
+  // tempo muda. Sem isso, mês passado caía em cálculo GA4-only divergente (A-005).
+  periodo: PeriodoOuJanela,
 ): Promise<Map<string, Realizado>> {
   const janela = resolveJanela(periodo)
   const out = new Map<string, Realizado>()

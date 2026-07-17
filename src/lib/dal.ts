@@ -10,7 +10,7 @@ import { normalizeRole, stripSensitive, scopeClients, isRevenueMetric } from './
 import { readCronHeartbeat, CRON_STALE_HOURS } from './cron-heartbeat'
 import { getRealizadoForMetrics } from './metas/realizado'
 import { RATE_METRICS } from '@/services/weekly-goals-sync'
-import { LOWER_IS_BETTER, aggregateSnapshots, type AggregatableSnapshot } from '@/services/health-scorer'
+import { LOWER_IS_BETTER, aggregateSnapshots, isAdPlatform, type AggregatableSnapshot } from '@/services/health-scorer'
 import { deriveOverallStatus, selectCanonicalScores } from './health-derive'
 import { ALERT_GOVERNANCE, GOVERNANCE_ROLE_LABELS, ALERT_TYPE_LABELS as ALERT_HEALTH_LABELS } from './alerts/governance-config'
 
@@ -465,7 +465,11 @@ async function _fetchClientsList(userId: string, role: string) {
   for (const s of allSnaps) {
     if (!snapsByClient.has(s.clientId)) snapsByClient.set(s.clientId, [])
     snapsByClient.get(s.clientId)!.push(toAgg(s))
-    if (s.platformAccount.platform !== 'GA4') {
+    // monthSpend na definição CANÔNICA (A-006): só plataformas de anúncio.
+    // `isAdPlatform` exclui GA4/GA4SYNC/NUVEMSHOP — antes `!== 'GA4'` deixava
+    // GA4SYNC/NUVEMSHOP no somatório (spend nulo hoje, mas divergente por design
+    // de monthRoas, que já usa aggregateSnapshots→isAdPlatform).
+    if (isAdPlatform(s.platformAccount.platform)) {
       spendByClient.set(s.clientId, (spendByClient.get(s.clientId) ?? 0) + Number(s.spend ?? 0))
     }
   }

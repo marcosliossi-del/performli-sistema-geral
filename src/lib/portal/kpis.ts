@@ -162,13 +162,18 @@ function resolveWindows(period: PortalPeriod, now: Date = new Date()): Window {
 // ── Cálculo ───────────────────────────────────────────────────────────────────
 
 /**
- * Soma de um campo cru GA4 (`clicks`=sessões, `newUsers`=clientes novos, etc.)
- * dos snapshots de plataforma GA4. Retorna null quando não há snapshot GA4 ou o
+ * Soma de um campo cru GA4 (`clicks`=sessões, `newUsers`=clientes novos) dos
+ * snapshots de plataforma GA4. Retorna null quando não há snapshot GA4 ou o
  * total é 0 (sem dado no período), coerente com `aggregateSnapshots`.
+ *
+ * A-010 (fonte única POR MÉTRICA): estas métricas de TOPO de funil (sessões,
+ * novos usuários) só existem no GA4 — NÃO têm análogo canônico em
+ * `aggregateSnapshots` e permanecem GA4-only de propósito. Só métricas com
+ * análogo (ex.: CONVERSIONS = "Compraram") migram para a agregação canônica.
  */
 function sumGa4Field(
   snaps: PortalSnapshot[],
-  field: 'clicks' | 'newUsers' | 'addToCarts' | 'checkoutsStarted' | 'conversions',
+  field: 'clicks' | 'newUsers' | 'addToCarts' | 'checkoutsStarted',
 ): number | null {
   const ga4 = snaps.filter((s) => s.platformAccount.platform === 'GA4')
   if (ga4.length === 0) return null
@@ -289,26 +294,36 @@ async function loadFunnel(clientId: string, period: PortalPeriod): Promise<Porta
   const win = resolveWindows(period)
 
   // UMA query, filtrando clientId (defesa em profundidade), só da janela ATUAL
-  // (o funil não compara com período anterior). Só GA4 tem as etapas.
+  // (o funil não compara com período anterior). Traz GA4 (etapas do funil) E
+  // GA4SYNC (pedidos autoritativos da loja) para a etapa "Compraram" canônica.
   const rows = await prisma.metricSnapshot.findMany({
     where: {
       clientId,
       date: { gte: utcDayStart(win.start), lte: utcDayStart(win.end) },
-      platformAccount: { platform: 'GA4' },
     },
-    select: { clicks: true, addToCarts: true, checkoutsStarted: true, conversions: true },
+    include: { platformAccount: { select: { platform: true } } },
   })
 
+  // Etapas de TOPO do funil (sessões, add-to-cart, checkout) só existem no GA4 —
+  // não têm análogo canônico e permanecem GA4-only (fonte única POR MÉTRICA, não
+  // homogeneização cega). A etapa final "Compraram" tem análogo canônico
+  // (CONVERSIONS) e passa pela MESMA agregação das telas internas — precedência
+  // GA4SYNC>GA4 por dia — para BATER com o card de faturamento/pedidos (A-010).
+  const ga4 = rows.filter((r) => r.platformAccount.platform === 'GA4')
   let sessoes = 0
   let carrinho = 0
   let checkout = 0
-  let compras = 0
-  for (const r of rows) {
+  for (const r of ga4) {
     sessoes += r.clicks != null ? Number(r.clicks) : 0
     carrinho += r.addToCarts != null ? Number(r.addToCarts) : 0
     checkout += r.checkoutsStarted != null ? Number(r.checkoutsStarted) : 0
-    compras += r.conversions != null ? Number(r.conversions) : 0
   }
+  // Portal = lojista ECOMMERCE: CONVERSIONS canônico (GA4SYNC>GA4 por dia).
+  const compras = aggregateSnapshots(
+    rows as unknown as AggregatableSnapshot[],
+    'CONVERSIONS',
+    'ECOMMERCE',
+  ) ?? 0
 
   const stages: FunnelStage[] = [
     { key: 'sessoes', label: 'Visitas', value: sessoes },

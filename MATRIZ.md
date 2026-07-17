@@ -52,6 +52,21 @@
 5. **Lote 5 — Grant × strip × APIs financeiras** [CRITICA, bloqueado pelas Perguntas 8-10]: A-112, A-113, A-114, A-115. Política financeira única no DAL (gate grant-aware + strip coerente).
 6. **Lote 6 — Riscos latentes** [MEDIA/BAIXA]: A-100, A-110, A-111. Constraint/leitura única do statusId; localStorage por usuário + KPI topo consistente; revalidate na ingestão.
 
+## 2.1. Status de correção — Lote 1 (Fase 3 / A3)
+
+> Lote 1 APROVADO por Marcos (Pergunta 1 = A: investimento/ROAS só plataformas
+> de anúncio; a definição do health-scorer é a canônica). Correções aplicadas
+> em working tree (commit pendente de QA).
+
+| ID | Status | Correção |
+|---|---|---|
+| A-001 | ✅ CORRIGIDO | resultado-engine consome `aggregateSnapshots` (FATURAMENTO GA4SYNC>GA4/dia + SPEND só-ads); branch `!hasGa4` → `hasRevenueSource` (GA4 OU GA4SYNC); cliente só-GA4Sync agora tem Resultado. `resultado-engine.ts:94-143,148` |
+| A-003 | ✅ CORRIGIDO | progress.ts: purchases/ticket ECOM via `getRealizadoBatch('CONVERSIONS')` canônico; ticket = revenue÷purchases bate com Client 360. `progress.ts:206,220,232,245` |
+| A-004 | ✅ CORRIGIDO | progress.ts: mês anterior ECOM via `getRealizadoBatch(janelaPrev)`; seta mês-a-mês compara na mesma base. `progress.ts:126-149,281-287` |
+| A-005 | ✅ CORRIGIDO | `getRealizadoBatch` aceita janela explícita; meses passados usam a mesma agregação canônica (fim da divergência com o gráfico de 6 meses). `realizado.ts:149-157`; `progress.ts:188-207` |
+| A-006 | ✅ CORRIGIDO | Constante única `NON_AD_PLATFORMS`/`isAdPlatform` (health-scorer); aplicada em `dal.ts:468`, `progress.ts:207`, health-scorer:99. monthSpend/localSpend alinhados à def. canônica. |
+| A-010 | ✅ CORRIGIDO | portal/kpis.ts: etapa "Compraram" via `aggregateSnapshots('CONVERSIONS')` (bate com faturamento/pedidos); topo do funil (sessões/carrinho/checkout) segue GA4-only por não ter análogo canônico. `kpis.ts:169-320` |
+
 ## 3. Perguntas ao Marcos (Gate 1 — LACUNAs)
 
 1. **(A-006)** Investimento/ROAS considera: (A) só plataformas de anúncio (recomendado) ou (B) tudo que não é GA4?

@@ -753,6 +753,39 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-17 — Auditoria Sistêmica · Lote 1 (Precedência GA4SYNC nos cálculos inline)
+Achados A-001, A-003, A-004, A-005, A-006, A-010 (ver `MATRIZ.md`). Sem migration.
+Decisão do dono (Pergunta 1 = A): investimento/ROAS = SÓ plataformas de anúncio;
+a definição do health-scorer (`aggregateSnapshots`) é a ÚNICA fonte de verdade.
+- **A-001 — Resultado semanal canônico** (`src/services/resultado-engine.ts`
+  ~94-148): substituído o cálculo inline GA4-only por `aggregateSnapshots`
+  (FATURAMENTO com precedência GA4SYNC>GA4 por dia; SPEND só de plataformas de
+  anúncio). O branch `!hasGa4 → FALHA/pular` virou `hasRevenueSource` (GA4 **OU**
+  GA4SYNC). **⚠️ `Client.resultadoRoas` MUDA de valor para clientes com dados
+  GA4Sync — esperado e desejado** (loja real > atribuído): o número passa a bater
+  com /agency/metas, Client 360 e o realizado. Clientes ECOMMERCE **só-GA4Sync**,
+  que antes ficavam sem Resultado (`resultado.semDados`), agora são classificados
+  e entram em War Room/alertas quando o ROAS real fica abaixo da meta.
+- **A-003/A-004/A-005 — progress.ts sem ramos GA4-only** (`src/app/actions/progress.ts`):
+  purchases/ticket, mês anterior e meses históricos passam pela mesma fonte
+  canônica do mês corrente. `getRealizadoBatch` foi ampliado para aceitar janela
+  explícita (`realizado.ts:149`), servindo meses passados com a MESMA agregação
+  (fim da divergência com o gráfico de 6 meses). Padrão batch preservado (sem N+1).
+- **A-006 — definição única de spend** (`NON_AD_PLATFORMS`/`isAdPlatform`
+  exportados de `health-scorer.ts`): aplicada em `dal.ts:468` (monthSpend),
+  `progress.ts:207` (localSpend) e no próprio `aggregateSnapshots`. Antes
+  `!== 'GA4'` deixava GA4SYNC/NUVEMSHOP no conjunto "ads" (hoje spend nulo, mas
+  divergente por design de `monthRoas`).
+- **A-010 — funil do portal fecha com o faturamento** (`src/lib/portal/kpis.ts`):
+  etapa "Compraram" via `aggregateSnapshots('CONVERSIONS', 'ECOMMERCE')`
+  (GA4SYNC>GA4/dia); topo do funil (sessões/carrinho/checkout) segue GA4-only por
+  não ter análogo canônico — fonte única POR MÉTRICA, não homogeneização cega.
+- **Fora de escopo (reportado, não corrigido):** os demais `!== 'GA4'` em cálculos
+  de spend (`dal.ts:698,984,1052,2287`, `api/sync/stream/route.ts:159`,
+  `weekly-report-generator.ts:761`) são a mesma classe do A-006, mas hoje
+  numericamente inertes (GA4SYNC/NUVEMSHOP têm spend nulo). Candidatos a
+  padronizar via `isAdPlatform` num lote futuro.
+
 ### 2026-07-17 — Auditoria Sistêmica · Lote 4 (Atomicidade conversas/streak)
 Achados A-101, A-102, A-103, A-111, A-120 (ver `MATRIZ.md`). Sem migration.
 - **A-101 — outbound de Conversas atômico** (`src/app/actions/conversas.ts`
