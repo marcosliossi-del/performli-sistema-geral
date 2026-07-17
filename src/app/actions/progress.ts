@@ -2,7 +2,6 @@
 
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
-import { saoPauloDayStart } from '@/lib/utils'
 import {
   getRealizadoBatch,
   type Realizado,
@@ -67,29 +66,26 @@ export type ClientProgress = {
 export async function fetchMonthProgress(year: number, month: number): Promise<ClientProgress[]> {
   await requireSession()
 
-  // S2-014 (borda): fronteira INFERIOR do mês alinhada ao fuso São Paulo, igual
-  // ao helper canônico realizado.ts (resolveJanela → saoPauloDayStart). `month`
-  // é 0-indexado (getMonth), por isso `month + 1` no rótulo YYYY-MM-DD.
-  // MetricSnapshot.date é @db.Date, então a comparação usa só a parte de data;
-  // o alinhamento evita divergência quando o servidor não roda em UTC e casa a
-  // borda exatamente com /agency/metas. monthEnd permanece local: é usado apenas
-  // como limite superior de mês PASSADO (parte de data) e para totalDays via
-  // getDate() — mantê-lo preserva os números históricos.
-  const monthStart = saoPauloDayStart(`${year}-${pad(month + 1)}-01`)
-  const monthEnd   = new Date(year, month + 1, 0)
+  // QA Onda A (A-004/A-005): bounds contra MetricSnapshot.date (@db.Date =
+  // 00:00Z) DEVEM ser UTC-midnight do dia-parede — o padrão AL-3/AL-4. O
+  // saoPauloDayStart anterior (03:00Z) EXCLUÍA o snapshot do dia 1 do mês,
+  // divergindo do gráfico de 6 meses (bucket calendário UTC).
+  const monthStart = new Date(`${year}-${pad(month + 1)}-01T00:00:00.000Z`)
+  const monthEnd   = new Date(Date.UTC(year, month + 1, 0)) // último dia do mês, 00:00Z
 
   const today      = new Date()
   const todayDay   = today.getDate()
-  const totalDays  = monthEnd.getDate()
+  const totalDays  = monthEnd.getUTCDate()
   // If viewing current month use today's day, otherwise use full month
   const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month
   const daysElapsed    = isCurrentMonth ? Math.max(1, todayDay) : totalDays
   const daysRemaining  = isCurrentMonth ? totalDays - todayDay : 0
   const pctMonthElapsed = daysElapsed / totalDays
 
-  // Previous month bounds
-  const prevStart = new Date(year, month - 1, 1)
-  const prevEnd   = new Date(year, month, 0)
+  // Previous month bounds — mesmo padrão UTC-midnight (coerência dia-1 com o
+  // mês exibido; QA Onda A).
+  const prevStart = new Date(Date.UTC(year, month - 1, 1))
+  const prevEnd   = new Date(Date.UTC(year, month, 0))
 
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
