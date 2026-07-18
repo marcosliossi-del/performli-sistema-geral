@@ -162,7 +162,10 @@ export const NAV_TREE_SEED: SeedGroup[] = [
         label: 'Time de Performance',
         icon: 'Gauge',
         children: [
-          leaf({ label: 'Aceite Operacional', href: '/aceite', spaceKey: 'operacao.aceite', module: 'operacao', icon: 'ShieldCheck' }),
+          // Aceite Operacional saiu do menu (decisão Marcos 2026-07-18): agora
+          // vive embutido no Cockpit como "Radar operacional". /aceite continua
+          // acessível como drill-down ("ver tudo →"). Seed só roda em banco
+          // vazio — em produção a leaf existente deve ser ocultada pelo kebab.
           leaf({ label: 'Registro de Operações', href: '/operations', spaceKey: 'operacao.operations', module: 'operacao', icon: 'FileText' }),
         ],
       }),

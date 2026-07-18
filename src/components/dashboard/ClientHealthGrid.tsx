@@ -5,7 +5,51 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { healthLabels, healthBgClasses } from '@/lib/health'
 import { HealthStatus } from '@prisma/client'
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { formatCurrency } from '@/lib/utils'
+import { TrendingUp, TrendingDown, Minus, Target, Wallet, Activity } from 'lucide-react'
+
+/**
+ * QUADRO CANÔNICO da "Saúde única" (decisão Marcos 2026-07-18): a saúde vive
+ * NUM LUGAR SÓ. Este grid é a única tela que detalha a saúde por cliente; as
+ * demais telas apenas linkam para cá. Consome getUnifiedClientHealthBatch via
+ * a página (campo `unified`), sem cálculo novo no cliente.
+ *
+ * "Atingimento geral" = overallAchievementPct (SEM SPEND). O consumo de budget
+ * (SPEND) vira barra própria rotulada "Consumo do budget" e NÃO pinta o
+ * atingimento (A-121). Status = mesmo enum HealthStatus de sempre.
+ */
+
+/** Métricas de consumo de orçamento — separadas do atingimento (A-121). */
+const BUDGET_METRICS = new Set(['SPEND', 'INVESTMENT'])
+
+/** Rótulo qualitativo do ROAS (o antigo "Resultado", enum ClientResultado). */
+const RESULTADO_LABEL: Record<string, string> = {
+  OTIMO: 'Ótimo', BOM: 'Bom', REGULAR: 'Regular', RUIM: 'Ruim', PESSIMO: 'Péssimo',
+}
+const RESULTADO_COLOR: Record<string, string> = {
+  OTIMO: '#22C55E', BOM: '#34c97a', REGULAR: '#EAB308', RUIM: '#EF4444', PESSIMO: '#ff3b4e',
+}
+
+/** Espelho serializável de UnifiedClientHealth (Date → ISO string na página). */
+export interface UnifiedHealthView {
+  status: HealthStatus | null
+  overallAchievementPct: number | null
+  weeklyRoas: {
+    value: number | null
+    label: string
+    resultado: string | null
+  }
+  monthlyPacing: {
+    realizado: number | null
+    meta: number | null
+    esperadoAteHoje: number | null
+    projecao: number | null
+    pct: number | null
+    semReceitaComGasto: boolean
+  }
+  ga4sync: { connected: boolean }
+  calculatedAt: string
+}
 
 interface ClientHealth {
   id: string
@@ -25,6 +69,7 @@ interface ClientHealth {
   streakDays?: number | null
   streakStatus?: HealthStatus | null
   statusTrend?: 'up' | 'down' | null
+  unified?: UnifiedHealthView | null
 }
 
 interface ClientHealthGridProps {
@@ -72,6 +117,20 @@ function ClientCard({ client }: { client: ClientHealth }) {
       : client.trend === 'down'
       ? 'text-[#EF4444]'
       : 'text-[#87919E]'
+
+  const u = client.unified ?? null
+
+  // "Atingimento geral" — preferimos o valor do unified (SEM SPEND). Fallback ao
+  // legado só se o unified não veio; null = sem performance medível.
+  const atingimento =
+    u?.overallAchievementPct != null ? u.overallAchievementPct : client.achievementPct
+
+  // SPEND vira barra própria; badges de métrica ficam SÓ com performance.
+  const budgetMetric = client.metrics.find((m) => BUDGET_METRICS.has(m.name))
+  const perfMetrics = client.metrics.filter((m) => !BUDGET_METRICS.has(m.name))
+
+  const pacing = u?.monthlyPacing ?? null
+  const roas = u?.weeklyRoas ?? null
 
   return (
     <Link href={`/clients/${client.slug}`}>
@@ -146,21 +205,113 @@ function ClientCard({ client }: { client: ClientHealth }) {
           </div>
         </div>
 
-        {/* Overall progress */}
+        {/* Atingimento geral (SEM SPEND — A-121) */}
         <div className="mb-3">
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs text-[#87919E]">Atingimento geral</span>
             <span className="text-xs font-semibold text-[#EBEBEB]">
-              {Math.round(client.achievementPct)}%
+              {u?.overallAchievementPct == null && client.achievementPct === 0
+                ? '—'
+                : `${Math.round(atingimento)}%`}
             </span>
           </div>
-          <Progress value={client.achievementPct} />
+          <Progress value={atingimento} />
+          <p className="text-[9px] text-[#576070] mt-0.5">Sem consumo de budget</p>
         </div>
 
-        {/* Metric badges */}
-        {client.metrics.length > 0 && (
+        {/* Consumo do budget (SPEND) — barra própria, NÃO pinta o atingimento */}
+        {budgetMetric && (
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-[#87919E] flex items-center gap-1">
+                <Wallet size={11} /> Consumo do budget
+              </span>
+              <span className={`text-xs font-semibold ${
+                budgetMetric.pct > 100 ? 'text-[#EF4444]' : 'text-[#EBEBEB]'
+              }`}>
+                {Math.round(budgetMetric.pct)}%
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full bg-[#38435C]/60 overflow-hidden">
+              <div
+                className={`h-full rounded-full ${budgetMetric.pct > 100 ? 'bg-[#EF4444]' : 'bg-[#95BBE2]'}`}
+                style={{ width: `${Math.min(100, budgetMetric.pct)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Pacing mensal compacto (faturamento) */}
+        {pacing && (pacing.meta != null || pacing.realizado != null) && (
+          <div className="mb-3 rounded-lg bg-[#0A1E2C]/60 border border-[#38435C]/50 px-3 py-2 space-y-1">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-[#87919E] uppercase tracking-wider">
+              <Target size={10} /> Pacing do mês
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
+              <PacingCell label="Realizado" value={pacing.realizado} strong />
+              <PacingCell label="Meta" value={pacing.meta} />
+              <PacingCell label="Esperado até hoje" value={pacing.esperadoAteHoje} />
+              <PacingCell
+                label="Projeção"
+                value={pacing.projecao}
+                cls={
+                  pacing.projecao != null && pacing.meta != null
+                    ? pacing.projecao >= pacing.meta ? 'text-[#22C55E]' : 'text-[#EAB308]'
+                    : undefined
+                }
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ROAS semana passada (o antigo "Resultado" vira ISSO) */}
+        {roas && (roas.value != null || roas.resultado) && (
+          <div className="mb-2 flex items-center gap-1.5 text-[11px]">
+            <Activity size={11} className="text-[#87919E] flex-shrink-0" />
+            <span className="text-[#87919E]">ROAS {roas.label}:</span>
+            <span className="font-semibold text-[#EBEBEB] tabular-nums">
+              {roas.value != null ? `${roas.value.toFixed(2)}x` : '—'}
+            </span>
+            {roas.resultado && RESULTADO_LABEL[roas.resultado] && (
+              <span
+                className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                style={{
+                  color: RESULTADO_COLOR[roas.resultado] ?? '#87919E',
+                  background: `${RESULTADO_COLOR[roas.resultado] ?? '#87919E'}1f`,
+                }}
+              >
+                {RESULTADO_LABEL[roas.resultado]}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* GA4Sync + aviso operacional de receita zerada com gasto */}
+        {u && (
+          <div className="mb-2 space-y-1">
+            {u.ga4sync.connected ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#22C55E]">
+                GA4Sync ✓
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#EAB308]">
+                ⚠️ Loja não vinculada
+              </span>
+            )}
+            {pacing?.semReceitaComGasto && (
+              <p className="text-[10px] text-[#EF4444] leading-snug">
+                {u.ga4sync.connected
+                  ? 'R$ 0 de receita com anúncios rodando — sem vendas no período.'
+                  : 'R$ 0 de receita com anúncios rodando — loja GA4Sync não vinculada?'}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Badges de métricas de PERFORMANCE (sem SPEND) */}
+        {perfMetrics.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2">
-            {client.metrics.slice(0, 4).map((m) => (
+            {perfMetrics.slice(0, 4).map((m) => (
               <div
                 key={m.name}
                 className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${healthBgClasses[m.status]}`}
@@ -171,7 +322,27 @@ function ClientCard({ client }: { client: ClientHealth }) {
             ))}
           </div>
         )}
+
+        {/* Carimbo de atualização (regra UX #10) */}
+        {u && (
+          <p className="text-[9px] text-[#576070] mt-3 pt-2 border-t border-[#38435C]/40">
+            Atualizado em {new Date(u.calculatedAt).toLocaleString('pt-BR')}
+          </p>
+        )}
       </div>
     </Link>
+  )
+}
+
+function PacingCell({
+  label, value, strong, cls,
+}: { label: string; value: number | null; strong?: boolean; cls?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-1">
+      <span className="text-[#87919E]">{label}</span>
+      <span className={`tabular-nums ${cls ?? (strong ? 'text-[#EBEBEB] font-semibold' : 'text-[#EBEBEB]')}`}>
+        {value != null ? formatCurrency(value) : '—'}
+      </span>
+    </div>
   )
 }

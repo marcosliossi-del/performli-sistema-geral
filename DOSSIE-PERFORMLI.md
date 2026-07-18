@@ -763,6 +763,81 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-18 — Saúde única (A-009 fatia 2/2) — UI + Radar operacional no Cockpit
+Fatia de FRONTEND da "Saúde única" (consome o contrato de `health-derive.ts` da
+fatia 1). Decisão do Marcos: a saúde vive num LUGAR SÓ (o quadro canônico no
+Cockpit); as demais telas apenas linkam para lá. Sem `npm` (revisão estática).
+
+- **Quadro canônico** (`src/components/dashboard/ClientHealthGrid.tsx`, alimentado
+  pelo Cockpit via `getUnifiedClientHealthBatch`, batch sem N+1): "Atingimento
+  geral" = `overallAchievementPct` (SEM SPEND); SPEND vira barra própria
+  "Consumo do budget" (não pinta o atingimento). Card ganhou pacing mensal
+  compacto (realizado × meta × esperado até hoje × projeção), linha "ROAS
+  {semana passada}: Xx (Ótimo/Péssimo)" (o antigo Resultado), selo "GA4Sync ✓" /
+  "⚠️ Loja não vinculada", aviso operacional quando `semReceitaComGasto`
+  ("R$ 0 de receita com anúncios rodando…") e carimbo "Atualizado em"
+  (`calculatedAt`, regra UX #10). Status = mesmo enum `HealthStatus` (sem escala
+  nova).
+- **Remoções (concentração da saúde num lugar só):**
+  - `AssignmentsClient.tsx`: removidas as colunas ATINGIMENTO e SAÚDE; no lugar,
+    link discreto "ver saúde →" (→ Client 360). Cliente/gestor/plataformas
+    mantidos.
+  - `ClientesTable.tsx`: removida a coluna "RESULTADO (ROAS · sem. passada)"
+    inteira; no lugar, coluna enxuta "SAÚDE" com link "saúde →" (→ Client 360),
+    sem selo nem %. Decisão registrada: concentrar, não repetir sinal.
+  - `MetasDashboard.tsx`: sem alteração — a tela NÃO tinha selo de saúde
+    duplicado; seus indicadores são de pacing (função da tela). Gestores "—"
+    permanecem (dado, não bug).
+  - Client 360 (`clients/[slug]/page.tsx`): cabeçalho usa o selo único do
+    unified (`headerStatus`); a faixa `ResultadoStrip` troca o par confuso
+    (Resultado GA4-only) por "ROAS {semana} + rótulo (Ótimo/Péssimo)" do unified.
+    Etapa (Escala/Otimização/Monitoramento) PERMANECE (ciclo de vida, não saúde).
+- **Radar operacional no Cockpit** (escopo adicional aprovado 2026-07-18): o
+  Aceite Operacional passa a viver DENTRO do Cockpit
+  (`src/components/cockpit/RadarOperacional.tsx`, reusa `getAceiteOperacional` —
+  nenhum recálculo). Só crítico/atenção viram cards de ação; "Sob controle" vira
+  linha discreta expansível ("✓ N verificações em dia"). Carimbo "Atualizado
+  em" mantido. `/aceite` continua como drill-down ("ver tudo →") e SAIU do menu:
+  leaf removida do `NAV_TREE_SEED` (`nav-tree-shared.ts`). ATENÇÃO OPERACIONAL:
+  o seed só roda em banco vazio — em produção o Marcos deve ocultar a leaf
+  "Aceite Operacional" via kebab "Ocultar da navegação" (sem migration de dados).
+
+### 2026-07-18 — Saúde única (A-009 fatia 1/2 · A-121) — camada de dados
+Decisão do Marcos (2026-07-18): concentrar o health score numa visualização
+única e correta; UM selo de saúde por cliente em TODAS as telas; aposentar o
+eixo paralelo "Resultado" (A-009, decisão 3=A). Sem migration (revisão estática,
+`npm` bloqueado). Esta é a fatia de BACKEND; a UI (grid/lista/Client 360) muda
+na fatia 2.
+
+- **A-121 (novo achado) — SPEND inflava o "atingimento geral".** A média de
+  `achievementPct` incluía métricas de consumo de orçamento (SPEND/INVESTMENT).
+  Uma meta de SPEND com 694% (estouro de budget) puxava a média p/ cima: cliente
+  com ROAS 31% + FATURAMENTO 4% + SPEND 694% aparecia com "243% atingimento
+  geral" e selo Crítico. Correção na FONTE:
+  - `src/services/health-scorer.ts`: nova constante canônica
+    `BUDGET_CONSUMPTION_METRICS = {SPEND, INVESTMENT}` (ao lado de
+    LOWER_IS_BETTER/PRORATE_METRICS).
+  - `src/lib/health-derive.ts`: novo helper puro `overallAchievementPct(scores)`
+    = média EXCLUINDO budget; retorna `null` quando não há métrica de
+    performance na janela.
+  - `src/lib/dal.ts`: os 5 sites que faziam a média inline agora passam pela
+    fonte única — `getDashboardData`, `_fetchClientsList`, `getManagersOverview`,
+    `getManagerStats`, `getAssignmentsData`. SPEND continua como meta individual
+    (barra própria, semântica "consumo do budget") na lista `metrics`.
+- **A-009 fatia 1/2 — saúde unificada (backend).** `src/lib/health-derive.ts`:
+  `getUnifiedClientHealth(clientId)` + `getUnifiedClientHealthBatch(clientIds)`
+  (batch SEM N+1: healthScores 1 findMany, goals 1 findMany, GA4SYNC presença 1
+  findMany, getRealizadoBatch × FATURAMENTO/SPEND/ROAS). Contrato
+  `UnifiedClientHealth`: `{ status (HealthStatus, MESMO enum — sem escala nova),
+  overallAchievementPct (sem SPEND), weeklyRoas {value,label,resultado}
+  (Resultado ANTIGO vira sub-informação), monthlyPacing {realizado,meta,
+  esperadoAteHoje,projecao,pct,semReceitaComGasto}, ga4sync {connected},
+  calculatedAt }`. Diagnóstico dos zerados: `monthlyPacing.semReceitaComGasto`
+  (ECOMMERCE, realizado=0, spend>0) + `ga4sync.connected` p/ a UI distinguir
+  "loja GA4Sync não vinculada?" de "sem vendas mesmo". Reusa fontes únicas
+  (aggregateSnapshots via getRealizadoBatch; pace.ts) — nenhum cálculo novo
+  inline. DAL legada intacta (compat de tipos); a fatia 2 troca os consumidores.
+
 ### 2026-07-17 — Auditoria Sistêmica · Lotes 5 e 6 (Grant × strip financeiro; DRE único; riscos latentes)
 Achados A-112, A-113, A-114, A-115 (Lote 5) e A-100, A-110 (Lote 6). Sem migration
 (revisão estática — `npm` bloqueado). Decisões do Marcos: P8=B, P9=B, P10=B.

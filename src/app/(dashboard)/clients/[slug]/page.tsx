@@ -22,7 +22,7 @@ import { Progress } from '@/components/ui/progress'
 import { healthLabels, healthBgClasses } from '@/lib/health'
 import { HealthStatus } from '@prisma/client'
 import { formatCurrency, formatNumber, timeAgo, getWeekRange, getMonthRange, tabSlug } from '@/lib/utils'
-import { deriveOverallStatus } from '@/lib/health-derive'
+import { deriveOverallStatus, getUnifiedClientHealth } from '@/lib/health-derive'
 import { getRealizadoForMetrics } from '@/lib/metas/realizado'
 import { Target, BookOpen, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { ClientContractCard } from '@/components/clients/ClientContractCard'
@@ -163,7 +163,7 @@ export default async function ClientDetailPage({
     getLatestCampaignInsight(client.id),
   ])
 
-  const [interactions, healthHistory, activeContract, clienteTarefas, resultadoInfo, checkinInfo] = await Promise.all([
+  const [interactions, healthHistory, activeContract, clienteTarefas, resultadoInfo, checkinInfo, unifiedHealth] = await Promise.all([
     getClientInteractions(client.id),
     getHealthScoreHistory(client.id, 8),
     prisma.contract.findFirst({
@@ -193,6 +193,8 @@ export default async function ClientDetailPage({
         proximosPassos: true, pedidosCliente: true, novosSeguidores: true, submittedAt: true,
       },
     }),
+    // Saúde unificada (fonte única) — selo + ROAS da semana rotulado no cabeçalho.
+    getUnifiedClientHealth(client.id),
   ])
 
   // Ficha de CS / check-in — staff amplo (ADMIN/CS/SUPERVISOR/ANALISTA) edita
@@ -243,6 +245,9 @@ export default async function ClientDetailPage({
     pageWeekStart,
     pageMonthStart,
   )
+  // Selo único = fonte unificada (mesmo enum). Fallback à derivação local se o
+  // unified não veio (ex.: cliente sem score na janela).
+  const headerStatus: HealthStatus | null = unifiedHealth?.status ?? overallStatus
 
   const STATUS_RANK_PAGE: Record<HealthStatus, number> = { RUIM: 0, REGULAR: 1, OTIMO: 2 }
   const streakStatus = client.statusStreak?.status ?? null
@@ -298,7 +303,7 @@ export default async function ClientDetailPage({
                     </p>
                   )}
                 </div>
-                {overallStatus && (
+                {headerStatus && (
                   <div className="flex items-center gap-0.5">
                     {headerStatusTrend === 'up' && (
                       <span className="text-[#22C55E] text-sm font-bold leading-none">↑</span>
@@ -306,8 +311,8 @@ export default async function ClientDetailPage({
                     {headerStatusTrend === 'down' && (
                       <span className="text-[#EF4444] text-sm font-bold leading-none">↓</span>
                     )}
-                    <Badge variant={overallStatus.toLowerCase() as 'otimo' | 'regular' | 'ruim'}>
-                      {healthLabels[overallStatus]}
+                    <Badge variant={headerStatus.toLowerCase() as 'otimo' | 'regular' | 'ruim'}>
+                      {healthLabels[headerStatus]}
                     </Badge>
                   </div>
                 )}
@@ -358,13 +363,15 @@ export default async function ClientDetailPage({
 
       {/* ══ VISÃO GERAL ══ */}
       <section id="sec-visao-geral" className={secCls('sec-visao-geral')}>
-      {/* Resultado da semana (automação ROAS/GA4) */}
-      {resultadoInfo?.resultado && (
+      {/* ROAS da semana passada (fonte unificada) + Etapa (ciclo de vida —
+          PERMANECE, não é saúde). Substitui o par confuso resultado/etapa. */}
+      {(unifiedHealth?.weeklyRoas.value != null || unifiedHealth?.weeklyRoas.resultado || resultadoInfo?.etapa) && (
         <ResultadoStrip
-          resultado={resultadoInfo.resultado}
-          etapa={resultadoInfo.etapa}
-          roas={resultadoInfo.resultadoRoas != null ? Number(resultadoInfo.resultadoRoas) : null}
-          atualizadoEm={resultadoInfo.resultadoUpdatedAt ? resultadoInfo.resultadoUpdatedAt.toISOString() : null}
+          resultado={unifiedHealth?.weeklyRoas.resultado ?? null}
+          etapa={resultadoInfo?.etapa ?? null}
+          roas={unifiedHealth?.weeklyRoas.value ?? null}
+          roasLabel={unifiedHealth?.weeklyRoas.label ?? 'semana passada'}
+          atualizadoEm={unifiedHealth?.calculatedAt ? unifiedHealth.calculatedAt.toISOString() : null}
         />
       )}
 
@@ -967,26 +974,29 @@ const ETAPA_TXT: Record<string, string> = {
   ESCALA: 'Escala', MONITORAMENTO: 'Monitoramento', OTIMIZACAO: 'Otimização',
 }
 
-function ResultadoStrip({ resultado, etapa, roas, atualizadoEm }: { resultado: string; etapa: string | null; roas: number | null; atualizadoEm: string | null }) {
-  const cor = RESULTADO_COLORS[resultado] ?? '#647488'
+function ResultadoStrip({ resultado, etapa, roas, roasLabel, atualizadoEm }: { resultado: string | null; etapa: string | null; roas: number | null; roasLabel: string; atualizadoEm: string | null }) {
+  const cor = resultado ? (RESULTADO_COLORS[resultado] ?? '#647488') : '#647488'
   return (
     <div className="card p-4 flex flex-wrap items-center gap-x-6 gap-y-2">
+      {/* ROAS da semana passada = o antigo "Resultado" rebaixado a sub-informação. */}
       <div>
-        <p className="text-[10px] uppercase tracking-wider text-[#87919E] mb-1">Resultado da semana</p>
-        <span className="text-sm font-semibold px-2.5 py-1 rounded-full" style={{ color: cor, background: `${cor}1f` }}>
-          {RESULTADO_TXT[resultado] ?? resultado}
-        </span>
+        <p className="text-[10px] uppercase tracking-wider text-[#87919E] mb-1">ROAS {roasLabel}</p>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-mono text-[#EBEBEB] tabular">
+            {roas != null ? `${roas.toFixed(2)}x` : '—'}
+          </span>
+          {resultado && (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ color: cor, background: `${cor}1f` }}>
+              {RESULTADO_TXT[resultado] ?? resultado}
+            </span>
+          )}
+        </div>
       </div>
+      {/* Etapa = ciclo de vida (Escala/Otimização/Monitoramento), NÃO saúde. */}
       {etapa && (
         <div>
           <p className="text-[10px] uppercase tracking-wider text-[#87919E] mb-1">Etapa</p>
           <span className="text-sm text-[#EBEBEB]">{ETAPA_TXT[etapa] ?? etapa}</span>
-        </div>
-      )}
-      {roas != null && (
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-[#87919E] mb-1">ROAS · semana passada</p>
-          <span className="text-sm font-mono text-[#EBEBEB] tabular">{roas.toFixed(2)}x</span>
         </div>
       )}
       {atualizadoEm && (

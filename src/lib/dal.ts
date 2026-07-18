@@ -4,15 +4,15 @@ import { unstable_cache } from 'next/cache'
 import { prisma } from './prisma'
 import { getSession } from './session'
 import { redirect } from 'next/navigation'
-import { HealthStatus, GoalPeriod, Prisma, AlertType, TaskStatus, BusinessType } from '@prisma/client'
+import { HealthStatus, GoalPeriod, Prisma, AlertType, TaskStatus, BusinessType, MetricType } from '@prisma/client'
 import { getWeekRange, getMonthRange, startOfTodaySaoPaulo } from './utils'
 import { normalizeRole, stripSensitive, scopeClients, isRevenueMetric } from './rbac'
 import { readCronHeartbeat, CRON_STALE_HOURS } from './cron-heartbeat'
 import { getRealizadoForMetrics } from './metas/realizado'
 import { spDayInfo, projectMonth, proRataExpected, liveAchievementPct, periodElapsed } from './metas/pace'
 import { RATE_METRICS } from '@/services/weekly-goals-sync'
-import { LOWER_IS_BETTER, aggregateSnapshots, isAdPlatform, type AggregatableSnapshot } from '@/services/health-scorer'
-import { deriveOverallStatus, selectCanonicalScores } from './health-derive'
+import { LOWER_IS_BETTER, aggregateSnapshots, isAdPlatform, BUDGET_CONSUMPTION_METRICS, type AggregatableSnapshot } from '@/services/health-scorer'
+import { deriveOverallStatus, selectCanonicalScores, overallAchievementPct } from './health-derive'
 import { ALERT_GOVERNANCE, GOVERNANCE_ROLE_LABELS, ALERT_TYPE_LABELS as ALERT_HEALTH_LABELS } from './alerts/governance-config'
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
@@ -222,13 +222,12 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
     // Previous reference: last week's weekly scores or previous monthly scores
     const prevScores = allScores.filter((s) => !scores.includes(s))
 
-    const avgOf = (arr: typeof scores) =>
-      arr.length > 0
-        ? arr.reduce((sum, s) => sum + Number(s.achievementPct), 0) / arr.length
-        : 0
-
-    const avgPct = avgOf(scores)
-    const prevAvgPct = avgOf(prevScores)
+    // A-121: "atingimento geral" exclui métricas de consumo de budget
+    // (SPEND/INVESTMENT) — senão o estouro de orçamento infla a média (ex.:
+    // ROAS 31% + FATURAMENTO 4% + SPEND 694% aparecia como "243%"). Fonte única:
+    // overallAchievementPct. null (só budget/sem score) → 0 p/ o campo/tendência.
+    const avgPct = overallAchievementPct(scores) ?? 0
+    const prevAvgPct = overallAchievementPct(prevScores) ?? 0
 
     const trend: 'up' | 'down' | 'stable' =
       scores.length === 0 || prevScores.length === 0
@@ -499,7 +498,7 @@ async function _fetchClientsList(userId: string, role: string) {
       healthScores: {
         // Fetch weekly+monthly; a janela canônica é escolhida no helper.
         where: { periodStart: { gte: fetchFrom } },
-        select: { status: true, achievementPct: true, period: true, periodStart: true },
+        select: { status: true, metric: true, achievementPct: true, period: true, periodStart: true },
       },
     },
     orderBy: { name: 'asc' },
@@ -532,10 +531,8 @@ async function _fetchClientsList(userId: string, role: string) {
     const monthRoas    = aggregateSnapshots(cSnaps, 'ROAS', c.businessType)
     // Janela canônica unificada — mesma régua do grid/tabela.
     const scores = selectCanonicalScores(c.healthScores, weekStart, monthStart)
-    const avgPct =
-      scores.length > 0
-        ? scores.reduce((sum, s) => sum + Number(s.achievementPct), 0) / scores.length
-        : 0
+    // A-121: atingimento geral SEM SPEND/INVESTMENT (fonte única).
+    const avgPct = overallAchievementPct(scores) ?? 0
 
     const overallStatus = deriveOverallStatus(c.healthScores, weekStart, monthStart)
 
@@ -2182,9 +2179,8 @@ export const getManagersOverview = cache(async (): Promise<ManagerWithStats[]> =
 
       const overallStatus = deriveOverallStatus(c.healthScores, weekStart, monthStart)
 
-      const avgPct = scores.length > 0
-        ? Math.round(scores.reduce((s, h) => s + Number(h.achievementPct ?? 0), 0) / scores.length)
-        : null
+      // A-121: atingimento geral SEM SPEND/INVESTMENT (fonte única).
+      const avgPct = overallAchievementPct(scores)
 
       return {
         id: c.id,
@@ -2381,7 +2377,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
       // Fetch weekly+monthly; a janela canônica é escolhida no helper.
       healthScores: {
         where: { periodStart: { gte: fetchFrom } },
-        select: { status: true, achievementPct: true, period: true, periodStart: true },
+        select: { status: true, metric: true, achievementPct: true, period: true, periodStart: true },
       },
       statusStreak: { select: { status: true, prevStatus: true, days: true } },
     },
@@ -2407,7 +2403,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
     : []
 
   type SnapItem = (typeof clients)[number]['metricSnapshots'][number]
-  type HealthItem = { status: HealthStatus; achievementPct: unknown; period: GoalPeriod; periodStart: Date }
+  type HealthItem = { status: HealthStatus; metric: MetricType; achievementPct: Prisma.Decimal; period: GoalPeriod; periodStart: Date }
 
   // Group by manager
   const managerMap = new Map<string, {
@@ -2519,9 +2515,8 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
       // Janela canônica unificada — mesma régua do grid/tabela.
       const canon = selectCanonicalScores(healthScores, weekStart, monthStart)
       const overallStatus = deriveOverallStatus(healthScores, weekStart, monthStart)
-      const avgPct = canon.length > 0
-        ? Math.round(canon.reduce((s, h) => s + Number(h.achievementPct ?? 0), 0) / canon.length)
-        : null
+      // A-121: atingimento geral SEM SPEND/INVESTMENT (fonte única).
+      const avgPct = overallAchievementPct(canon)
       return {
         id, name, slug, overallStatus, hasActiveGoal: goalClientIds.has(id),
         achievementPct: avgPct,
@@ -3492,7 +3487,7 @@ export const getAssignmentsData = cache(async () => {
         },
         healthScores: {
           where: { periodStart: { gte: fetchFrom } },
-          select: { status: true, achievementPct: true, period: true, periodStart: true },
+          select: { status: true, metric: true, achievementPct: true, period: true, periodStart: true },
         },
       },
       orderBy: { name: 'asc' },
@@ -3508,10 +3503,8 @@ export const getAssignmentsData = cache(async () => {
   const clients: AssignmentClientRow[] = rawClients.map((c) => {
     // Janela canônica unificada — mesma régua do grid/tabela.
     const scores = selectCanonicalScores(c.healthScores, weekStart, monthStart)
-    const avgPct =
-      scores.length > 0
-        ? scores.reduce((sum, s) => sum + Number(s.achievementPct), 0) / scores.length
-        : 0
+    // A-121: atingimento geral SEM SPEND/INVESTMENT (fonte única).
+    const avgPct = overallAchievementPct(scores) ?? 0
     const overallStatus = deriveOverallStatus(c.healthScores, weekStart, monthStart)
 
     const primary = c.assignments[0]
@@ -3607,7 +3600,7 @@ export const getHealthScoreHistory = cache(async (clientId: string, weeks = 8): 
       periodStart: { gte: since },
     },
     orderBy: { periodStart: 'asc' },
-    select: { periodStart: true, achievementPct: true, status: true },
+    select: { periodStart: true, achievementPct: true, status: true, metric: true },
   })
 
   // Group by week start
@@ -3615,8 +3608,12 @@ export const getHealthScoreHistory = cache(async (clientId: string, weeks = 8): 
   for (const s of scores) {
     const key = s.periodStart.toISOString().split('T')[0]
     const cur = byWeek.get(key) ?? { sum: 0, count: 0, statuses: [] }
-    cur.sum += Number(s.achievementPct)
-    cur.count++
+    // A-121: métricas de consumo de budget (SPEND/INVESTMENT) fora da média do
+    // sparkline — mesma régua do atingimento geral do selo.
+    if (!BUDGET_CONSUMPTION_METRICS.has(s.metric)) {
+      cur.sum += Number(s.achievementPct)
+      cur.count++
+    }
     cur.statuses.push(s.status)
     byWeek.set(key, cur)
   }

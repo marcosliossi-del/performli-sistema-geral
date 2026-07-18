@@ -51,6 +51,16 @@ export const PRORATE_METRICS: Set<MetricType> = new Set([
   'IMPRESSIONS', 'CLICKS', 'REACH',
 ])
 
+// A-121: métricas de CONSUMO DE ORÇAMENTO. Semanticamente medem "quanto do
+// budget foi gasto", NÃO performance de resultado. Uma meta de SPEND com 694%
+// significa estouro de orçamento — não "cliente 694% saudável". Por isso FICAM
+// FORA da média de "atingimento geral" (mas continuam como meta individual com
+// barra própria, rótulo "consumo do budget"). Fonte única desta lista — todo
+// cálculo de média de atingimento deve excluir estas métricas por aqui.
+export const BUDGET_CONSUMPTION_METRICS: Set<MetricType> = new Set([
+  'SPEND', 'INVESTMENT',
+])
+
 // Trend beyond this threshold (in either direction) shifts the status one level.
 const TREND_THRESHOLD_PCT = 20
 
