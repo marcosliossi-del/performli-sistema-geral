@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Search, Plus, MessageCircle, Pencil, ShoppingCart, MapPin } from 'lucide-react'
+import { Search, Plus, MessageCircle, Pencil, ShoppingCart, MapPin, ArrowRight } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { bulkSetBusinessType } from '@/app/actions/updateClient'
 import { ClientIdentity } from '@/components/clients/ClientIdentity'
@@ -29,13 +29,6 @@ export interface ClientRow {
   curva:              string | null
 }
 
-const RESULTADO_CONFIG: Record<string, { label: string; color: string }> = {
-  OTIMO:   { label: 'Ótimo',   color: '#16a34a' },
-  BOM:     { label: 'Bom',     color: '#34c97a' },
-  REGULAR: { label: 'Regular', color: '#e3ad45' },
-  RUIM:    { label: 'Ruim',    color: '#ff5e6a' },
-  PESSIMO: { label: 'Péssimo', color: '#ff3b4e' },
-}
 const ETAPA_CONFIG: Record<string, { label: string; color: string }> = {
   ESCALA:        { label: 'Escala',        color: '#34c97a' },
   MONITORAMENTO: { label: 'Monitoramento', color: '#54e0ee' },
@@ -215,7 +208,9 @@ export function ClientesTable({ clients }: Props) {
               </th>
               <th className="text-left px-3 py-3 font-medium">NOME</th>
               <th className="text-left px-3 py-3 font-medium">TIPO</th>
-              <th className="text-left px-3 py-3 font-medium">RESULTADO<span className="normal-case font-normal text-[#87919E]"> (ROAS · sem. passada)</span></th>
+              {/* Saúde vive num LUGAR SÓ (decisão Marcos 2026-07-18): a lista não
+                  repete selo nem %; só um link para o quadro único (Client 360). */}
+              <th className="text-left px-3 py-3 font-medium">SAÚDE</th>
               <th className="text-left px-3 py-3 font-medium">ETAPA</th>
               <th className="text-left px-3 py-3 font-medium">RELACIONAMENTO</th>
               <th className="text-left px-3 py-3 font-medium">NPS</th>
@@ -277,23 +272,13 @@ export function ClientesTable({ clients }: Props) {
                       </span>
                     </td>
                     <td className="px-3 py-3">
-                      {client.resultado && RESULTADO_CONFIG[client.resultado] ? (
-                        <div title={client.resultadoUpdatedAt ? `Atualizado em ${new Date(client.resultadoUpdatedAt).toLocaleString('pt-BR')}` : undefined}>
-                          <span
-                            className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                            style={{ color: RESULTADO_CONFIG[client.resultado].color, background: `${RESULTADO_CONFIG[client.resultado].color}1f` }}
-                          >
-                            {RESULTADO_CONFIG[client.resultado].label}
-                          </span>
-                          {client.resultadoRoas != null && (
-                            <p className="text-[10px] text-[#87919E] mt-0.5 tabular">ROAS {client.resultadoRoas.toFixed(2)}</p>
-                          )}
-                        </div>
-                      ) : client.businessType === 'LOCAL' || client.businessType === 'B2B' ? (
-                        <span className="text-[10px] text-[#576070]">manual</span>
-                      ) : (
-                        <span className="text-[10px] text-[#576070]">aguardando</span>
-                      )}
+                      <a
+                        href={`/clients/${client.slug}`}
+                        className="inline-flex items-center gap-1 text-[11px] text-[#95BBE2] hover:underline"
+                        title="Abrir a saúde do cliente no quadro único"
+                      >
+                        saúde <ArrowRight size={11} />
+                      </a>
                     </td>
                     <td className="px-3 py-3">
                       {client.etapa && ETAPA_CONFIG[client.etapa] ? (

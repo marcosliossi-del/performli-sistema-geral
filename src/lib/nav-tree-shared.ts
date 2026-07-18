@@ -162,7 +162,10 @@ export const NAV_TREE_SEED: SeedGroup[] = [
         label: 'Time de Performance',
         icon: 'Gauge',
         children: [
-          leaf({ label: 'Aceite Operacional', href: '/aceite', spaceKey: 'operacao.aceite', module: 'operacao', icon: 'ShieldCheck' }),
+          // Aceite Operacional saiu do menu (decisão Marcos 2026-07-18): agora
+          // vive embutido no Cockpit como "Radar operacional". /aceite continua
+          // acessível como drill-down ("ver tudo →"). Seed só roda em banco
+          // vazio — em produção a leaf existente deve ser ocultada pelo kebab.
           leaf({ label: 'Registro de Operações', href: '/operations', spaceKey: 'operacao.operations', module: 'operacao', icon: 'FileText' }),
         ],
       }),
@@ -186,7 +189,9 @@ export const NAV_TREE_SEED: SeedGroup[] = [
         children: [
           leaf({ label: 'Clientes', href: '/clients', spaceKey: 'clientes.lista', module: 'clientes', icon: 'Users' }),
           leaf({ label: 'Central de Comunicação', href: '/canais', spaceKey: 'clientes.canais', module: 'clientes', icon: 'MessagesSquare' }),
-          leaf({ label: 'Relatórios', href: '/reports', spaceKey: 'clientes.reports', module: 'clientes', icon: 'BarChart3' }),
+          // 'Relatórios' (/reports) removida do seed a pedido do Marcos (2026-07-18)
+          // — redundante com o bloco de metas do Client 360; a rota continua viva
+          // como drill-down. Em produção a leaf é ocultada via kebab (nav no banco).
           leaf({ label: 'Acessos do Portal', href: '/portal-acessos', spaceKey: 'clientes.portal-acessos', module: 'gestaoEquipeEquipe', icon: 'KeyRound' }),
         ],
       }),

@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { CheckCircle2, AlertTriangle, Loader2, Search, UserCheck } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Loader2, Search, UserCheck, ArrowRight } from 'lucide-react'
 import { updateClientPrimaryManager } from '@/app/actions/assignments'
 import type { AssignmentClientRow, AssignmentManager } from '@/lib/dal'
-import { healthLabels } from '@/lib/health'
 
 const platformColors: Record<string, string> = {
   META_ADS:    '#1877F2',
@@ -17,12 +16,6 @@ const platformIcons: Record<string, string> = {
   GOOGLE_ADS: 'G',
   GA4:        'A',
   NUVEMSHOP:  'N',
-}
-
-const statusColor: Record<string, string> = {
-  OTIMO:   'text-[#22C55E] bg-[#22C55E]/10',
-  REGULAR: 'text-[#F59E0B] bg-[#F59E0B]/10',
-  RUIM:    'text-[#EF4444] bg-[#EF4444]/10',
 }
 
 function ManagerSelect({
@@ -189,10 +182,9 @@ export function AssignmentsClient({ clients, managers }: Props) {
               <th className="text-left text-xs font-semibold text-[#87919E] uppercase tracking-wider px-4 py-3">
                 Plataformas
               </th>
-              <th className="text-left text-xs font-semibold text-[#87919E] uppercase tracking-wider px-4 py-3 w-40">
-                Atingimento
-              </th>
-              <th className="text-left text-xs font-semibold text-[#87919E] uppercase tracking-wider px-4 py-3">
+              {/* Saúde vive num LUGAR SÓ (decisão Marcos 2026-07-18): esta tela é
+                  só atribuição de gestor; a saúde some daqui e vira link. */}
+              <th className="text-right text-xs font-semibold text-[#87919E] uppercase tracking-wider px-4 py-3">
                 Saúde
               </th>
             </tr>
@@ -231,37 +223,20 @@ export function AssignmentsClient({ clients, managers }: Props) {
                     )}
                   </div>
                 </td>
-                <td className="px-4 py-3.5">
-                  {client.overallStatus ? (
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 max-w-[80px] bg-[#38435C] rounded-full h-1.5">
-                        <div
-                          className="h-1.5 rounded-full bg-[#95BBE2]"
-                          style={{ width: `${Math.min(client.achievementPct, 100)}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-[#87919E] tabular-nums w-8">
-                        {client.achievementPct}%
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="text-xs text-[#87919E]">Sem metas</span>
-                  )}
-                </td>
-                <td className="px-4 py-3.5">
-                  {client.overallStatus ? (
-                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${statusColor[client.overallStatus]}`}>
-                      {healthLabels[client.overallStatus]}
-                    </span>
-                  ) : (
-                    <span className="text-[11px] text-[#87919E]">—</span>
-                  )}
+                <td className="px-4 py-3.5 text-right">
+                  <a
+                    href={`/clients/${client.slug}`}
+                    className="inline-flex items-center gap-1 text-xs text-[#95BBE2] hover:underline"
+                    title="Abrir a saúde do cliente no quadro único"
+                  >
+                    ver saúde <ArrowRight size={12} />
+                  </a>
                 </td>
               </tr>
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-5 py-12 text-center">
+                <td colSpan={4} className="px-5 py-12 text-center">
                   <UserCheck size={28} className="text-[#38435C] mx-auto mb-2" />
                   <p className="text-sm text-[#87919E]">Nenhum cliente encontrado</p>
                 </td>

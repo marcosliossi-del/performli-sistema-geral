@@ -1,10 +1,12 @@
 import Link from 'next/link'
-import { requireSession, getCockpitData, getCheckinStats, getCronHealth, getDashboardData, getCockpitChurnExposure } from '@/lib/dal'
+import { requireSession, getCockpitData, getCheckinStats, getCronHealth, getDashboardData, getCockpitChurnExposure, getAceiteOperacional } from '@/lib/dal'
+import { RadarOperacional } from '@/components/cockpit/RadarOperacional'
 import { ChurnExposureSection } from '@/components/cockpit/ChurnExposureSection'
 import { LastUpdatedBadge } from '@/components/cockpit/LastUpdatedBadge'
 import { CronHealthBanner } from '@/components/cockpit/CronHealthBanner'
 import { OperationalCard } from '@/components/cockpit/OperationalCard'
 import { ClientHealthGrid } from '@/components/dashboard/ClientHealthGrid'
+import { getUnifiedClientHealthBatch } from '@/lib/health-derive'
 import { Card } from '@/components/ui/card'
 import { timeAgo } from '@/lib/utils'
 import { AlertType } from '@prisma/client'
@@ -65,15 +67,40 @@ function SectionHeader({ title, hint }: { title: string; hint?: string }) {
 export default async function CockpitPage() {
   const { userId, role } = await requireSession()
   // Tudo em UM Promise.all — nenhum N+1, loaders já existentes.
-  const [data, checkins, cronHealth, dashboard, churnExposure] = await Promise.all([
+  const [data, checkins, cronHealth, dashboard, churnExposure, aceite] = await Promise.all([
     getCockpitData(userId, role),
     getCheckinStats(userId, role),
     getCronHealth(role),
     getDashboardData(userId, role),
     getCockpitChurnExposure(role),
+    getAceiteOperacional(userId, role),
   ])
 
   const { clients, alerts, oscillationAlerts, lastSyncAt } = dashboard
+
+  // QUADRO CANÔNICO da saúde (decisão Marcos 2026-07-18): a saúde detalhada vive
+  // SÓ aqui. Enriquecemos o grid com o contrato unificado (batch, sem N+1):
+  // atingimento SEM spend, pacing, ROAS da semana, GA4Sync e carimbo.
+  const unifiedMap = await getUnifiedClientHealthBatch(clients.map((c) => c.id))
+  const healthClients = clients.map((c) => {
+    const u = unifiedMap.get(c.id)
+    return {
+      ...c,
+      // Atingimento geral SEM SPEND (A-121) — preferimos o valor do unified.
+      achievementPct: u?.overallAchievementPct ?? c.achievementPct,
+      overallStatus: u?.status ?? c.overallStatus,
+      unified: u
+        ? {
+            status: u.status,
+            overallAchievementPct: u.overallAchievementPct,
+            weeklyRoas: u.weeklyRoas,
+            monthlyPacing: u.monthlyPacing,
+            ga4sync: u.ga4sync,
+            calculatedAt: u.calculatedAt.toISOString(),
+          }
+        : null,
+    }
+  })
 
   return (
     <div className="space-y-8">
@@ -105,6 +132,9 @@ export default async function CockpitPage() {
           <LastUpdatedBadge at={data.ultimaAtualizacao} />
         </div>
       </div>
+
+      {/* ─── 0. RADAR OPERACIONAL (Aceite Operacional embutido) ──────────── */}
+      <RadarOperacional signals={aceite.signals} geradoEm={aceite.geradoEm} />
 
       {/* ─── 1. O QUE ESTÁ ERRADO AGORA ─────────────────────────────────── */}
       <section className="space-y-3">
@@ -253,7 +283,7 @@ export default async function CockpitPage() {
               Ver todos →
             </Link>
           </div>
-          <ClientHealthGrid clients={clients} />
+          <ClientHealthGrid clients={healthClients} />
         </div>
       </section>
 
