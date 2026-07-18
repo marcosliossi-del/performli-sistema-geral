@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/prisma'
 import { recalculateClientHealth } from '@/services/health-scorer'
+import { runResultadoUpdate } from '@/services/resultado-engine'
 import { dispatchAlertsForClient } from '@/services/alert-dispatcher'
 import { getSession } from '@/lib/session'
 import { z } from 'zod'
@@ -9,6 +10,8 @@ import { z } from 'zod'
 // Permissivo: clientId opcional (corpo vazio {} = recalcula todos, ADMIN/CRON).
 const bodySchema = z.object({
   clientId: z.string().optional(),
+  /** ADMIN/CRON, sem clientId: também roda o Resultado semanal (engine). */
+  recalcResultado: z.boolean().optional(),
 })
 
 /**
@@ -51,7 +54,7 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     )
   }
-  const { clientId } = parsed.data
+  const { clientId, recalcResultado } = parsed.data
 
   // Determine which clients to process
   let clientIds: string[]
@@ -107,6 +110,18 @@ export async function POST(request: NextRequest) {
     { created: 0, updated: 0, alerts: 0 }
   )
 
+  // Resultado semanal (engine) — só no recálculo GERAL por ADMIN/CRON. force:
+  // reprocessa mesmo se já rodou na semana (botão "Recalcular saúde (todos)").
+  let resultado: { ok: boolean; error?: string } | null = null
+  if (recalcResultado && !clientId && (isCron || sessionRole === 'ADMIN')) {
+    try {
+      await runResultadoUpdate({ force: true })
+      resultado = { ok: true }
+    } catch (err) {
+      resultado = { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
   // Invalidate Next.js page cache so the cockpit reloads with fresh health scores
   revalidatePath('/cockpit', 'page')
   revalidatePath('/clients', 'page')
@@ -115,6 +130,7 @@ export async function POST(request: NextRequest) {
     ok: true,
     clientsProcessed: clientIds.length,
     ...totals,
+    resultado,
     results,
   })
 }

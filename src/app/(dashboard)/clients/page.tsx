@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { requireSession, countInadimplentes } from '@/lib/dal'
 import { formatCurrency } from '@/lib/utils'
 import { ClientesTable } from '@/components/clientes/ClientesTable'
+import { RecalcularTudoButton } from '@/components/clients/RecalcularTudoButton'
 import { normalizeRole, scopeClients } from '@/lib/rbac'
 
 export const dynamic = 'force-dynamic'
@@ -144,9 +145,12 @@ export default async function ClientsPage() {
 
   return (
     <div className="flex flex-col gap-5 p-5 min-h-screen">
-      <div>
-        <h1 className="text-xl font-bold text-[#EBEBEB]">Clientes</h1>
-        <p className="text-sm text-[#87919E] mt-0.5">Gestão de carteira de clientes</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-[#EBEBEB]">Clientes</h1>
+          <p className="text-sm text-[#87919E] mt-0.5">Gestão de carteira de clientes</p>
+        </div>
+        {isAdmin && <RecalcularTudoButton />}
       </div>
 
       {/* KPI cards */}

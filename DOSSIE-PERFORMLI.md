@@ -1434,3 +1434,9 @@ Achados A-101, A-102, A-103, A-111, A-120 (ver `MATRIZ.md`). Sem migration.
 - Fix: Promise.all dividido em 3 grupos sequenciais (pesados isolados);
   getClienteTarefas com take (200 abertas + 50 concluídas — antes ilimitado);
   getClientChat tolera P2002 de double-render (relê em vez de derrubar).
+
+### 2026-07-17 — Botão "Recalcular saúde (todos)" (validação da auditoria)
+- /clients (ADMIN) ganhou recálculo geral imediato: POST /api/sync/health com
+  `recalcResultado:true` → saúde de todos os clientes + Resultado semanal
+  (runResultadoUpdate force). Permite validar a convergência dos Lotes 1-6 sem
+  esperar o cron diário.
