@@ -1515,3 +1515,12 @@ Achados A-101, A-102, A-103, A-111, A-120 (ver `MATRIZ.md`). Sem migration.
   `recalcResultado:true` → saúde de todos os clientes + Resultado semanal
   (runResultadoUpdate force). Permite validar a convergência dos Lotes 1-6 sem
   esperar o cron diário.
+
+### 2026-07-18 — Diagnóstico de Fontes (caso New Man Store)
+- Dados do New Man ~5-17x menores que o GA4 real (Looker). Auditoria do pipeline
+  descartou bugs de código (paginação/upsert/fuso ok); causa provável = vínculo
+  de conta errado/parcial (PlatformAccount.externalId) e/ou GA4Sync de loja
+  parcial suprimindo o GA4 pela precedência; TikTok não é integração suportada
+  (spend TikTok nunca entra — lacuna estrutural registrada).
+- Criada tela ADMIN /diagnostico-fontes: contas vinculadas (externalId +
+  última sync), snapshots 8 dias lado a lado por plataforma, SyncLog recente.

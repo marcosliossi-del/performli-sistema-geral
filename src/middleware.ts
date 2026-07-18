@@ -10,7 +10,7 @@ const STAFF_AUDIENCE = 'performli-staff'
 const PORTAL_AUDIENCE = 'performli-portal'
 
 const PUBLIC_ROUTES = ['/login']
-const PROTECTED_PREFIX = ['/cockpit', '/operacional', '/meu-dia', '/validacoes', '/aceite', '/check-ins', '/processos', '/dashboard', '/clients', '/canais', '/t/', '/operations', '/reports', '/anti-churn', '/ai-agents', '/alerts', '/team', '/agency', '/managers', '/pipeline', '/comercial', '/financeiro', '/knowledge', '/settings', '/portal-acessos', '/suporte', '/recorrencias', '/juridico', '/conversas']
+const PROTECTED_PREFIX = ['/cockpit', '/operacional', '/meu-dia', '/validacoes', '/aceite', '/check-ins', '/processos', '/dashboard', '/clients', '/canais', '/t/', '/operations', '/reports', '/anti-churn', '/ai-agents', '/alerts', '/team', '/agency', '/managers', '/pipeline', '/comercial', '/financeiro', '/knowledge', '/settings', '/portal-acessos', '/diagnostico-fontes', '/suporte', '/recorrencias', '/juridico', '/conversas']
 
 function getSecretKey() {
   const secret = process.env.SESSION_SECRET
