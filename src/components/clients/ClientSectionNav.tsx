@@ -2,15 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { tabSlug } from '@/lib/utils'
 
 export interface ClientSectionAnchor {
   id: string
   label: string
-}
-
-/** 'sec-visao-geral' → 'visao-geral' (slug usado no ?tab=). */
-export function tabSlug(id: string): string {
-  return id.replace(/^sec-/, '')
 }
 
 /**
