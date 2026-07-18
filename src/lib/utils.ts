@@ -33,6 +33,17 @@ export function slugify(text: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+/**
+ * 'sec-visao-geral' -> 'visao-geral' (slug usado no querystring de aba ativa).
+ * Movida para ca (fora de arquivos 'use client') porque e chamada tanto por
+ * Server Components (app/(dashboard)/clients/[slug]/page.tsx) quanto por
+ * Client Components (components/clients/ClientSectionNav.tsx). Um Server
+ * Component nao pode invocar uma funcao exportada por um modulo 'use client'.
+ */
+export function tabSlug(id: string): string {
+  return id.replace(/^sec-/, '')
+}
+
 // AL-4: a fronteira de semana/mês é calculada no fuso America/Sao_Paulo, NÃO no
 // fuso do runtime (UTC na Vercel). Antes, `getDay()`/`setHours()`/`new Date(y,m,1)`
 // usavam a hora local do servidor, então entre 21:00–23:59 SP (00:00–02:59 UTC do
