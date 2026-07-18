@@ -21,7 +21,7 @@ import { Card, CardHeader, CardTitle, CardValue } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { healthLabels, healthBgClasses } from '@/lib/health'
 import { HealthStatus } from '@prisma/client'
-import { formatCurrency, formatNumber, timeAgo, getWeekRange, getMonthRange } from '@/lib/utils'
+import { formatCurrency, formatNumber, timeAgo, getWeekRange, getMonthRange, tabSlug } from '@/lib/utils'
 import { deriveOverallStatus } from '@/lib/health-derive'
 import { getRealizadoForMetrics } from '@/lib/metas/realizado'
 import { Target, BookOpen, TrendingUp, TrendingDown, Minus } from 'lucide-react'
@@ -61,7 +61,7 @@ import { LocalBusinessKPISection } from '@/components/clients/LocalBusinessKPISe
 import { SalesFunnelSection } from '@/components/clients/SalesFunnelSection'
 import { FichaCsPanel } from '@/components/clients/FichaCsPanel'
 import { CheckinReportPanel } from '@/components/clients/CheckinReportPanel'
-import { ClientSectionNav, tabSlug, type ClientSectionAnchor } from '@/components/clients/ClientSectionNav'
+import { ClientSectionNav, type ClientSectionAnchor } from '@/components/clients/ClientSectionNav'
 import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 
 const platformColors: Record<string, string> = {
