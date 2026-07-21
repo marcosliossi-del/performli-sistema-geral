@@ -25,6 +25,9 @@
     "src/app/api/sync/**": {
       "maxDuration": 300
     },
+    "src/app/api/cron/daily/route.ts": {
+      "maxDuration": 800
+    },
     "src/app/api/cron/**": {
       "maxDuration": 300
     },
