@@ -344,6 +344,7 @@ export default async function ClientDetailPage({
               investimentoMeta: client.investimentoMeta != null ? Number(client.investimentoMeta) : null,
               investimentoGoogle: client.investimentoGoogle != null ? Number(client.investimentoGoogle) : null,
               investimentoTiktok: client.investimentoTiktok != null ? Number(client.investimentoTiktok) : null,
+              roasMinimo: client.roasMinimo != null ? Number(client.roasMinimo) : null,
               produtos: client.produtos,
             }}
           />

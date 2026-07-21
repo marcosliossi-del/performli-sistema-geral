@@ -24,6 +24,7 @@ interface ClientData {
   investimentoMeta: number | null
   investimentoGoogle: number | null
   investimentoTiktok: number | null
+  roasMinimo: number | null
   produtos: string[]
 }
 
@@ -32,9 +33,9 @@ interface Props {
   onClose: () => void
 }
 
-// Produtos mais comuns da Arkza (populados na migração do ClickUp). O campo é
-// livre — estas são só sugestões de 1 clique.
-const PRODUTOS_SUGERIDOS = ['Tráfego Pago', 'CRM Zoppy', 'Rastreamento']
+// Tipos de serviço canônicos da Arkza (regra Marcos 2026-07-21). O campo segue
+// livre (não quebra valores existentes) — estas são sugestões de 1 clique.
+const PRODUTOS_SUGERIDOS = ['Tráfego Pago', 'CRM', 'Traqueamento']
 
 const industries = [
   'E-commerce', 'Moda', 'Cosméticos', 'Alimentação',
@@ -61,6 +62,7 @@ export function EditClientModal({ client, onClose }: Props) {
     investimentoMeta: client.investimentoMeta?.toString() ?? '',
     investimentoGoogle: client.investimentoGoogle?.toString() ?? '',
     investimentoTiktok: client.investimentoTiktok?.toString() ?? '',
+    roasMinimo: client.roasMinimo?.toString() ?? '',
   })
   const [produtos, setProdutos] = useState<string[]>(client.produtos)
   const [novoProduto, setNovoProduto] = useState('')
@@ -101,6 +103,12 @@ export function EditClientModal({ client, onClose }: Props) {
   const brl = (n: number) =>
     n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
+  // Faturamento-alvo DERIVADO ao vivo: total × ROAS mínimo (regra Marcos). Espelha
+  // computeMetasFromBudget do backend só para preview; a fonte é o servidor.
+  const roasMin = parse(form.roasMinimo)
+  const faturamentoAlvo =
+    roasMin != null && roasMin > 0 && totalInvestimento > 0 ? totalInvestimento * roasMin : null
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
@@ -122,6 +130,7 @@ export function EditClientModal({ client, onClose }: Props) {
         investimentoMeta: form.investimentoMeta ? parseFloat(form.investimentoMeta) : null,
         investimentoGoogle: form.investimentoGoogle ? parseFloat(form.investimentoGoogle) : null,
         investimentoTiktok: form.investimentoTiktok ? parseFloat(form.investimentoTiktok) : null,
+        roasMinimo: form.roasMinimo ? parseFloat(form.roasMinimo) : null,
       })
       if (result.error) {
         setError(result.error)
@@ -310,15 +319,16 @@ export function EditClientModal({ client, onClose }: Props) {
               />
             </div>
 
-            {/* Budget de mídia planejado por canal. O total é derivado (soma) e
-                alimenta o ROAS esperado = faturamento-alvo ÷ investimento total. */}
+            {/* Budget mensal por plataforma (decisão do Marcos no início do mês).
+                Total é derivado (soma) e, com o ROAS mínimo, deriva as metas do
+                mês: faturamento-alvo = total × ROAS mínimo. */}
             <div className="col-span-2 pt-1">
-              <p className="text-xs font-semibold text-[#EBEBEB]">Investimento em mídia (planejado)</p>
-              <p className="text-[10px] text-[#647488]">Quanto será investido por canal neste ciclo. O total é somado automaticamente.</p>
+              <p className="text-xs font-semibold text-[#EBEBEB]">Budget mensal por plataforma</p>
+              <p className="text-[10px] text-[#647488]">Quanto o cliente disponibiliza este mês por canal. Editável todo início de mês — ao salvar, recalcula as metas do mês.</p>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs text-[#87919E]">Investimento Meta (R$)</label>
+              <label className="text-xs text-[#87919E]">Budget Meta Ads (mês)</label>
               <input
                 value={form.investimentoMeta}
                 onChange={(e) => set('investimentoMeta', e.target.value)}
@@ -331,7 +341,7 @@ export function EditClientModal({ client, onClose }: Props) {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs text-[#87919E]">Investimento Google (R$)</label>
+              <label className="text-xs text-[#87919E]">Budget Google Ads (mês)</label>
               <input
                 value={form.investimentoGoogle}
                 onChange={(e) => set('investimentoGoogle', e.target.value)}
@@ -344,7 +354,7 @@ export function EditClientModal({ client, onClose }: Props) {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs text-[#87919E]">Investimento TikTok (R$)</label>
+              <label className="text-xs text-[#87919E]">Budget TikTok Ads (mês)</label>
               <input
                 value={form.investimentoTiktok}
                 onChange={(e) => set('investimentoTiktok', e.target.value)}
@@ -357,6 +367,20 @@ export function EditClientModal({ client, onClose }: Props) {
             </div>
 
             <div className="space-y-1.5">
+              <label className="text-xs text-[#87919E]">ROAS mínimo</label>
+              <input
+                value={form.roasMinimo}
+                onChange={(e) => set('roasMinimo', e.target.value)}
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Ex.: 3.00"
+                className="w-full h-9 px-3 rounded-lg bg-[#1B2B3A] border border-[#38435C] text-sm text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
+              />
+              <p className="text-[10px] text-[#647488]">Retorno mínimo esperado sobre o investimento. Define a meta de faturamento.</p>
+            </div>
+
+            <div className="space-y-1.5">
               <label className="text-xs text-[#87919E]">Investimento Total (R$)</label>
               <input
                 value={brl(totalInvestimento)}
@@ -366,6 +390,18 @@ export function EditClientModal({ client, onClose }: Props) {
                 className="w-full h-9 px-3 rounded-lg bg-[#0F1F2C] border border-[#38435C] text-sm text-[#95BBE2] font-semibold cursor-not-allowed"
               />
               <p className="text-[10px] text-[#647488]">Soma automática dos três canais. Não é editável.</p>
+            </div>
+
+            <div className="col-span-2 space-y-1.5">
+              <label className="text-xs text-[#87919E]">Faturamento-alvo do mês (derivado)</label>
+              <input
+                value={faturamentoAlvo != null ? brl(faturamentoAlvo) : '—'}
+                readOnly
+                disabled
+                aria-label="Faturamento-alvo derivado (investimento total × ROAS mínimo)"
+                className="w-full h-9 px-3 rounded-lg bg-[#0F1F2C] border border-[#38435C] text-sm text-[#22C55E] font-semibold cursor-not-allowed"
+              />
+              <p className="text-[10px] text-[#647488]">Investimento total × ROAS mínimo. Vira a meta de faturamento do mês (health score).</p>
             </div>
 
             <div className="col-span-2 space-y-1.5">

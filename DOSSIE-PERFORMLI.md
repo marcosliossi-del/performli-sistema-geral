@@ -763,6 +763,49 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-21 — Operação Fundação: Budget mensal → Metas automáticas → Health Score — AGUARDANDO APROVAÇÃO
+Fatia aprovada pelo Marcos: o INVESTIMENTO (budget mensal por plataforma) passa a
+ser a métrica-mãe editável no início de cada mês; a partir dela derivam-se as
+metas do mês (SPEND/FATURAMENTO/ROAS), que o health score já consome. Sem `npm`
+(revisão estática). NÃO commitado — pendente veredito do `guardiao`.
+
+- **Discovery:** `Client.roasMinimo Decimal?(8,2)` JÁ EXISTIA no schema (nenhuma
+  migration necessária). `investimentoMeta/Google/Tiktok` também já existiam.
+- **Fonte única de derivação** (`src/lib/metas/budget.ts`, módulo PURO):
+  `computeMetasFromBudget({investimentoMeta,Google,Tiktok,roasMinimo})` →
+  `spendGoal = soma dos canais`, `faturamentoGoal = spendGoal × roasMinimo`,
+  `roasGoal = roasMinimo`. Nulls tratados: nenhum canal → `spendGoal null`;
+  sem/`≤0` roasMinimo → só `spendGoal`. Testes em `budget.test.ts` (node:test).
+- **INVERSÃO DE DIREÇÃO (regra 12 — mudança registrada):** antes, a action de
+  edição do cliente DERIVAVA `roasMinimo = faturamentoEsperado ÷ investimento`
+  (`projection.roasEsperado`). Agora o `roasMinimo` é INPUT humano e o
+  faturamento é DERIVADO dele. O bloco antigo em `src/app/actions/updateClient.ts`
+  foi substituído. Justificativa: definição literal do Marcos ("com base no
+  investimento, calcular a meta + faturamento/roas esperado").
+- **UPSERT de Goals** (`updateClient`): ao mudar budget OU roasMinimo, faz upsert
+  das Goals MONTHLY do MÊS CORRENTE (SPEND/FATURAMENTO/ROAS) com os valores
+  derivados (só não-null/>0), mesma convenção de data da projeção
+  (`parseDateInput` → meio-dia UTC) para colidir na chave única. AuditLog
+  `goals.auto_from_budget`. `Client.faturamentoEsperado` atualizado como cache.
+- **Convivência com o cron `projetarMetasDoMes`:** a Goal derivada de budget e a
+  projetada usam a MESMA chave `clientId_metric_period_startDate` do mês corrente
+  → o ÚLTIMO a escrever vence. Regra decidida: **budget (decisão humana)
+  SOBRESCREVE a projeção automática do mês corrente**. Meses futuros continuam na
+  projeção. O cron NÃO foi alterado.
+- **Health score:** nada a mudar — `health-derive.ts` já lê `Goal FATURAMENTO
+  MONTHLY.targetValue`; passa a receber a meta derivada do budget.
+- **UI tela Clientes** (`ClientesTable.tsx` + `page.tsx`): coluna única
+  "Invest. Anúncios" virou 4 colunas do print — Invest. Meta · Invest. Google ·
+  Invest. TikTok · ROAS mín. Rodapé com soma dos 3 investimentos (ADMIN); ROAS
+  mín. não soma (é taxa). ROAS mín. visível a todos (meta operacional, não
+  financeiro sensível). Valores vêm do `Client` (fonte única).
+- **Edição início do mês** (`EditClientModal.tsx`): 4 campos editáveis com rótulos
+  pt-BR ("Budget Meta Ads (mês)", "Budget Google Ads (mês)", "Budget TikTok Ads
+  (mês)", "ROAS mínimo") + preview ao vivo de "Faturamento-alvo do mês (derivado)".
+  Salvar dispara a derivação/upsert de Goals no backend.
+- **Tipo de Serviço:** sugestões canônicas atualizadas para "Tráfego Pago", "CRM",
+  "Traqueamento" (campo `produtos` segue livre, não quebra valores existentes).
+
 ### 2026-07-21 — Operação Fundação: tela Clientes reformatada (print do Marcos) — AGUARDANDO APROVAÇÃO
 Ajuste da lista `/clients` para o layout pedido pelo Marcos (referência: ClickUp).
 Sem `npm` (revisão estática). NÃO commitado — pendente veredito do `guardiao` +
@@ -1564,3 +1607,38 @@ Achados A-101, A-102, A-103, A-111, A-120 (ver `MATRIZ.md`). Sem migration.
   das REGRAS TÉCNICAS do CLAUDE.md. Fontes canônicas nomeadas: gestor =
   ClientAssignment(isPrimary); contrato = Contract vigente (Jurídico); saúde =
   getUnifiedClientHealth; realizado = aggregateSnapshots/getRealizado*.
+
+### 2026-07-21 — Status editável (inline + massa) + ciclo de renovação (FUNDACAO)
+- **Tela Clientes — seletor de status.** A célula STATUS virou dropdown-pill
+  (Ativo/Pausado/Cancelado, verde/âmbar/vermelho) editável inline + barra de ação
+  em massa ("Marcar como…") sobre a seleção. Otimista com rollback/toast.
+  Escreve na FONTE ÚNICA `Client.status` (nenhum campo paralelo — regra 0).
+  "Em renovação" NÃO é opção do seletor: é derivado do Contract vigente com
+  status RENOVACAO (Jurídico) e vira badge de leitura âmbar na coluna Período.
+- **Action `updateClientsStatus(ids, status)`** em `src/app/actions/updateClient.ts`:
+  requireSession + papel **ADMIN/SUPERVISOR_TRAFEGO apenas** (GESTOR/ANALISTA/CS
+  não — mudar status, sobretudo CANCELAR, é estrutural: tira o cliente de rotinas
+  e metas e dispara offboarding; gate por papel global, sem posse por-cliente pois
+  esses papéis já mutam toda a base). zod (máx 100 ids), AuditLog
+  `client.status.bulk`, revalidate /clients+/cockpit. CHURNED dispara
+  `runClientOffboarding` por cliente que transitou (try/catch por cliente);
+  PAUSED marca pausedAt/pauseReason só nos que ainda não estavam pausados;
+  ACTIVE limpa pausa + sincroniza pipelineStage=ATIVO.
+- **Ciclo de renovação (adendo Marcos).** Contrato que VENCE deixa de ser
+  renovado em silêncio. Novo fluxo:
+  - Cron diário (step 7c) `flagExpiredContractsForRenewal`: Contract VIGENTE com
+    endDate < hoje (dia-parede SP; @db.Date 00:00Z) → status RENOVACAO + Alert
+    `CONTRACT_EXPIRING_SOON` ("Contrato de {cliente} venceu em {data} — em
+    renovação") + AuditLog `contract.expired_to_renewal`. Idempotente
+    (VIGENTE→RENOVACAO só transita uma vez). try/catch por contrato.
+  - Reativação (status→ACTIVE) renova o contrato RENOVACAO pelo MESMO período
+    (`computeRenewalDates`: duração = endDate−startDate; novo início = fim
+    anterior; novo fim = início+duração) → VIGENTE, em $transaction com a
+    reativação do cliente. AuditLog `contract.auto_renewed_on_reactivation` +
+    toast "Contrato renovado automaticamente até {data}".
+- **SUBSTITUIÇÃO registrada (CLAUDE.md #12).** O antigo
+  `renewExpiredContracts` (renovava contratos vencidos de clientes ATIVOS em
+  silêncio para VIGENTE) foi removido e substituído pelo fluxo acima. Só o cron
+  o usava. Justificativa: decisão do Marcos de tornar a renovação um PROCESSO
+  visível (alerta) em vez de mudança automática invisível. Também em
+  PROJECT_STATE.md.

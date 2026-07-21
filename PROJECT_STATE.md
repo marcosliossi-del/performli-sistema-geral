@@ -59,6 +59,17 @@ com `WarRoomPlanPanel`.
 - 2026-06-30 — `/processos` será catálogo estático (`pops-catalog.ts`), não model.
 - 2026-06-30 — Escalação de 3 semanas implementada já na fatia WAR-14 (fecha o
   caminho crítico do POP), com idempotência via `escalatedAt`.
+- 2026-07-21 — Operação Fundação (Budget→Metas→Health). INVERSÃO de direção em
+  `src/app/actions/updateClient.ts`: removida a derivação `roasMinimo =
+  faturamentoEsperado ÷ investimento` (que usava `projection.roasEsperado`).
+  Agora `roasMinimo` é INPUT humano e `faturamento-alvo = investimento total ×
+  roasMinimo` (novo módulo puro `src/lib/metas/budget.ts`). Justificativa
+  (regra 12): definição literal do Marcos — budget é a métrica-mãe do mês e dela
+  derivam as metas. Ao salvar, upsert das Goals MONTHLY do mês corrente
+  (SPEND/FATURAMENTO/ROAS) que o health score já consome. Convivência com o cron
+  `projetarMetasDoMes`: mesma chave de Goal → budget humano SOBRESCREVE a
+  projeção do mês corrente (último a escrever vence); meses futuros seguem o cron,
+  que NÃO foi alterado. `roasMinimo` já existia no schema → sem migration.
 
 ## BLOQUEIOS_ATIVOS
 - **Build não verificável localmente** (node_modules vazio, registry npm 403).
@@ -386,6 +397,14 @@ D-001…D-009 em `DECISIONS.md` (estado do cliente = server actions + optimistic
 - Fluxo por fatia: branch → PR → Vercel verde → squash merge.
 - Produção com dados reais: 30 clientes, 510 recorrentes, Hub de Suporte ativo.
 - CLAUDE.md continua valendo (auth+papel+posse, AuditLog, migrations aditivas).
+
+## Mudanças estruturais registradas
+- 2026-07-21 (FUNDACAO): removido `renewExpiredContracts` (renovação silenciosa
+  de contratos vencidos p/ VIGENTE) — substituído por
+  `flagExpiredContractsForRenewal` (contrato vencido → RENOVACAO + alerta) +
+  renovação na reativação do cliente (`updateClientsStatus`). Justificativa:
+  decisão do Marcos (adendo) — renovação vira processo visível, não automação
+  invisível. Único caller era o cron diário (step 7c). Detalhes no DOSSIE §15.
 
 ## Handoffs arquivados
 - (nenhum — docs/handoffs/)

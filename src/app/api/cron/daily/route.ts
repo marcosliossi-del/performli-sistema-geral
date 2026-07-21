@@ -30,7 +30,7 @@ import { runReportDeliveryTracker } from '@/services/report-delivery-tracker'
 import { checkCheckins } from '@/services/checkin-monitor'
 import { syncWeeklyGoalsFromMonthly } from '@/services/weekly-goals-sync'
 import { checkContractExpiry } from '@/services/contract-expiry-checker'
-import { renewExpiredContracts } from '@/services/contract-renewal'
+import { flagExpiredContractsForRenewal } from '@/services/contract-renewal'
 import { projetarMetasDoMes } from '@/services/meta-projection'
 import { runTuesdayNpsRitual, runMondayFeedbackReset, runFridayFeedbackSweep } from '@/services/client-feedback-rituais'
 import { isCronAuthorized } from '@/lib/cron-auth'
@@ -555,9 +555,11 @@ async function runDailySync() {
     summary.contractExpiry = { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 
-  // ── Step 7c: Renovação automática de contratos vencidos (cliente ativo) ───
+  // ── Step 7c: Contrato vencido → RENOVAÇÃO + alerta (adendo FUNDACAO) ───────
+  // Substitui a renovação silenciosa: contrato que vence entra em RENOVACAO e
+  // gera alerta ao cliente; a conclusão vem na reativação ou no Jurídico.
   try {
-    const renewResult = await renewExpiredContracts()
+    const renewResult = await flagExpiredContractsForRenewal()
     summary.contractRenewal = { ok: true, ...renewResult }
   } catch (err) {
     summary.contractRenewal = { ok: false, error: err instanceof Error ? err.message : String(err) }

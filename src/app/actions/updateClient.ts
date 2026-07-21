@@ -7,9 +7,14 @@ import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { slugify } from '@/lib/utils'
 import { uniqueClientSlug } from '@/lib/clients/slug'
-import { BusinessType, ProductChangeAction } from '@prisma/client'
-import { investimentoTotal, roasEsperado } from '@/lib/metas/projection'
+import { BusinessType, ClientStatus, ProductChangeAction, MetricType } from '@prisma/client'
+import { computeMetasFromBudget } from '@/lib/metas/budget'
+import { parseDateInput } from '@/lib/tasks/dateInput'
 import { onProductsDowngraded } from '@/services/product-downgrade-automation'
+import { runClientOffboarding } from '@/services/client-offboarding'
+import { computeRenewalDates } from '@/services/contract-renewal'
+import { normalizeRole } from '@/lib/rbac'
+import { z } from 'zod'
 
 export type UpdateClientState = { error?: string; success?: boolean; slug?: string }
 
@@ -40,6 +45,9 @@ export async function updateClient(
     investimentoMeta?: number | null
     investimentoGoogle?: number | null
     investimentoTiktok?: number | null
+    // ROAS mínimo = DECISÃO HUMANA editável no início do mês (regra Marcos
+    // 2026-07-21). A partir dele + budget, derivamos as metas do mês (item abaixo).
+    roasMinimo?: number | null
   }
 ): Promise<UpdateClientState> {
   const session = await requireSession()
@@ -54,6 +62,7 @@ export async function updateClient(
       investimentoMeta: true,
       investimentoGoogle: true,
       investimentoTiktok: true,
+      roasMinimo: true,
       faturamentoEsperado: true,
     },
   })
@@ -101,34 +110,101 @@ export async function updateClient(
   if ('investimentoMeta' in data) updateData.investimentoMeta = data.investimentoMeta ?? null
   if ('investimentoGoogle' in data) updateData.investimentoGoogle = data.investimentoGoogle ?? null
   if ('investimentoTiktok' in data) updateData.investimentoTiktok = data.investimentoTiktok ?? null
+  if ('roasMinimo' in data) updateData.roasMinimo = data.roasMinimo ?? null
 
-  // ROAS esperado é DERIVADO (faturamento-alvo ÷ investimento total) — nunca é
-  // digitado à mão. Sempre que qualquer budget de canal muda, recalculamos.
+  // ── DERIVAÇÃO DE METAS A PARTIR DO BUDGET (regra Marcos 2026-07-21) ─────────
+  // Direção: budget + ROAS mínimo (ambos decisão humana) → metas do mês.
+  //   spend = soma dos canais · faturamento = spend × roasMinimo · roas = roasMinimo
+  // Isto INVERTE a lógica antiga (roasMinimo derivado do faturamento) — agora o
+  // ROAS mínimo é INPUT e o faturamento é DERIVADO. Ver DOSSIE §15.
   const budgetTocado =
     'investimentoMeta' in data ||
     'investimentoGoogle' in data ||
-    'investimentoTiktok' in data
-  if (budgetTocado) {
-    // Valores FINAIS: o que veio no `data` prevalece; o que não veio usa o
-    // valor atual do banco (fallback), para não zerar canais fora desta edição.
-    const metaFinal =
-      'investimentoMeta' in data ? data.investimentoMeta ?? null : num(client.investimentoMeta)
-    const googleFinal =
-      'investimentoGoogle' in data ? data.investimentoGoogle ?? null : num(client.investimentoGoogle)
-    const tiktokFinal =
-      'investimentoTiktok' in data ? data.investimentoTiktok ?? null : num(client.investimentoTiktok)
+    'investimentoTiktok' in data ||
+    'roasMinimo' in data
 
-    const total = investimentoTotal(metaFinal, googleFinal, tiktokFinal)
-    const faturamentoAtual = num(client.faturamentoEsperado)
-    // Sem faturamento-alvo (null) ou sem budget → roasEsperado retorna null;
-    // nesse caso NÃO mexemos no roasMinimo atual (não zeramos).
-    if (faturamentoAtual != null) {
-      const roas = roasEsperado(faturamentoAtual, total)
-      if (roas != null) updateData.roasMinimo = roas
-    }
+  // Valores FINAIS: o que veio no `data` prevalece; o que não veio usa o valor
+  // atual do banco (fallback), para não zerar canais fora desta edição.
+  const metaFinal =
+    'investimentoMeta' in data ? data.investimentoMeta ?? null : num(client.investimentoMeta)
+  const googleFinal =
+    'investimentoGoogle' in data ? data.investimentoGoogle ?? null : num(client.investimentoGoogle)
+  const tiktokFinal =
+    'investimentoTiktok' in data ? data.investimentoTiktok ?? null : num(client.investimentoTiktok)
+  const roasFinal =
+    'roasMinimo' in data ? data.roasMinimo ?? null : num(client.roasMinimo)
+
+  const metas = computeMetasFromBudget({
+    investimentoMeta: metaFinal,
+    investimentoGoogle: googleFinal,
+    investimentoTiktok: tiktokFinal,
+    roasMinimo: roasFinal,
+  })
+
+  // Cache do faturamento esperado na ficha (dado amarrado): reflete a derivação.
+  if (budgetTocado && metas.faturamentoGoal != null) {
+    updateData.faturamentoEsperado = metas.faturamentoGoal
   }
 
   const updated = await prisma.client.update({ where: { id: clientId }, data: updateData })
+
+  // ── UPSERT das Goals MONTHLY do MÊS CORRENTE (SPEND/FATURAMENTO/ROAS) ───────
+  // Só as metas com valor derivado (não-null) são gravadas. Mesma convenção de
+  // data da projeção (parseDateInput → meio-dia UTC) para colidir na chave única
+  // e SOBRESCREVER a projeção automática do mês — budget é decisão humana e vence.
+  if (budgetTocado) {
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const gy = now.getUTCFullYear()
+    const gm = now.getUTCMonth() // 0-based
+    const lastDay = new Date(Date.UTC(gy, gm + 1, 0)).getUTCDate()
+    const goalStart = parseDateInput(`${gy}-${pad(gm + 1)}-01`)
+    const goalEnd = parseDateInput(`${gy}-${pad(gm + 1)}-${pad(lastDay)}`)
+
+    const derivadas: Array<{ metric: MetricType; value: number | null }> = [
+      { metric: 'SPEND', value: metas.spendGoal },
+      { metric: 'FATURAMENTO', value: metas.faturamentoGoal },
+      { metric: 'ROAS', value: metas.roasGoal },
+    ]
+
+    for (const d of derivadas) {
+      if (d.value == null || !(d.value > 0)) continue
+      await prisma.goal.upsert({
+        where: {
+          clientId_metric_period_startDate: {
+            clientId,
+            metric: d.metric,
+            period: 'MONTHLY',
+            startDate: goalStart,
+          },
+        },
+        update: { targetValue: d.value, endDate: goalEnd },
+        create: {
+          clientId,
+          metric: d.metric,
+          period: 'MONTHLY',
+          targetValue: d.value,
+          startDate: goalStart,
+          endDate: goalEnd,
+        },
+      })
+    }
+
+    await writeAuditLog({
+      actorId: session.userId,
+      actorRole: session.role,
+      action: 'goals.auto_from_budget',
+      entityType: 'Goal',
+      entityId: clientId,
+      clientId,
+      metadata: {
+        spendGoal: metas.spendGoal,
+        faturamentoGoal: metas.faturamentoGoal,
+        roasGoal: metas.roasGoal,
+        mes: `${gy}-${pad(gm + 1)}`,
+      },
+    })
+  }
 
   await writeAuditLog({
     actorId: session.userId,
@@ -419,4 +495,171 @@ export async function deleteClient(clientId: string): Promise<UpdateClientState>
   await prisma.client.delete({ where: { id: clientId } })
   revalidatePath('/clients')
   redirect('/clients')
+}
+
+// ─── Status editável inline + em massa (fatia FUNDACAO — tela Clientes) ─────────
+// DADO AMARRADO (CLAUDE.md #0): o seletor de status escreve na FONTE ÚNICA
+// `Client.status` (ACTIVE/PAUSED/CHURNED). "Em renovação" NÃO é opção do seletor
+// — é derivado do Contract vigente (status RENOVACAO, Jurídico) e só aparece como
+// badge de leitura. Aqui NÃO se toca em contrato.
+const bulkStatusSchema = z.object({
+  clientIds: z.array(z.string().min(1)).min(1, 'Selecione ao menos um cliente.').max(100, 'Máximo de 100 clientes por vez.'),
+  status: z.nativeEnum(ClientStatus),
+})
+
+/**
+ * Altera o status de 1..100 clientes de uma vez (usado pela edição inline por
+ * linha E pela barra de ação em massa da tela de Clientes).
+ *
+ * Autorização (CLAUDE.md #2/#3):
+ *  - autenticação: requireSession.
+ *  - papel: SOMENTE ADMIN e SUPERVISOR_TRAFEGO. Mudar status de cliente —
+ *    sobretudo CANCELAR (CHURNED) — é ação ESTRUTURAL: tira o cliente das rotinas
+ *    operacionais (check-in, saúde, churn, War Room, relatório) e das metas
+ *    ativas, e dispara offboarding. Por isso NÃO liberamos para GESTOR_TRAFEGO
+ *    (conflito de interesse: poderia "sumir" com um cliente da própria carteira
+ *    para escapar de cobrança/meta), ANALISTA_TRAFEGO (acesso limitado) nem CS
+ *    (leitura ampla, sem mutação indevida — CLAUDE.md). Como o gate é por PAPEL
+ *    global (não por carteira), não há posse por-cliente a validar: ADMIN e
+ *    SUPERVISOR já enxergam/mutam toda a base (scopeClients vazio p/ esses papéis).
+ *  - log: AuditLog 'client.status.bulk' com status-alvo e contagem.
+ *
+ * Efeitos de estado (espelham as mutações unitárias existentes):
+ *  - ACTIVE:  limpa pausedAt/pauseReason e sincroniza pipelineStage=ATIVO.
+ *  - PAUSED:  marca pausedAt/pauseReason (só nos que ainda NÃO estavam pausados,
+ *             p/ não reescrever "desde quando").
+ *  - CHURNED: sincroniza pipelineStage=CHURNED e dispara runClientOffboarding por
+ *             cliente que REALMENTE transitou p/ CHURNED (try/catch por cliente —
+ *             CLAUDE.md #7: falha em um não derruba os demais nem a rotina).
+ */
+export async function updateClientsStatus(
+  clientIds: string[],
+  status: ClientStatus,
+): Promise<{ updated: number; error?: string; renewedCount?: number; renewedUntil?: string | null }> {
+  const session = await requireSession()
+
+  const parsed = bulkStatusSchema.safeParse({ clientIds, status })
+  if (!parsed.success) {
+    return { updated: 0, error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
+  }
+  const ids = [...new Set(parsed.data.clientIds)]
+
+  // Papel: ADMIN ou SUPERVISOR_TRAFEGO (ver docstring). Deny-by-default.
+  const role = normalizeRole(session.role)
+  if (role !== 'ADMIN' && role !== 'SUPERVISOR_TRAFEGO') {
+    return { updated: 0, error: 'Sem permissão para alterar o status de clientes.' }
+  }
+
+  // Estado ANTES — para detectar transição REAL p/ CHURNED e não repausar quem
+  // já estava pausado.
+  const before = await prisma.client.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, status: true },
+  })
+  const foundIds = before.map((c) => c.id)
+  if (foundIds.length === 0) return { updated: 0, error: 'Nenhum cliente encontrado.' }
+
+  const now = new Date()
+  let renewedCount = 0
+  let renewedUntil: string | null = null
+  if (status === 'PAUSED') {
+    // Só os que NÃO estavam pausados recebem pausedAt/pauseReason novos.
+    const toPause = before.filter((c) => c.status !== 'PAUSED').map((c) => c.id)
+    if (toPause.length > 0) {
+      await prisma.client.updateMany({
+        where: { id: { in: toPause } },
+        data:  { status: 'PAUSED', pausedAt: now, pauseReason: 'Pausado pela tela de Clientes (ação em massa).' },
+      })
+    }
+  } else if (status === 'ACTIVE') {
+    // Reativação renova o contrato em RENOVACAO pelo mesmo período (adendo
+    // FUNDACAO). Contratos em renovação desses clientes (o mais recente por
+    // cliente); a renovação e a reativação vão juntas em $transaction.
+    const renovando = await prisma.contract.findMany({
+      where:   { clientId: { in: foundIds }, status: 'RENOVACAO' },
+      orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+      select:  { id: true, clientId: true, startDate: true, endDate: true },
+    })
+    const contratoPorCliente = new Map<string, (typeof renovando)[number]>()
+    for (const c of renovando) if (!contratoPorCliente.has(c.clientId)) contratoPorCliente.set(c.clientId, c)
+
+    // Clientes SEM contrato em renovação → reativação em massa simples.
+    const semRenov = foundIds.filter((id) => !contratoPorCliente.has(id))
+    if (semRenov.length > 0) {
+      await prisma.client.updateMany({
+        where: { id: { in: semRenov } },
+        data:  { status: 'ACTIVE', pausedAt: null, pauseReason: null, pipelineStage: 'ATIVO' },
+      })
+    }
+
+    // Clientes COM contrato em renovação → status + renovação na MESMA transação
+    // (fonte única de datas: computeRenewalDates). try/catch por cliente (#7).
+    for (const [clientId, contract] of contratoPorCliente) {
+      const { newStart, newEnd } = computeRenewalDates(contract.startDate, contract.endDate)
+      try {
+        await prisma.$transaction([
+          prisma.client.update({
+            where: { id: clientId },
+            data:  { status: 'ACTIVE', pausedAt: null, pauseReason: null, pipelineStage: 'ATIVO', contractStart: newStart, contractEndDate: newEnd },
+          }),
+          prisma.contract.update({
+            where: { id: contract.id },
+            data:  { startDate: newStart, endDate: newEnd, status: 'VIGENTE' },
+          }),
+        ])
+        await writeAuditLog({
+          actorId: session.userId,
+          actorRole: session.role,
+          action: 'contract.auto_renewed_on_reactivation',
+          entityType: 'Contract',
+          entityId: contract.id,
+          clientId,
+          metadata: { newStart: newStart.toISOString(), newEnd: newEnd.toISOString() },
+        })
+        renewedCount++
+        renewedUntil = newEnd.toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+      } catch (err) {
+        console.error(`[contract-renewal] falha ao renovar na reativação de ${clientId}:`, err)
+        // Fallback: ao menos reativa o cliente (não deixa em estado inconsistente).
+        await prisma.client.update({
+          where: { id: clientId },
+          data:  { status: 'ACTIVE', pausedAt: null, pauseReason: null, pipelineStage: 'ATIVO' },
+        }).catch(() => {})
+      }
+    }
+  } else {
+    // CHURNED
+    await prisma.client.updateMany({
+      where: { id: { in: foundIds } },
+      data:  { status: 'CHURNED', pipelineStage: 'CHURNED' },
+    })
+  }
+
+  await writeAuditLog({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: 'client.status.bulk',
+    entityType: 'Client',
+    entityId: foundIds.join(','),
+    metadata: { status, count: foundIds.length },
+  })
+
+  // Offboarding SÓ nos que realmente transitaram para CHURNED (best-effort,
+  // try/catch por cliente — não quebra os demais).
+  if (status === 'CHURNED') {
+    for (const c of before) {
+      if (c.status !== 'CHURNED') {
+        try {
+          await runClientOffboarding(c.id)
+        } catch (err) {
+          console.error(`[offboarding] falha ao rodar runClientOffboarding para ${c.id}:`, err)
+        }
+      }
+    }
+  }
+
+  revalidatePath('/clients')
+  revalidatePath('/cockpit')
+  if (renewedCount > 0) revalidatePath('/juridico')
+  return { updated: foundIds.length, renewedCount, renewedUntil }
 }
