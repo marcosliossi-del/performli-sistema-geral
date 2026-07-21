@@ -57,7 +57,7 @@ export default async function ConversasPage({ searchParams }: Props) {
   const canConfigureChannel = role === 'ADMIN'
 
   const clientsRaw = await getClientsForSelect(session.userId, session.role)
-  const clients = clientsRaw.map((c) => ({ id: c.id, name: c.name }))
+  const clients = clientsRaw.map((c) => ({ id: c.id, name: c.name, razaoSocial: c.razaoSocial ?? null }))
 
   return (
     <div className="flex flex-col gap-4 p-5 h-[calc(100vh-4rem)]">

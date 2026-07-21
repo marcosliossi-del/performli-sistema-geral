@@ -1707,6 +1707,7 @@ export function reguaStep(daysOverdue: number): ReguaStep {
 export type OverdueInvoiceRow = {
   id: string
   clientName: string
+  clientRazaoSocial: string | null
   clientSlug: string | null
   value: number
   dueDate: Date
@@ -1734,7 +1735,7 @@ export const getOverdueInvoices = cache(
         dueDate: true,
         invoiceUrl: true,
         customer: {
-          select: { name: true, client: { select: { name: true, slug: true } } },
+          select: { name: true, client: { select: { name: true, razaoSocial: true, slug: true } } },
         },
       },
     })
@@ -1744,6 +1745,7 @@ export const getOverdueInvoices = cache(
       return {
         id: p.id,
         clientName: p.customer?.client?.name ?? p.customer?.name ?? 'Sem cliente vinculado',
+        clientRazaoSocial: p.customer?.client?.razaoSocial ?? null,
         clientSlug: p.customer?.client?.slug ?? null,
         value: Number(p.value),
         dueDate: p.dueDate,
@@ -1889,6 +1891,7 @@ export const getDreTotals = cache(async (from: Date, to: Date): Promise<DreTotal
 export type AntiChurnQueueRow = {
   id: string
   name: string
+  razaoSocial: string | null
   slug: string
   manager: string | null
   riskScore: number | null
@@ -1915,6 +1918,7 @@ export const getAntiChurnQueue = cache(
       select: {
         id: true,
         name: true,
+        razaoSocial: true,
         slug: true,
         assignments: {
           where: { isPrimary: true },
@@ -1940,6 +1944,7 @@ export const getAntiChurnQueue = cache(
         return {
           id: c.id,
           name: c.name,
+          razaoSocial: c.razaoSocial ?? null,
           slug: c.slug,
           manager: c.assignments[0]?.user?.name ?? null,
           riskScore,
@@ -2101,6 +2106,7 @@ export const getCheckinStats = cache(
 export type ManagerClientRow = {
   id: string
   name: string
+  razaoSocial: string | null
   slug: string
   overallStatus: HealthStatus | null
   // true = tem meta (Goal) vigente. overallStatus null + hasActiveGoal true =
@@ -2185,6 +2191,7 @@ export const getManagersOverview = cache(async (): Promise<ManagerWithStats[]> =
       return {
         id: c.id,
         name: c.name,
+        razaoSocial: c.razaoSocial ?? null,
         slug: c.slug,
         overallStatus,
         hasActiveGoal: c.goals.length > 0,
@@ -2411,6 +2418,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
     clientData: Array<{
       id: string
       name: string
+      razaoSocial: string | null
       slug: string
       snaps: SnapItem[]
       businessType: BusinessType
@@ -2441,6 +2449,7 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
     managerMap.get(user.id)!.clientData.push({
       id: client.id,
       name: client.name,
+      razaoSocial: client.razaoSocial ?? null,
       slug: client.slug,
       snaps: client.metricSnapshots,
       businessType: client.businessType,
@@ -2511,14 +2520,14 @@ export const getManagerStats = cache(async (): Promise<ManagerStat[]> => {
         ? 100
         : null
 
-    const clientRows: ManagerClientRow[] = clientData.map(({ id, name, slug, healthScores, streakDays, streakStatus, statusTrend }) => {
+    const clientRows: ManagerClientRow[] = clientData.map(({ id, name, razaoSocial, slug, healthScores, streakDays, streakStatus, statusTrend }) => {
       // Janela canônica unificada — mesma régua do grid/tabela.
       const canon = selectCanonicalScores(healthScores, weekStart, monthStart)
       const overallStatus = deriveOverallStatus(healthScores, weekStart, monthStart)
       // A-121: atingimento geral SEM SPEND/INVESTMENT (fonte única).
       const avgPct = overallAchievementPct(canon)
       return {
-        id, name, slug, overallStatus, hasActiveGoal: goalClientIds.has(id),
+        id, name, razaoSocial, slug, overallStatus, hasActiveGoal: goalClientIds.has(id),
         achievementPct: avgPct,
         platforms: [], goalsTotal: canon.length,
         goalsHit: canon.filter((s) => s.status === 'OTIMO').length,
@@ -2662,6 +2671,7 @@ export const getClientChurnHistory = cache(async (clientId: string, weeks = 12):
 export type ChurnExposureRow = {
   clientId: string
   clientName: string
+  clientRazaoSocial: string | null
   clientSlug: string | null
   curva: string | null
   scoreV2: number
@@ -2696,7 +2706,7 @@ export const getCockpitChurnExposure = cache(
       where: { weekStart, client: { status: 'ACTIVE' } },
       select: {
         factors: true,
-        client: { select: { id: true, name: true, slug: true, curva: true, feeAmount: true } },
+        client: { select: { id: true, name: true, razaoSocial: true, slug: true, curva: true, feeAmount: true } },
       },
     })
 
@@ -2715,6 +2725,7 @@ export const getCockpitChurnExposure = cache(
       rows.push({
         clientId: s.client.id,
         clientName: s.client.name,
+        clientRazaoSocial: s.client.razaoSocial ?? null,
         clientSlug: s.client.slug,
         curva: s.client.curva,
         scoreV2: v2.score,
@@ -3452,6 +3463,7 @@ export const getClientInteractions = cache(async (clientId: string): Promise<Cli
 export type AssignmentClientRow = {
   id: string
   name: string
+  razaoSocial: string | null
   slug: string
   platforms: string[]
   overallStatus: HealthStatus | null
@@ -3478,6 +3490,7 @@ export const getAssignmentsData = cache(async () => {
       select: {
         id: true,
         name: true,
+        razaoSocial: true,
         slug: true,
         platformAccounts: { where: { active: true }, select: { platform: true } },
         assignments: {
@@ -3512,6 +3525,7 @@ export const getAssignmentsData = cache(async () => {
     return {
       id: c.id,
       name: c.name,
+      razaoSocial: c.razaoSocial ?? null,
       slug: c.slug,
       platforms: [...new Set(c.platformAccounts.map((p) => p.platform))],
       overallStatus,

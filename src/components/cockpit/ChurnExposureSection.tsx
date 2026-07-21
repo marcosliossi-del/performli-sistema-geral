@@ -1,6 +1,6 @@
-import Link from 'next/link'
 import { HelpCircle } from 'lucide-react'
 import { Card } from '@/components/ui/card'
+import { ClientIdentity } from '@/components/clients/ClientIdentity'
 import type { ChurnExposure } from '@/lib/dal'
 
 const BRL = (n: number) =>
@@ -82,16 +82,11 @@ export function ChurnExposureSection({ data }: { data: ChurnExposure }) {
                   return (
                     <tr key={r.clientId} className="border-b border-white/[0.03] last:border-0">
                       <td className="px-3 py-2">
-                        {r.clientSlug ? (
-                          <Link
-                            href={`/clients/${r.clientSlug}`}
-                            className="font-medium text-[#EBEBEB] hover:text-[#95BBE2] hover:underline"
-                          >
-                            {r.clientName}
-                          </Link>
-                        ) : (
-                          <span className="font-medium text-[#EBEBEB]">{r.clientName}</span>
-                        )}
+                        <ClientIdentity
+                          name={r.clientName}
+                          razaoSocial={r.clientRazaoSocial}
+                          href={r.clientSlug ? `/clients/${r.clientSlug}` : undefined}
+                        />
                       </td>
                       <td className="px-3 py-2">
                         <span

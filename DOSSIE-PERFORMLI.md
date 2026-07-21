@@ -763,6 +763,73 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-21 — Identidade do cliente: fantasia + razão social em TODA superfície — AGUARDANDO APROVAÇÃO
+Padrão de UI aprovado pelo Marcos: onde o nome do cliente aparece, exibir o
+**nome fantasia** em destaque e a **razão social** abaixo em texto menor/muted
+(igual à conciliação Asaas × Performli). Fonte canônica: `Client.razaoSocial`
+(migration `20260702050000_client_razao_social`, preenchido = razão exata do
+Asaas, chave de conciliação). NENHUM campo novo criado.
+
+- **Componente canônico (reutilizado, não duplicado):**
+  `src/components/clients/ClientIdentity.tsx` — props `{ name, razaoSocial?, href?, size? }`.
+  Server-safe (sem hooks; usável em Client Components). Refinado nesta fatia:
+  razão social só renderiza quando existe E é diferente do fantasia
+  (case-insensitive, trim); subtexto agora `text-[11px] text-[#647488]` truncado
+  com `title`. (Descartada a criação de `ClientName.tsx` — seria duplicação; o
+  `ClientIdentity` já cobre o padrão pedido.)
+- **DAL (leituras já existentes, mudança aditiva — sem query paralela):**
+  `AntiChurnQueueRow`, `ChurnExposureRow`, `OverdueInvoiceRow`,
+  `ManagerClientRow`, `AssignmentClientRow` ganharam `razaoSocial`/`clientRazaoSocial`
+  no shape e no `select`. `getClientsForSelect` já retornava `razaoSocial`.
+- **Telas cobertas nesta fatia:** Fila anti-churn (`AntiChurnQueue`),
+  Exposição a churn do Cockpit (`ChurnExposureSection`), Fila de cobrança
+  FIN-19 (`InadimplenciaFila`), Atribuição de gestores (`AssignmentsClient`),
+  Acessos do Portal (`PortalAcessosManager` + query da page), select de canal
+  WhatsApp (`ChannelModal`, padrão `Fantasia — Razão` na `<option>`).
+  Já cobertas em fatia anterior (handoff `identidade-cliente.md`): lista
+  `/clients`, header Client 360, `/financeiro` (Movimentações), Suporte,
+  `TaskPanel`, selects de Jurídico e Suporte.
+- **PENDENTE (conflito com a fatia "Saúde única" — NÃO editado):** componentes
+  de saúde do Cockpit em edição pelo outro agente — `ManagerCards`,
+  `ClientHealthGrid`, `OperationalClientTable`, `OperationalTableWithFilter`,
+  `HealthSummaryCards`. `ManagerClientRow`/`AssignmentClientRow` já expõem
+  `razaoSocial` na DAL; basta trocar o render por `ClientIdentity` quando a
+  fatia da Saúde fechar. Sem `npm`/`tsc` (revisão estática). NÃO commitado.
+
+### 2026-07-21 — Saúde única: duas visões (Últimos 7 dias × Resultado do mês) — AGUARDANDO APROVAÇÃO
+Fatia "Operação Fundação · Bloco 1" aprovada pelo Marcos. A seção "Saúde por
+cliente" do Cockpit (`/cockpit`, tela canônica da Saúde única) ganha um toggle
+client-side entre duas visões operacionais, com design limpo (veredito dominante,
+sparkline/barra de progresso, resumo de 5 segundos). Sem `npm`/`tsc` (revisão
+estática). NÃO commitado — pendente `guardiao`.
+
+- **Visão "Últimos 7 dias" (tendência):** faturamento dos últimos 7 dias
+  COMPLETOS vs os 7 anteriores. Novo helper batch
+  `getWeeklyTrendBatch` (`src/lib/health-derive.ts`) — janelas UTC-midnight
+  sobre `MetricSnapshot.date @db.Date`, ancoradas no dia-parede SP via
+  `spDayInfo` (NUNCA `saoPauloDayStart`). Agregação canônica via
+  `aggregateSnapshots` (precedência GA4SYNC>GA4 por dia); UMA query de snapshots
+  fatiada por dia (sparkline 14d) — sem N+1. Vereditos: Subindo (+>10%),
+  Estável (±10%), Decaindo (<-10%). `hasRevenueSource` (GA4/GA4SYNC p/ ecom,
+  ad platform p/ local) → "Sem fonte de receita conectada" em vez de fingir zero.
+  Ordena Decaindo (maior queda) → Estável → Subindo → sem dados/fonte.
+- **Visão "Resultado do mês":** REUSA `getUnifiedClientHealthBatch`
+  (monthlyPacing: realizado/meta/esperadoAteHoje/projecao via `pace.ts`). NENHUM
+  cálculo paralelo (regra 0). Vereditos: Vai bater a meta / No ritmo / Abaixo do
+  ritmo (projeção X% da meta) / Sem meta definida. Barra realizado×meta com
+  marcador pró-rata ("onde deveria estar hoje"). Ordena pior projeção primeiro.
+- **Ambas:** selo de saúde canônico (`getUnifiedClientHealthBatch`), linha
+  clicável p/ `/clients/[slug]`, escopo por papel herdado de `getDashboardData`
+  (GESTOR vê só a carteira), carimbo "Atualizado em" (regra 10).
+- **Arquivos:** `src/components/dashboard/ClientHealthViews.tsx` (novo, `use client`);
+  `src/lib/health-derive.ts` (+`getWeeklyTrendBatch`, +`WeeklyTrend`);
+  `src/app/(dashboard)/cockpit/page.tsx` (fetch batch + render).
+- **Substituição registrada (regra 12):** o render `ClientHealthGrid` na seção
+  "Saúde por cliente" do Cockpit foi trocado por `ClientHealthViews`. O componente
+  `ClientHealthGrid.tsx` NÃO foi removido (segue exportado). Justificativa:
+  diretriz de UX do dono (visualização limpa, veredito dominante, menos poluição).
+  Nenhum dado/fonte canônica mudou — só a apresentação.
+
 ### 2026-07-21 — Tela Clientes: edição inline estilo ClickUp (todas as colunas) + "Em renovação" derivado — AGUARDANDO APROVAÇÃO
 Fatia aprovada pelo Marcos (ADMIN). Todas as colunas da tela de Clientes viram
 editáveis in-place (clicar na célula abre o editor; Enter/blur salva, Esc cancela;

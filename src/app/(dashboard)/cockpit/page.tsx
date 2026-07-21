@@ -5,9 +5,10 @@ import { ChurnExposureSection } from '@/components/cockpit/ChurnExposureSection'
 import { LastUpdatedBadge } from '@/components/cockpit/LastUpdatedBadge'
 import { CronHealthBanner } from '@/components/cockpit/CronHealthBanner'
 import { OperationalCard } from '@/components/cockpit/OperationalCard'
-import { ClientHealthGrid } from '@/components/dashboard/ClientHealthGrid'
-import { getUnifiedClientHealthBatch } from '@/lib/health-derive'
+import { ClientHealthViews, type HealthViewClient } from '@/components/dashboard/ClientHealthViews'
+import { getUnifiedClientHealthBatch, getWeeklyTrendBatch } from '@/lib/health-derive'
 import { Card } from '@/components/ui/card'
+import { prisma } from '@/lib/prisma'
 import { timeAgo } from '@/lib/utils'
 import { AlertType } from '@prisma/client'
 import {
@@ -81,22 +82,52 @@ export default async function CockpitPage() {
   // QUADRO CANÔNICO da saúde (decisão Marcos 2026-07-18): a saúde detalhada vive
   // SÓ aqui. Enriquecemos o grid com o contrato unificado (batch, sem N+1):
   // atingimento SEM spend, pacing, ROAS da semana, GA4Sync e carimbo.
-  const unifiedMap = await getUnifiedClientHealthBatch(clients.map((c) => c.id))
-  const healthClients = clients.map((c) => {
+  const clientIds = clients.map((c) => c.id)
+  // businessType roteia a fonte de receita (ECOM→GA4/GA4SYNC · LOCAL/B2B→ads).
+  const btRows = await prisma.client.findMany({
+    where: { id: { in: clientIds } },
+    select: { id: true, businessType: true, razaoSocial: true },
+  })
+  const btById = new Map(btRows.map((b) => [b.id, b.businessType]))
+  const razaoById = new Map(btRows.map((b) => [b.id, b.razaoSocial]))
+
+  // DUAS visões, ambas em lote (sem N+1): tendência de 7 dias + pacing do mês.
+  const [unifiedMap, weeklyMap] = await Promise.all([
+    getUnifiedClientHealthBatch(clientIds),
+    getWeeklyTrendBatch(clients.map((c) => ({ id: c.id, businessType: btById.get(c.id) ?? 'ECOMMERCE' }))),
+  ])
+
+  const healthUpdatedAt = new Date().toISOString()
+  const healthClients: HealthViewClient[] = clients.map((c) => {
     const u = unifiedMap.get(c.id)
+    const w = weeklyMap.get(c.id)
     return {
-      ...c,
-      // Atingimento geral SEM SPEND (A-121) — preferimos o valor do unified.
-      achievementPct: u?.overallAchievementPct ?? c.achievementPct,
-      overallStatus: u?.status ?? c.overallStatus,
-      unified: u
+      id: c.id,
+      name: c.name,
+      razaoSocial: razaoById.get(c.id) ?? null,
+      slug: c.slug,
+      logoUrl: c.logoUrl,
+      primaryManager: c.primaryManager,
+      status: u?.status ?? c.overallStatus,
+      weekly: w
         ? {
-            status: u.status,
-            overallAchievementPct: u.overallAchievementPct,
-            weeklyRoas: u.weeklyRoas,
-            monthlyPacing: u.monthlyPacing,
-            ga4sync: u.ga4sync,
-            calculatedAt: u.calculatedAt.toISOString(),
+            hasRevenueSource: w.hasRevenueSource,
+            faturamento7d: w.faturamento7d,
+            faturamentoPrev7d: w.faturamentoPrev7d,
+            variacaoPct: w.variacaoPct,
+            veredito: w.veredito,
+            roas7d: w.roas7d,
+            spend7d: w.spend7d,
+            series: w.series,
+          }
+        : null,
+      month: u
+        ? {
+            realizado: u.monthlyPacing.realizado,
+            meta: u.monthlyPacing.meta,
+            esperadoAteHoje: u.monthlyPacing.esperadoAteHoje,
+            projecao: u.monthlyPacing.projecao,
+            pct: u.monthlyPacing.pct,
           }
         : null,
     }
@@ -283,7 +314,7 @@ export default async function CockpitPage() {
               Ver todos →
             </Link>
           </div>
-          <ClientHealthGrid clients={healthClients} />
+          <ClientHealthViews clients={healthClients} updatedAt={healthUpdatedAt} />
         </div>
       </section>
 

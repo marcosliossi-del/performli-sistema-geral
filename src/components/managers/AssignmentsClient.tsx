@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { CheckCircle2, AlertTriangle, Loader2, Search, UserCheck, ArrowRight } from 'lucide-react'
 import { updateClientPrimaryManager } from '@/app/actions/assignments'
+import { ClientIdentity } from '@/components/clients/ClientIdentity'
 import type { AssignmentClientRow, AssignmentManager } from '@/lib/dal'
 
 const platformColors: Record<string, string> = {
@@ -199,7 +200,7 @@ export function AssignmentsClient({ clients, managers }: Props) {
                         {client.name.charAt(0).toUpperCase()}
                       </span>
                     </div>
-                    <span className="text-sm font-medium text-[#EBEBEB]">{client.name}</span>
+                    <ClientIdentity name={client.name} razaoSocial={client.razaoSocial} href={`/clients/${client.slug}`} />
                   </div>
                 </td>
                 <td className="px-4 py-3.5">
