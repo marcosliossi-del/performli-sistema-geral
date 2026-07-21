@@ -33,7 +33,7 @@ async function getClientesData(userId: string, role: string) {
   const prevStart  = new Date(now.getFullYear(), now.getMonth() - 1, 1)
   const prevEnd    = new Date(now.getFullYear(), now.getMonth(), 0)
 
-  const [clients, prevNewCount, overdueCount] = await Promise.all([
+  const [clients, prevNewCount, overdueCount, staffRaw] = await Promise.all([
     prisma.client.findMany({
       where,
       select: {
@@ -66,9 +66,9 @@ async function getClientesData(userId: string, role: string) {
         assignments: {
           where:  { isPrimary: true },
           take:   1,
-          select: { user: { select: { name: true } } },
+          select: { userId: true, user: { select: { name: true } } },
         },
-        gestor: { select: { name: true } },
+        gestor: { select: { id: true, name: true } },
       },
       orderBy: { name: 'asc' },
     }),
@@ -83,6 +83,15 @@ async function getClientesData(userId: string, role: string) {
     isAdmin
       ? countInadimplentes()
       : Promise.resolve(0),
+    // Staff atribuível como gestor primário (mesma régua da tela de Atribuição):
+    // usuários ativos gestores/admin. Usado só pelo select de Responsável (ADMIN).
+    isAdmin
+      ? prisma.user.findMany({
+          where:   { active: true, role: { in: ['ADMIN', 'GESTOR_TRAFEGO', 'MANAGER'] } },
+          select:  { id: true, name: true },
+          orderBy: { name: 'asc' },
+        })
+      : Promise.resolve([] as { id: string; name: string }[]),
   ])
 
   // PAUSED é contado À PARTE (T-23): não infla os ativos nem vira churn — é um
@@ -118,9 +127,6 @@ async function getClientesData(userId: string, role: string) {
     // ── Amarração Jurídico: contrato vigente é a fonte única de período+valor ──
     const vigente = c.contracts[0] ?? null
     const fonteContrato: 'juridico' | 'cadastro' = vigente ? 'juridico' : 'cadastro'
-    // "Em renovação" = derivado do Contract vigente (Jurídico), NUNCA um status do
-    // seletor. Vira badge de leitura na coluna Período (DADO AMARRADO).
-    const emRenovacao = vigente?.status === 'RENOVACAO'
 
     const periodoInicio = vigente?.startDate ?? c.contractStart ?? null
     const periodoFim    = vigente?.endDate   ?? c.contractEndDate ?? null
@@ -149,6 +155,15 @@ async function getClientesData(userId: string, role: string) {
       vencido = dias < 0
     }
 
+    // "Em renovação" = DERIVADO do Contract vigente (Jurídico), NUNCA status do
+    // seletor nem campo no Client (regra 0 DADO AMARRADO). Cobre DOIS casos:
+    //  (a) Contract com status RENOVACAO (marcado pelo cron/Jurídico), e
+    //  (b) Contract VIGENTE já VENCIDO (endDate < dia-parede SP) — sem depender do
+    //      cron rodar. Só quando a fonte é o Jurídico (cadastro sem contrato não
+    //      "renova"). Vira badge na coluna Período E rótulo âmbar na pill de status.
+    const emRenovacao =
+      fonteContrato === 'juridico' && (vigente!.status === 'RENOVACAO' || vencido)
+
     if (isAdmin) {
       if (valorContrato) somaContrato += valorContrato
       if (investimento)  somaInvestimento += investimento
@@ -172,7 +187,12 @@ async function getClientesData(userId: string, role: string) {
       // Tipo de serviço: primeiro produto cadastrado; sem produtos → rótulo padrão
       // "Gestão de Tráfego" (não há campo dedicado — lacuna documentada).
       tipoServico:   c.produtos.length > 0 ? c.produtos.join(' · ') : 'Gestão de Tráfego',
+      // Lista bruta de produtos (fonte da edição inline de Tipo de Serviço).
+      produtos:      c.produtos,
       classificacao: c.curva ? CURVA_TO_CLASSIFICACAO[c.curva] ?? null : null,
+      // Curva canônica (A/B/C) — a edição da classificação escreve AQUI, não num
+      // campo paralelo (regra 0 DADO AMARRADO).
+      curva:         c.curva ?? null,
       periodoInicio: periodoInicio ? periodoInicio.toISOString() : null,
       periodoFim:    periodoFim ? periodoFim.toISOString() : null,
       fonteContrato,
@@ -181,6 +201,8 @@ async function getClientesData(userId: string, role: string) {
       venceEmDias,
       plataformas:   c.platformAccounts.map(p => p.platform),
       responsavel:   c.assignments[0]?.user?.name ?? c.gestor?.name ?? null,
+      // Id do gestor primário (assignment) p/ o select — fallback gestorId direto.
+      responsavelId: c.assignments[0]?.userId ?? c.gestor?.id ?? null,
       investimento,
       // Breakdown do budget por plataforma (print Marcos): 4 colunas. Financeiro
       // → só ADMIN vê valores; para os demais mandamos null (a UI mostra "—").
@@ -194,6 +216,7 @@ async function getClientesData(userId: string, role: string) {
 
   return {
     clients: rows,
+    staff: staffRaw,
     totals: {
       count:            rows.length,
       somaContrato:     isAdmin ? somaContrato : null,
@@ -217,12 +240,20 @@ async function getClientesData(userId: string, role: string) {
 
 export default async function ClientsPage() {
   const session = await requireSession()
-  const { clients, kpis, totals } = await getClientesData(session.userId, session.role)
+  const { clients, staff, kpis, totals } = await getClientesData(session.userId, session.role)
   const viewerRole = normalizeRole(session.role)
   const isAdmin = viewerRole === 'ADMIN'
   // Editar status (inline + massa) é ação estrutural: só ADMIN e SUPERVISOR.
   // Espelha o gate da action updateClientsStatus (defesa em profundidade na UI).
   const canEditStatus = viewerRole === 'ADMIN' || viewerRole === 'SUPERVISOR_TRAFEGO'
+  // Editar campos do Client (nome/serviço/classificação/modelo/ROAS) inline: staff
+  // de tráfego (ADMIN, SUPERVISOR, ANALISTA e GESTOR nos clientes atribuídos —
+  // a lista já vem escopada). CS/leitura não editam. Espelha assertClientMutationAccess.
+  const canEditFields =
+    viewerRole === 'ADMIN' ||
+    viewerRole === 'SUPERVISOR_TRAFEGO' ||
+    viewerRole === 'ANALISTA_TRAFEGO' ||
+    viewerRole === 'GESTOR_TRAFEGO'
 
   const cards = [
     {
@@ -306,7 +337,14 @@ export default async function ClientsPage() {
       </div>
 
       {/* Table */}
-      <ClientesTable clients={clients} totals={totals} isAdmin={isAdmin} canEditStatus={canEditStatus} />
+      <ClientesTable
+        clients={clients}
+        totals={totals}
+        isAdmin={isAdmin}
+        canEditStatus={canEditStatus}
+        canEditFields={canEditFields}
+        staff={staff}
+      />
     </div>
   )
 }

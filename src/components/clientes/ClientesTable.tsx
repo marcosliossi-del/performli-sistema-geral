@@ -1,12 +1,17 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
-import { Search, Plus, MessageCircle, Pencil, ShoppingCart, MapPin, ArrowRight, ChevronDown, Check } from 'lucide-react'
-import type { ClientStatus } from '@prisma/client'
+import { useState, useTransition, useEffect, useRef, type ReactNode } from 'react'
+import { Search, Plus, MessageCircle, Pencil, ShoppingCart, MapPin, Building2, ArrowRight, ChevronDown, Check, X } from 'lucide-react'
+import type { ClientStatus, BusinessType, ClientCurva } from '@prisma/client'
 import { formatCurrency } from '@/lib/utils'
-import { bulkSetBusinessType, updateClientsStatus } from '@/app/actions/updateClient'
+import { bulkSetBusinessType, updateClientsStatus, updateClientProdutos } from '@/app/actions/updateClient'
+import { updateClientField, updateClientContractInline } from '@/app/actions/clientInline'
+import { updateClientPrimaryManager } from '@/app/actions/assignments'
 import { ClientIdentity } from '@/components/clients/ClientIdentity'
 import { toast } from '@/lib/toast'
+
+// Sugestões de 1 clique para Tipo de Serviço (mesma lista canônica do modal).
+const SERVICO_SUGERIDO = ['Tráfego Pago', 'CRM', 'Traqueamento']
 
 export interface ClientRow {
   id:            string
@@ -21,7 +26,9 @@ export interface ClientRow {
   createdAt:     string
   businessType:  string
   tipoServico:   string
+  produtos:      string[]
   classificacao: 'OURO' | 'PRATA' | 'BRONZE' | null
+  curva:         'A' | 'B' | 'C' | null
   periodoInicio: string | null
   periodoFim:    string | null
   fonteContrato: 'juridico' | 'cadastro'
@@ -30,6 +37,7 @@ export interface ClientRow {
   venceEmDias:   number | null
   plataformas:   string[]
   responsavel:   string | null
+  responsavelId: string | null
   investimento:  number | null
   investimentoMeta:   number | null
   investimentoGoogle: number | null
@@ -47,12 +55,21 @@ interface Totals {
   somaInvestTiktok: number | null
 }
 
+interface StaffOption {
+  id:   string
+  name: string
+}
+
 interface Props {
   clients: ClientRow[]
   totals:  Totals
   isAdmin: boolean
   /** ADMIN/SUPERVISOR: pode editar status (inline + massa). Demais: pill estática. */
   canEditStatus?: boolean
+  /** Staff de tráfego: pode editar campos do Client inline (nome/serviço/etc). */
+  canEditFields?: boolean
+  /** Staff atribuível como gestor primário (só ADMIN recebe a lista). */
+  staff?: StaffOption[]
 }
 
 // Ordem e rótulos das opções do seletor de status (print do Marcos).
@@ -68,10 +85,25 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   CHURNED: { label: 'Cancelado', color: '#EF4444' },
 }
 
-const TYPE_CONFIG = {
-  ECOMMERCE: { label: 'E-commerce', icon: ShoppingCart, color: '#95BBE2' },
-  LOCAL:     { label: 'Negócio Local', icon: MapPin,    color: '#A78BFA' },
+const TYPE_CONFIG: Record<string, { label: string; icon: typeof ShoppingCart; color: string }> = {
+  ECOMMERCE: { label: 'E-commerce',    icon: ShoppingCart, color: '#95BBE2' },
+  LOCAL:     { label: 'Negócio Local', icon: MapPin,       color: '#A78BFA' },
+  B2B:       { label: 'B2B / Atacado', icon: Building2,    color: '#34D399' },
 }
+
+// Opções do seletor de Modelo de Negócio (BusinessType do schema).
+const BUSINESS_OPTIONS: { value: BusinessType; label: string }[] = [
+  { value: 'ECOMMERCE', label: 'E-commerce' },
+  { value: 'LOCAL',     label: 'Negócio Local' },
+  { value: 'B2B',       label: 'B2B / Atacado' },
+]
+
+// Opções do seletor de Classificação → gravam a CURVA canônica (A/B/C).
+const CLASSIF_OPTIONS: { value: ClientCurva; label: string; color: string }[] = [
+  { value: 'A', label: 'Ouro',   color: '#D4AF37' },
+  { value: 'B', label: 'Prata',  color: '#9CA3AF' },
+  { value: 'C', label: 'Bronze', color: '#CD7F32' },
+]
 
 const CLASSIF_CONFIG: Record<string, { label: string; color: string }> = {
   OURO:   { label: 'Ouro',   color: '#D4AF37' },
@@ -94,7 +126,318 @@ function fmtDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false }: Props) {
+/** ISO → 'yyyy-mm-dd' (UTC) para <input type="date">. */
+function toDateInput(iso: string | null): string {
+  if (!iso) return ''
+  return new Date(iso).toISOString().slice(0, 10)
+}
+
+// ─── EDITORES INLINE REUTILIZÁVEIS (estilo ClickUp) ───────────────────────────
+// Clicar na célula abre o editor in-place; Enter/blur salva, Esc cancela. Sem
+// lápis, sem modal. O salvamento é OTIMISTA (o pai aplica override + rollback).
+
+/** Célula de TEXTO editável. onSave só dispara se o valor mudou. */
+function InlineText({
+  value, onSave, canEdit, placeholder, className,
+}: {
+  value: string
+  onSave: (v: string) => void
+  canEdit: boolean
+  placeholder?: string
+  className?: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  if (!canEdit) {
+    return <span className={className}>{value || <span className="text-[#38435C]">—</span>}</span>
+  }
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => { setDraft(value); setEditing(true) }}
+        className={`text-left hover:bg-[#38435C]/30 rounded px-1 -mx-1 py-0.5 transition-colors ${className ?? ''}`}
+        title="Clique para editar"
+      >
+        {value || <span className="text-[#38435C]">{placeholder ?? '—'}</span>}
+      </button>
+    )
+  }
+  const commit = () => {
+    setEditing(false)
+    const v = draft.trim()
+    if (v && v !== value) onSave(v)
+  }
+  return (
+    <input
+      autoFocus
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { e.preventDefault(); commit() }
+        else if (e.key === 'Escape') { setEditing(false) }
+      }}
+      className="w-full min-w-[120px] h-7 px-2 rounded bg-[#0A1E2C] border border-[#95BBE2] text-sm text-[#EBEBEB] focus:outline-none"
+    />
+  )
+}
+
+/** Célula NUMÉRICA editável (moeda ou taxa). Valor null = "não informado". */
+function InlineNumber({
+  value, onSave, canEdit, render, align = 'right', step = '0.01',
+}: {
+  value: number | null
+  onSave: (v: number | null) => void
+  canEdit: boolean
+  render: (v: number | null) => ReactNode
+  align?: 'right' | 'left'
+  step?: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  if (!canEdit) return <>{render(value)}</>
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => { setDraft(value != null ? String(value) : ''); setEditing(true) }}
+        className={`w-full hover:bg-[#38435C]/30 rounded px-1 py-0.5 transition-colors text-${align}`}
+        title="Clique para editar"
+      >
+        {render(value)}
+      </button>
+    )
+  }
+  const commit = () => {
+    setEditing(false)
+    const trimmed = draft.trim()
+    const next = trimmed === '' ? null : Number(trimmed)
+    if (trimmed !== '' && !Number.isFinite(next as number)) return
+    if (next !== value) onSave(next)
+  }
+  return (
+    <input
+      autoFocus
+      type="number"
+      step={step}
+      min="0"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { e.preventDefault(); commit() }
+        else if (e.key === 'Escape') { setEditing(false) }
+      }}
+      className={`w-full min-w-[90px] h-7 px-2 rounded bg-[#0A1E2C] border border-[#95BBE2] text-sm text-[#EBEBEB] focus:outline-none text-${align}`}
+    />
+  )
+}
+
+/** Dropdown-pill genérico (mesmo padrão do seletor de STATUS). */
+function InlineDropdown({
+  canEdit, trigger, children, width = 'w-44',
+}: {
+  canEdit: boolean
+  trigger: ReactNode
+  children: (close: () => void) => ReactNode
+  width?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  if (!canEdit) return <>{trigger}</>
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1 hover:brightness-110 transition"
+        title="Clique para editar"
+      >
+        {trigger}
+        <ChevronDown size={11} className="text-[#87919E]" />
+      </button>
+      {open && (
+        <div className={`absolute z-30 mt-1 left-0 ${width} rounded-lg border border-[#38435C] bg-[#0D2137] shadow-xl py-1`}>
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Editor de TIPO DE SERVIÇO (Client.produtos): chips de sugestão + livres. */
+function ServicoEditor({
+  produtos, canEdit, onSave,
+}: {
+  produtos: string[]
+  canEdit: boolean
+  onSave: (next: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState<string[]>(produtos)
+  const [novo, setNovo] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  const label = produtos.length > 0 ? produtos.join(' · ') : 'Gestão de Tráfego'
+  if (!canEdit) return <span className="whitespace-nowrap">{label}</span>
+
+  function toggle(p: string) {
+    setDraft(list =>
+      list.some(x => x.toLowerCase() === p.toLowerCase())
+        ? list.filter(x => x.toLowerCase() !== p.toLowerCase())
+        : list.length < 20 ? [...list, p] : list,
+    )
+  }
+  function add(raw: string) {
+    const p = raw.trim().slice(0, 60)
+    if (!p || draft.some(x => x.toLowerCase() === p.toLowerCase()) || draft.length >= 20) return
+    setDraft(list => [...list, p]); setNovo('')
+  }
+  function commit(close: () => void) {
+    close()
+    const changed = draft.length !== produtos.length || draft.some(p => !produtos.includes(p))
+    if (changed) onSave(draft)
+  }
+
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => { setDraft(produtos); setOpen(o => !o) }}
+        className="text-left hover:bg-[#38435C]/30 rounded px-1 -mx-1 py-0.5 transition-colors whitespace-nowrap"
+        title="Clique para editar o tipo de serviço"
+      >
+        {label}
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 left-0 w-64 rounded-lg border border-[#38435C] bg-[#0D2137] shadow-xl p-3 space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {draft.length === 0 && <span className="text-[11px] text-[#647488]">Nenhum serviço.</span>}
+            {draft.map(p => (
+              <span key={p} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-[#95BBE2]/10 border border-[#95BBE2]/30 text-[11px] text-[#EBEBEB]">
+                {p}
+                <button type="button" onClick={() => toggle(p)} aria-label={`Remover ${p}`} className="text-[#87919E] hover:text-[#EF4444]">
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {SERVICO_SUGERIDO.filter(s => !draft.some(p => p.toLowerCase() === s.toLowerCase())).map(s => (
+              <button key={s} type="button" onClick={() => toggle(s)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-dashed border-[#38435C] text-[11px] text-[#87919E] hover:border-[#95BBE2]/50 hover:text-[#EBEBEB] transition-colors">
+                <Plus size={10} />{s}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1.5">
+            <input
+              value={novo}
+              onChange={e => setNovo(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(novo) } }}
+              maxLength={60}
+              placeholder="Outro serviço"
+              className="flex-1 h-7 px-2 rounded bg-[#0A1E2C] border border-[#38435C] text-xs text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50"
+            />
+            <button type="button" onClick={() => add(novo)} disabled={!novo.trim()} className="px-2 h-7 rounded border border-[#38435C] text-xs text-[#87919E] hover:text-[#EBEBEB] disabled:opacity-40">+</button>
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={() => setOpen(false)} className="text-[11px] text-[#87919E] hover:text-[#EBEBEB]">Cancelar</button>
+            <button type="button" onClick={() => commit(() => setOpen(false))} className="text-[11px] font-semibold text-[#0A1E2C] bg-[#95BBE2] px-2.5 py-1 rounded">Salvar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Editor de PERÍODO do contrato: dois date inputs (início/fim). */
+function PeriodoEditor({
+  periodoInicio, periodoFim, fonteContrato, canEdit, onSave, children,
+}: {
+  periodoInicio: string | null
+  periodoFim: string | null
+  fonteContrato: 'juridico' | 'cadastro'
+  canEdit: boolean
+  onSave: (start: string, end: string) => void
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  const [start, setStart] = useState('')
+  const [end, setEnd] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  if (!canEdit) return <>{children}</>
+  function commit() {
+    setOpen(false)
+    if (start && end && new Date(end) <= new Date(start)) return
+    const s0 = toDateInput(periodoInicio), e0 = toDateInput(periodoFim)
+    if (start !== s0 || end !== e0) onSave(start, end)
+  }
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => { setStart(toDateInput(periodoInicio)); setEnd(toDateInput(periodoFim)); setOpen(o => !o) }}
+        className="text-left hover:bg-[#38435C]/30 rounded px-1 -mx-1 py-0.5 transition-colors"
+        title={fonteContrato === 'juridico' ? 'Editar período do contrato vigente (Jurídico)' : 'Sem contrato no Jurídico — edita o período do cadastro'}
+      >
+        {children}
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 left-0 w-60 rounded-lg border border-[#38435C] bg-[#0D2137] shadow-xl p-3 space-y-2">
+          <p className="text-[10px] text-[#87919E]">
+            {fonteContrato === 'juridico'
+              ? 'Atualiza o contrato vigente no Jurídico.'
+              : 'Sem contrato vigente — atualiza o período no cadastro do cliente.'}
+          </p>
+          <label className="block text-[10px] text-[#87919E]">Início
+            <input type="date" value={start} onChange={e => setStart(e.target.value)} className="mt-0.5 w-full h-7 px-2 rounded bg-[#0A1E2C] border border-[#38435C] text-xs text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50" />
+          </label>
+          <label className="block text-[10px] text-[#87919E]">Vencimento
+            <input type="date" value={end} onChange={e => setEnd(e.target.value)} className="mt-0.5 w-full h-7 px-2 rounded bg-[#0A1E2C] border border-[#38435C] text-xs text-[#EBEBEB] focus:outline-none focus:border-[#95BBE2]/50" />
+          </label>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={() => setOpen(false)} className="text-[11px] text-[#87919E] hover:text-[#EBEBEB]">Cancelar</button>
+            <button type="button" onClick={commit} className="text-[11px] font-semibold text-[#0A1E2C] bg-[#95BBE2] px-2.5 py-1 rounded">Salvar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false, canEditFields = false, staff = [] }: Props) {
   const [search,   setSearch]   = useState('')
   const [filter,   setFilter]   = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'CHURNED'>('ALL')
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'ECOMMERCE' | 'LOCAL'>('ALL')
@@ -106,10 +449,48 @@ export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false 
   const [statusOverrides, setStatusOverrides] = useState<Record<string, ClientStatus>>({})
   const statusOf = (c: ClientRow): string => statusOverrides[c.id] ?? c.status
 
+  // Overrides otimistas de CAMPOS (id → patch parcial da linha). Aplicados por cima
+  // do prop até o revalidate trazer o valor persistido; rollback em erro.
+  const [rowOverrides, setRowOverrides] = useState<Record<string, Partial<ClientRow>>>({})
+  const viewOf = (c: ClientRow): ClientRow => ({ ...c, ...rowOverrides[c.id] })
+
   // Menu de status aberto (id da linha) — dropdown-pill inline.
   const [openMenu, setOpenMenu] = useState<string | null>(null)
 
-  const filtered = clients.filter(c => {
+  /**
+   * Salvamento OTIMISTA genérico de campo: aplica o override, chama a action e,
+   * em erro, faz rollback dos MESMOS campos ao valor anterior + toast('...', 'err').
+   * `okMsg` só aparece no sucesso. Não fecha nada — os editores já se fecham.
+   */
+  function saveField(
+    id: string,
+    optimistic: Partial<ClientRow>,
+    fn: () => Promise<{ error?: string }>,
+    okMsg: string,
+  ) {
+    const keys = Object.keys(optimistic) as (keyof ClientRow)[]
+    // Snapshot dos valores anteriores (override atual OU valor do prop).
+    const base = clients.find(c => c.id === id)
+    const prev: Partial<ClientRow> = {}
+    for (const k of keys) {
+      const cur = rowOverrides[id]
+      prev[k] = (cur && k in cur ? cur[k] : base?.[k]) as never
+    }
+
+    setRowOverrides(o => ({ ...o, [id]: { ...o[id], ...optimistic } }))
+
+    startTransition(async () => {
+      const res = await fn()
+      if (res?.error) {
+        setRowOverrides(o => ({ ...o, [id]: { ...o[id], ...prev } }))
+        toast(res.error, 'err')
+        return
+      }
+      toast(okMsg, 'ok')
+    })
+  }
+
+  const filtered = clients.map(viewOf).filter(c => {
     const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) ||
       (c.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (c.phone ?? '').includes(search)
@@ -368,7 +749,13 @@ export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false 
               filtered.map(client => {
                 const curStatus = statusOf(client)
                 const st  = STATUS_LABELS[curStatus] ?? STATUS_LABELS.ACTIVE
-                const typ = TYPE_CONFIG[client.businessType as 'ECOMMERCE' | 'LOCAL'] ?? TYPE_CONFIG.ECOMMERCE
+                // "Em renovação" DERIVADO do Contract (regra 0): cliente ACTIVE cujo
+                // contrato vigente está vencido/RENOVACAO. Não grava nada no Client —
+                // é só o rótulo da pill (âmbar). Escolher "Ativo" no menu dispara a
+                // auto-renovação no servidor (updateClientsStatus → computeRenewalDates).
+                const emRenov = curStatus === 'ACTIVE' && client.emRenovacao
+                const pill = emRenov ? { label: 'Em renovação', color: '#F59E0B' } : st
+                const typ = TYPE_CONFIG[client.businessType] ?? TYPE_CONFIG.ECOMMERCE
                 const TypeIcon = typ.icon
                 const classif = client.classificacao ? CLASSIF_CONFIG[client.classificacao] : null
 
@@ -411,10 +798,10 @@ export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false 
                             onClick={() => setOpenMenu(m => (m === client.id ? null : client.id))}
                             disabled={isPending}
                             className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap hover:brightness-110 disabled:opacity-50 transition"
-                            style={{ color: st.color, background: `${st.color}18` }}
-                            title="Alterar status do cliente"
+                            style={{ color: pill.color, background: `${pill.color}18` }}
+                            title={emRenov ? 'Contrato vigente vencido/em renovação — escolha "Ativo" para renovar automaticamente pelo mesmo período' : 'Alterar status do cliente'}
                           >
-                            {st.label}
+                            {pill.label}
                             <ChevronDown size={11} />
                           </button>
                           {openMenu === client.id && (
@@ -440,53 +827,134 @@ export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false 
                       ) : (
                         <span
                           className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-                          style={{ color: st.color, background: `${st.color}18` }}
+                          style={{ color: pill.color, background: `${pill.color}18` }}
                           title={
-                            curStatus === 'PAUSED'
-                              ? `Pausado${client.pausedAt ? ` desde ${new Date(client.pausedAt).toLocaleDateString('pt-BR')}` : ''}${client.pauseReason ? ` — ${client.pauseReason}` : ''}`
-                              : undefined
+                            emRenov
+                              ? 'Contrato vigente vencido/em renovação (derivado do Jurídico)'
+                              : curStatus === 'PAUSED'
+                                ? `Pausado${client.pausedAt ? ` desde ${new Date(client.pausedAt).toLocaleDateString('pt-BR')}` : ''}${client.pauseReason ? ` — ${client.pauseReason}` : ''}`
+                                : undefined
                           }
                         >
-                          {st.label}
+                          {pill.label}
                         </span>
                       )}
                     </td>
 
-                    {/* NOME */}
+                    {/* NOME — editável inline; sem edição, mantém o link p/ o cliente */}
                     <td className="px-3 py-3">
                       <div className="max-w-[180px]">
-                        <ClientIdentity
-                          name={client.name}
-                          razaoSocial={client.razaoSocial}
-                          href={`/clients/${client.slug}`}
-                        />
+                        {canEditFields ? (
+                          <InlineText
+                            value={client.name}
+                            canEdit
+                            onSave={(v) =>
+                              saveField(client.id, { name: v }, () => updateClientField(client.id, { name: v }), 'Nome atualizado')
+                            }
+                            className="text-sm font-medium text-[#EBEBEB]"
+                          />
+                        ) : (
+                          <ClientIdentity
+                            name={client.name}
+                            razaoSocial={client.razaoSocial}
+                            href={`/clients/${client.slug}`}
+                          />
+                        )}
                         {client.email && (
                           <p className="text-[11px] text-[#87919E] truncate">{client.email}</p>
                         )}
                       </div>
                     </td>
 
-                    {/* TIPO DE SERVIÇO */}
-                    <td className="px-3 py-3 text-xs text-[#C7CDD6] whitespace-nowrap">
-                      {client.tipoServico}
+                    {/* TIPO DE SERVIÇO — multi-select de produtos (fonte: Client.produtos) */}
+                    <td className="px-3 py-3 text-xs text-[#C7CDD6]">
+                      <ServicoEditor
+                        produtos={client.produtos}
+                        canEdit={canEditFields}
+                        onSave={(next) =>
+                          saveField(
+                            client.id,
+                            { produtos: next, tipoServico: next.length > 0 ? next.join(' · ') : 'Gestão de Tráfego' },
+                            () => updateClientProdutos(client.id, next),
+                            'Tipo de serviço atualizado',
+                          )
+                        }
+                      />
                     </td>
 
-                    {/* CLASSIFICAÇÃO */}
+                    {/* CLASSIFICAÇÃO — select Ouro/Prata/Bronze → grava a CURVA (A/B/C) */}
                     <td className="px-3 py-3">
-                      {classif ? (
-                        <span
-                          className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
-                          style={{ color: classif.color, background: `${classif.color}22` }}
-                        >
-                          {classif.label}
-                        </span>
-                      ) : (
-                        <span className="text-[#38435C]">—</span>
-                      )}
+                      {(() => {
+                        const trigger = classif ? (
+                          <span
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
+                            style={{ color: classif.color, background: `${classif.color}22` }}
+                          >
+                            {classif.label}
+                          </span>
+                        ) : (
+                          <span className="text-[#38435C] text-xs">definir</span>
+                        )
+                        const CURVA_LABEL: Record<string, 'OURO' | 'PRATA' | 'BRONZE'> = { A: 'OURO', B: 'PRATA', C: 'BRONZE' }
+                        return (
+                          <InlineDropdown canEdit={canEditFields} trigger={trigger} width="w-36">
+                            {(close) => (
+                              <>
+                                {CLASSIF_OPTIONS.map(opt => (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => {
+                                      close()
+                                      if (client.curva !== opt.value) {
+                                        saveField(client.id, { curva: opt.value, classificacao: CURVA_LABEL[opt.value] }, () => updateClientField(client.id, { curva: opt.value }), `Classificação → ${opt.label}`)
+                                      }
+                                    }}
+                                    className="flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-[#EBEBEB] hover:bg-[#38435C]/40 transition"
+                                  >
+                                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: opt.color }} />
+                                    <span className="flex-1 text-left">{opt.label}</span>
+                                    {client.curva === opt.value && <Check size={12} className="text-[#95BBE2]" />}
+                                  </button>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    close()
+                                    if (client.curva !== null) {
+                                      saveField(client.id, { curva: null, classificacao: null }, () => updateClientField(client.id, { curva: null }), 'Classificação removida')
+                                    }
+                                  }}
+                                  className="flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-[#87919E] hover:bg-[#38435C]/40 transition"
+                                >
+                                  Limpar
+                                </button>
+                              </>
+                            )}
+                          </InlineDropdown>
+                        )
+                      })()}
                     </td>
 
-                    {/* PERÍODO DO CONTRATO */}
+                    {/* PERÍODO DO CONTRATO — edita o Contract vigente (ou cadastro) */}
                     <td className="px-3 py-3 whitespace-nowrap">
+                      <PeriodoEditor
+                        periodoInicio={client.periodoInicio}
+                        periodoFim={client.periodoFim}
+                        fonteContrato={client.fonteContrato}
+                        canEdit={isAdmin}
+                        onSave={(start, end) =>
+                          saveField(
+                            client.id,
+                            {
+                              periodoInicio: start ? new Date(start + 'T00:00:00Z').toISOString() : null,
+                              periodoFim: end ? new Date(end + 'T00:00:00Z').toISOString() : null,
+                            },
+                            () => updateClientContractInline(client.id, { startDate: start || null, endDate: end || null }),
+                            'Período do contrato atualizado',
+                          )
+                        }
+                      >
                       {client.periodoFim ? (
                         <div className="flex flex-col leading-tight">
                           <span className="text-xs flex items-center gap-1.5" style={{ color: periodoColor }}>
@@ -523,17 +991,50 @@ export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false 
                           Sem contrato registrado
                         </span>
                       )}
+                      </PeriodoEditor>
                     </td>
 
-                    {/* MODELO DE NEGÓCIO */}
+                    {/* MODELO DE NEGÓCIO — select ECOMMERCE/LOCAL/B2B */}
                     <td className="px-3 py-3">
-                      <span
-                        className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-                        style={{ color: typ.color, background: `${typ.color}18` }}
+                      <InlineDropdown
+                        canEdit={canEditFields}
+                        width="w-40"
+                        trigger={
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+                            style={{ color: typ.color, background: `${typ.color}18` }}
+                          >
+                            <TypeIcon size={9} />
+                            {typ.label}
+                          </span>
+                        }
                       >
-                        <TypeIcon size={9} />
-                        {typ.label}
-                      </span>
+                        {(close) => (
+                          <>
+                            {BUSINESS_OPTIONS.map(opt => {
+                              const cfg = TYPE_CONFIG[opt.value]
+                              const Icon = cfg.icon
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => {
+                                    close()
+                                    if (client.businessType !== opt.value) {
+                                      saveField(client.id, { businessType: opt.value }, () => updateClientField(client.id, { businessType: opt.value }), `Modelo → ${opt.label}`)
+                                    }
+                                  }}
+                                  className="flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-[#EBEBEB] hover:bg-[#38435C]/40 transition"
+                                >
+                                  <Icon size={11} style={{ color: cfg.color }} />
+                                  <span className="flex-1 text-left">{opt.label}</span>
+                                  {client.businessType === opt.value && <Check size={12} className="text-[#95BBE2]" />}
+                                </button>
+                              )
+                            })}
+                          </>
+                        )}
+                      </InlineDropdown>
                     </td>
 
                     {/* PLATAFORMA */}
@@ -558,39 +1059,97 @@ export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false 
                       </div>
                     </td>
 
-                    {/* RESPONSÁVEL */}
+                    {/* RESPONSÁVEL — troca o gestor primário (ClientAssignment.isPrimary) */}
                     <td className="px-3 py-3 text-xs text-[#C7CDD6] whitespace-nowrap">
-                      {client.responsavel ?? <span className="text-[#F59E0B]">Sem gestor</span>}
+                      {isAdmin && staff.length > 0 ? (
+                        <InlineDropdown
+                          canEdit
+                          width="w-52"
+                          trigger={
+                            <span className={client.responsavel ? 'text-[#C7CDD6]' : 'text-[#F59E0B]'}>
+                              {client.responsavel ?? 'Sem gestor'}
+                            </span>
+                          }
+                        >
+                          {(close) => (
+                            <div className="max-h-56 overflow-y-auto">
+                              {staff.map(s => (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  onClick={() => {
+                                    close()
+                                    if (client.responsavelId !== s.id) {
+                                      saveField(client.id, { responsavel: s.name, responsavelId: s.id }, () => updateClientPrimaryManager(client.id, s.id), `Responsável → ${s.name}`)
+                                    }
+                                  }}
+                                  className="flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-[#EBEBEB] hover:bg-[#38435C]/40 transition"
+                                >
+                                  <span className="flex-1 text-left">{s.name}</span>
+                                  {client.responsavelId === s.id && <Check size={12} className="text-[#95BBE2]" />}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </InlineDropdown>
+                      ) : (
+                        client.responsavel ?? <span className="text-[#F59E0B]">Sem gestor</span>
+                      )}
                     </td>
 
                     {/* BUDGET POR PLATAFORMA (print Marcos): Meta · Google · TikTok · ROAS mín. */}
                     <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
-                      {isAdmin
-                        ? (client.investimentoMeta ? formatCurrency(client.investimentoMeta) : <span className="text-[#38435C]">—</span>)
-                        : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
+                      {isAdmin ? (
+                        <InlineNumber
+                          value={client.investimentoMeta}
+                          canEdit
+                          onSave={(v) => saveField(client.id, { investimentoMeta: v }, () => updateClientField(client.id, { investimentoMeta: v }), 'Budget Meta atualizado · metas recalculadas')}
+                          render={(v) => v ? formatCurrency(v) : <span className="text-[#38435C]">—</span>}
+                        />
+                      ) : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
                     </td>
                     <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
-                      {isAdmin
-                        ? (client.investimentoGoogle ? formatCurrency(client.investimentoGoogle) : <span className="text-[#38435C]">—</span>)
-                        : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
+                      {isAdmin ? (
+                        <InlineNumber
+                          value={client.investimentoGoogle}
+                          canEdit
+                          onSave={(v) => saveField(client.id, { investimentoGoogle: v }, () => updateClientField(client.id, { investimentoGoogle: v }), 'Budget Google atualizado · metas recalculadas')}
+                          render={(v) => v ? formatCurrency(v) : <span className="text-[#38435C]">—</span>}
+                        />
+                      ) : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
                     </td>
                     <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
-                      {isAdmin
-                        ? (client.investimentoTiktok ? formatCurrency(client.investimentoTiktok) : <span className="text-[#38435C]">—</span>)
-                        : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
+                      {isAdmin ? (
+                        <InlineNumber
+                          value={client.investimentoTiktok}
+                          canEdit
+                          onSave={(v) => saveField(client.id, { investimentoTiktok: v }, () => updateClientField(client.id, { investimentoTiktok: v }), 'Budget TikTok atualizado · metas recalculadas')}
+                          render={(v) => v ? formatCurrency(v) : <span className="text-[#38435C]">—</span>}
+                        />
+                      ) : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
                     </td>
-                    {/* ROAS mínimo NÃO é financeiro sensível (é meta operacional) → visível a todos. */}
+                    {/* ROAS mínimo NÃO é financeiro sensível (é meta operacional) → visível/editável a staff. */}
                     <td className="px-3 py-3 text-right text-xs text-[#C7CDD6] whitespace-nowrap">
-                      {client.roasMinimo != null
-                        ? `${client.roasMinimo.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`
-                        : <span className="text-[#38435C]">—</span>}
+                      <InlineNumber
+                        value={client.roasMinimo}
+                        canEdit={canEditFields}
+                        onSave={(v) => saveField(client.id, { roasMinimo: v }, () => updateClientField(client.id, { roasMinimo: v }), 'ROAS mínimo atualizado · metas recalculadas')}
+                        render={(v) => v != null
+                          ? `${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`
+                          : <span className="text-[#38435C]">—</span>}
+                      />
                     </td>
 
-                    {/* VALOR DO CONTRATO */}
+                    {/* VALOR DO CONTRATO — edita o Contract vigente (ou cadastro) */}
                     <td className="px-3 py-3 text-right text-xs font-semibold text-[#22C55E] whitespace-nowrap">
-                      {isAdmin
-                        ? (client.contractValue ? formatCurrency(client.contractValue) : <span className="text-[#38435C] font-normal">—</span>)
-                        : <span className="text-[#38435C] font-normal" title="Restrito ao administrador">—</span>}
+                      {isAdmin ? (
+                        <InlineNumber
+                          value={client.contractValue}
+                          canEdit
+                          onSave={(v) => saveField(client.id, { contractValue: v }, () => updateClientContractInline(client.id, { feeValue: v }), 'Valor do contrato atualizado')}
+                          render={(v) => v ? formatCurrency(v) : <span className="text-[#38435C] font-normal">—</span>}
+                        />
+                      ) : <span className="text-[#38435C] font-normal" title="Restrito ao administrador">—</span>}
                     </td>
 
                     {/* SAÚDE */}

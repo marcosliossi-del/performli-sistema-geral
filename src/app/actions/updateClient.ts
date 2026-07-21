@@ -7,12 +7,13 @@ import { requireSession } from '@/lib/dal'
 import { assertClientMutationAccess, writeAuditLog } from '@/lib/audit'
 import { slugify } from '@/lib/utils'
 import { uniqueClientSlug } from '@/lib/clients/slug'
-import { BusinessType, ClientStatus, ProductChangeAction, MetricType } from '@prisma/client'
+import { BusinessType, ClientStatus, ClientCurva, ProductChangeAction, MetricType } from '@prisma/client'
 import { computeMetasFromBudget } from '@/lib/metas/budget'
 import { parseDateInput } from '@/lib/tasks/dateInput'
 import { onProductsDowngraded } from '@/services/product-downgrade-automation'
 import { runClientOffboarding } from '@/services/client-offboarding'
 import { computeRenewalDates } from '@/services/contract-renewal'
+import { spDayInfo } from '@/lib/metas/pace'
 import { normalizeRole } from '@/lib/rbac'
 import { z } from 'zod'
 
@@ -40,6 +41,9 @@ export async function updateClient(
     contractStart?: Date | null
     source?: string | null
     businessType?: BusinessType | null
+    // Classificação comercial = CURVA existente (A=Ouro, B=Prata, C=Bronze).
+    // DADO AMARRADO: NÃO há campo `classificacao` — a curva É a fonte única.
+    curva?: ClientCurva | null
     // Budget de mídia por canal (R$). O investimento total NÃO é aceito aqui:
     // é derivado da soma dos três canais.
     investimentoMeta?: number | null
@@ -106,6 +110,7 @@ export async function updateClient(
   if ('contractStart' in data) updateData.contractStart = data.contractStart ?? null
   if ('source' in data) updateData.source = data.source ?? null
   if ('businessType' in data && data.businessType != null) updateData.businessType = data.businessType
+  if ('curva' in data) updateData.curva = data.curva ?? null
 
   if ('investimentoMeta' in data) updateData.investimentoMeta = data.investimentoMeta ?? null
   if ('investimentoGoogle' in data) updateData.investimentoGoogle = data.investimentoGoogle ?? null
@@ -572,11 +577,22 @@ export async function updateClientsStatus(
       })
     }
   } else if (status === 'ACTIVE') {
-    // Reativação renova o contrato em RENOVACAO pelo mesmo período (adendo
-    // FUNDACAO). Contratos em renovação desses clientes (o mais recente por
-    // cliente); a renovação e a reativação vão juntas em $transaction.
+    // Reativação renova o contrato pelo mesmo período (adendo FUNDACAO). Cobre
+    // DOIS casos de "em renovação" (derivação sem cron — ajuste Marcos 2026-07-21):
+    //  (a) contrato marcado como RENOVACAO (cron/Jurídico), e
+    //  (b) contrato ainda VIGENTE mas já VENCIDO (endDate < dia-parede SP de hoje).
+    // Dia-parede SP como fonte única de "hoje" (endDate é @db.Date = 00:00Z) —
+    // NUNCA saoPauloDayStart, para não errar por fuso. O mais recente por cliente;
+    // renovação + reativação vão juntas em $transaction.
+    const { spDayStartUtc } = spDayInfo(now)
     const renovando = await prisma.contract.findMany({
-      where:   { clientId: { in: foundIds }, status: 'RENOVACAO' },
+      where: {
+        clientId: { in: foundIds },
+        OR: [
+          { status: 'RENOVACAO' },
+          { status: 'VIGENTE', endDate: { lt: spDayStartUtc } },
+        ],
+      },
       orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
       select:  { id: true, clientId: true, startDate: true, endDate: true },
     })
