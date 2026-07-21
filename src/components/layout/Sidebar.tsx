@@ -17,6 +17,7 @@ import {
   Trash2,
   FolderPlus,
   RotateCcw,
+  ShieldCheck,
   Check,
   X,
 } from 'lucide-react'
@@ -42,6 +43,7 @@ import {
   createNavGroup,
   deleteNavGroup,
   resetNavTree,
+  aplicarModoFundacao,
 } from '@/app/actions/nav-tree'
 import { toast } from '@/lib/toast'
 
@@ -324,6 +326,22 @@ export function Sidebar({ role, counts, homeHref = '/cockpit', navOverrides = {}
               onClick={() => setOrganize((o) => !o)}
             />
             <SidebarActionButton icon={Eye} label="Itens ocultos" onClick={() => setShowHidden(true)} />
+            <SidebarActionButton
+              icon={ShieldCheck}
+              label="Modo Fundação (Bloco 1)"
+              onClick={async () => {
+                if (!window.confirm(
+                  'Operação Fundação: ocultar TODAS as abas exceto Cockpit, Clientes e Diagnóstico de Fontes (Bloco 1 — Dados & Saúde)? Tudo é restaurável em "Itens ocultos".'
+                )) return
+                const res = await aplicarModoFundacao()
+                if (res.ok) {
+                  toast(`Modo Fundação ativo — ${res.data?.ocultadas ?? 0} abas ocultadas.`)
+                  router.refresh()
+                } else {
+                  toast(res.error, 'err')
+                }
+              }}
+            />
           </div>
         )}
         {can(effectiveRole, 'view', 'gestaoEquipeEquipe') && (
