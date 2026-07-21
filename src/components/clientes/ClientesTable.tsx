@@ -845,23 +845,28 @@ export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false,
                     <td className="px-3 py-3">
                       <div className="max-w-[180px]">
                         {canEditFields ? (
-                          <InlineText
-                            value={client.name}
-                            canEdit
-                            onSave={(v) =>
-                              saveField(client.id, { name: v }, () => updateClientField(client.id, { name: v }), 'Nome atualizado')
-                            }
-                            className="text-sm font-medium text-[#EBEBEB]"
-                          />
+                          <>
+                            <InlineText
+                              value={client.name}
+                              canEdit
+                              onSave={(v) =>
+                                saveField(client.id, { name: v }, () => updateClientField(client.id, { name: v }), 'Nome atualizado')
+                              }
+                              className="text-sm font-medium text-[#EBEBEB]"
+                            />
+                            {client.razaoSocial &&
+                              client.razaoSocial.trim().toLowerCase() !== client.name.trim().toLowerCase() && (
+                                <p className="text-[11px] text-[#647488] truncate" title={client.razaoSocial}>
+                                  {client.razaoSocial}
+                                </p>
+                              )}
+                          </>
                         ) : (
                           <ClientIdentity
                             name={client.name}
                             razaoSocial={client.razaoSocial}
                             href={`/clients/${client.slug}`}
                           />
-                        )}
-                        {client.email && (
-                          <p className="text-[11px] text-[#87919E] truncate">{client.email}</p>
                         )}
                       </div>
                     </td>
