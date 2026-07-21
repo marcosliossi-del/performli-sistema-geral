@@ -21,6 +21,17 @@ Checklist de saída:
 - [ ] Quadro de saúde único coerente (sem SPEND na média, pacing certo)
 - [ ] **Certificação por escrito do Marcos: "os números batem"**
 
+### Ajuste da tela CLIENTES (2026-07-21) — AGUARDANDO APROVAÇÃO DO MARCOS
+Lista `/clients` reformatada no layout do print (ClickUp): Status · Nome · Tipo de
+Serviço · Classificação (OURO/PRATA/BRONZE) · Período do Contrato (vermelho se
+vencido, âmbar se vence <30d) · Modelo de Negócio · Plataforma · Responsável ·
+Investimento em anúncios · Valor do Contrato + rodapé de CONTAGEM e SOMAS
+(financeiro só ADMIN). Regra nova "dado amarrado": período/valor vêm do Contract
+vigente do Jurídico (fonte única; fallback = cadastro, sinalizado na UI).
+Lacunas propostas: Classificação derivada de `curva` A/B/C; Tipo de Serviço de
+`produtos[]`; Investimento = metas investimento (não SPEND). Detalhes no DOSSIE §15.
+Pendente: veredito do `guardiao` + certificação por escrito do Marcos.
+
 ## Blocos seguintes (aguardando)
 2. Tarefas/rotinas · 3. Clientes/CS · 4. Comercial/Conversas · 5. Financeiro · 6. Portal
 

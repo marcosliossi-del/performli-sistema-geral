@@ -5,8 +5,21 @@ import { formatCurrency } from '@/lib/utils'
 import { ClientesTable } from '@/components/clientes/ClientesTable'
 import { RecalcularTudoButton } from '@/components/clients/RecalcularTudoButton'
 import { normalizeRole, scopeClients } from '@/lib/rbac'
+import { spDayInfo } from '@/lib/metas/pace'
 
 export const dynamic = 'force-dynamic'
+
+// Classificação comercial (print do Marcos): OURO/PRATA/BRONZE derivam da CURVA
+// existente (A/B/C) — não há campo dedicado no schema. Mapeamento único aqui
+// (lacuna documentada no DOSSIE §15). Se o Marcos quiser desacoplar de curva,
+// vira migration aditiva `classificacao`.
+const CURVA_TO_CLASSIFICACAO: Record<string, 'OURO' | 'PRATA' | 'BRONZE'> = {
+  A: 'OURO',
+  B: 'PRATA',
+  C: 'BRONZE',
+}
+
+const MS_DIA = 86_400_000
 
 async function getClientesData(userId: string, role: string) {
   // Posse (CLAUDE.md #2): staff amplo vê toda a carteira; só GESTOR_TRAFEGO fica
@@ -30,6 +43,32 @@ async function getClientesData(userId: string, role: string) {
         businessType: true,
         resultado: true, etapa: true, resultadoRoas: true, resultadoUpdatedAt: true,
         nps: true, relacionamento: true, curva: true,
+        // Fatia FUNDACAO (tela Clientes / print Marcos):
+        produtos: true,
+        investimentoMeta: true, investimentoGoogle: true, investimentoTiktok: true,
+        // Fallback de contrato (cache do cadastro) quando NÃO há Contract vigente
+        contractStart: true, contractEndDate: true, feeAmount: true,
+        // Contrato vigente do Jurídico = FONTE ÚNICA de período + valor.
+        // status VIGENTE ou RENOVACAO; mais recente pelo início. Sem N+1: include
+        // batelado numa única query.
+        contracts: {
+          where:   { status: { in: ['VIGENTE', 'RENOVACAO'] } },
+          orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }],
+          take:    1,
+          select:  { startDate: true, endDate: true, feeValue: true, status: true },
+        },
+        // Plataformas ATIVAS (badges) — fonte de verdade é PlatformAccount.
+        platformAccounts: {
+          where:  { active: true },
+          select: { platform: true },
+        },
+        // Responsável = assignment primário; fallback para gestor direto.
+        assignments: {
+          where:  { isPrimary: true },
+          take:   1,
+          select: { user: { select: { name: true } } },
+        },
+        gestor: { select: { name: true } },
       },
       orderBy: { name: 'asc' },
     }),
@@ -62,17 +101,88 @@ async function getClientesData(userId: string, role: string) {
     ? Math.round(((newMonth.length - prevNewCount) / prevNewCount) * 100)
     : 0
 
-  return {
-    clients: clients.map(c => ({
-      ...c,
-      // Fee do contrato só é exposto para ADMIN (stripSensitive de Client).
-      contractValue: isAdmin && c.contractValue ? Number(c.contractValue) : null,
+  // Dia-parede SP (fonte única de "hoje" para vencimento) — evita off-by-one por
+  // fuso do servidor. Contract.endDate é @db.Date (midnight UTC).
+  const { spDayStartUtc } = spDayInfo(now)
+  const hojeUtc = spDayStartUtc.getTime()
+
+  // Somatórios do rodapé (financeiro → só ADMIN). Somamos o valor JÁ RESOLVIDO
+  // (contrato vigente com fallback), não o cache bruto, p/ bater com a coluna.
+  let somaContrato   = 0
+  let somaInvestimento = 0
+
+  const rows = clients.map(c => {
+    // ── Amarração Jurídico: contrato vigente é a fonte única de período+valor ──
+    const vigente = c.contracts[0] ?? null
+    const fonteContrato: 'juridico' | 'cadastro' = vigente ? 'juridico' : 'cadastro'
+
+    const periodoInicio = vigente?.startDate ?? c.contractStart ?? null
+    const periodoFim    = vigente?.endDate   ?? c.contractEndDate ?? null
+
+    // Valor: fee do contrato vigente; fallback cache do cadastro (feeAmount →
+    // contractValue). Financeiro: só ADMIN vê números.
+    const valorContratoRaw =
+      vigente?.feeValue ?? c.feeAmount ?? c.contractValue ?? null
+    const valorContrato = isAdmin && valorContratoRaw != null ? Number(valorContratoRaw) : null
+
+    // Investimento em anúncios = soma das metas de investimento por plataforma
+    // (campos existentes investimentoMeta/Google/Tiktok). Financeiro: só ADMIN.
+    const invSoma =
+      Number(c.investimentoMeta ?? 0) +
+      Number(c.investimentoGoogle ?? 0) +
+      Number(c.investimentoTiktok ?? 0)
+    const investimento = isAdmin ? (invSoma > 0 ? invSoma : null) : null
+
+    // Vencimento (dia-parede SP): vencido = fim < hoje; alerta se vence em <30d.
+    let vencido = false
+    let venceEmDias: number | null = null
+    if (periodoFim) {
+      const fimUtc = periodoFim.getTime()
+      const dias = Math.round((fimUtc - hojeUtc) / MS_DIA)
+      venceEmDias = dias
+      vencido = dias < 0
+    }
+
+    if (isAdmin) {
+      if (valorContrato) somaContrato += valorContrato
+      if (investimento)  somaInvestimento += investimento
+    }
+
+    return {
+      id:            c.id,
+      name:          c.name,
+      razaoSocial:   c.razaoSocial,
+      slug:          c.slug,
+      phone:         c.phone,
+      email:         c.email,
+      status:        c.status,
       pausedAt:      c.pausedAt ? c.pausedAt.toISOString() : null,
       pauseReason:   c.pauseReason ?? null,
       createdAt:     c.createdAt.toISOString(),
-      resultadoRoas:      c.resultadoRoas != null ? Number(c.resultadoRoas) : null,
-      resultadoUpdatedAt: c.resultadoUpdatedAt ? c.resultadoUpdatedAt.toISOString() : null,
-    })),
+      businessType:  c.businessType,
+      // Tipo de serviço: primeiro produto cadastrado; sem produtos → rótulo padrão
+      // "Gestão de Tráfego" (não há campo dedicado — lacuna documentada).
+      tipoServico:   c.produtos.length > 0 ? c.produtos.join(' · ') : 'Gestão de Tráfego',
+      classificacao: c.curva ? CURVA_TO_CLASSIFICACAO[c.curva] ?? null : null,
+      periodoInicio: periodoInicio ? periodoInicio.toISOString() : null,
+      periodoFim:    periodoFim ? periodoFim.toISOString() : null,
+      fonteContrato,
+      vencido,
+      venceEmDias,
+      plataformas:   c.platformAccounts.map(p => p.platform),
+      responsavel:   c.assignments[0]?.user?.name ?? c.gestor?.name ?? null,
+      investimento,
+      contractValue: valorContrato,
+    }
+  })
+
+  return {
+    clients: rows,
+    totals: {
+      count:            rows.length,
+      somaContrato:     isAdmin ? somaContrato : null,
+      somaInvestimento: isAdmin ? somaInvestimento : null,
+    },
     kpis: {
       recorrentes:       active.length,
       pausados:          paused.length,
@@ -88,7 +198,7 @@ async function getClientesData(userId: string, role: string) {
 
 export default async function ClientsPage() {
   const session = await requireSession()
-  const { clients, kpis } = await getClientesData(session.userId, session.role)
+  const { clients, kpis, totals } = await getClientesData(session.userId, session.role)
   const isAdmin = normalizeRole(session.role) === 'ADMIN'
 
   const cards = [
@@ -173,7 +283,7 @@ export default async function ClientsPage() {
       </div>
 
       {/* Table */}
-      <ClientesTable clients={clients} />
+      <ClientesTable clients={clients} totals={totals} isAdmin={isAdmin} />
     </div>
   )
 }
