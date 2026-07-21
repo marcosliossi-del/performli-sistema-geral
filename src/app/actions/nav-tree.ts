@@ -336,3 +336,73 @@ export async function resetNavTree(): Promise<ActionResult> {
   revalidateNav()
   return { ok: true }
 }
+
+// ─── Operação Fundação (2026-07-18) ──────────────────────────────────────────
+
+/**
+ * Modo Fundação — Bloco 1 (Dados & Saúde). Decisão do Marcos: o sistema
+ * "recomeça" enxuto; cada bloco só reaparece quando certificado. Oculta TODAS
+ * as leaves exceto as do Bloco 1 e garante a leaf de Diagnóstico de Fontes.
+ * Reversível: "Itens ocultos" restaura qualquer aba individualmente.
+ */
+const BLOCO_1_HREFS = new Set(['/cockpit', '/clients', '/diagnostico-fontes'])
+
+export async function aplicarModoFundacao(): Promise<ActionResult<{ ocultadas: number }>> {
+  const auth = await requireAdmin()
+  if (!auth.ok) return auth
+
+  // Garante a leaf de Diagnóstico de Fontes (criada depois do seed original).
+  const diag = await prisma.navNode.findFirst({ where: { href: '/diagnostico-fontes' } })
+  if (!diag) {
+    const root = await prisma.navNode.findFirst({
+      where: { parentId: null, kind: 'GROUP' },
+      orderBy: { order: 'asc' },
+    })
+    const last = await prisma.navNode.aggregate({
+      where: { parentId: root?.id ?? null },
+      _max: { order: true },
+    })
+    await prisma.navNode.create({
+      data: {
+        parentId: root?.id ?? null,
+        kind: 'LEAF',
+        label: 'Diagnóstico de Fontes',
+        href: '/diagnostico-fontes',
+        module: 'gestaoEquipeEquipe', // ADMIN-only na matriz (a página também exige ADMIN)
+        icon: 'Activity',
+        order: (last._max.order ?? 0) + 1,
+      },
+    })
+  }
+
+  // Oculta todas as leaves fora do Bloco 1; garante visíveis as do Bloco 1.
+  const [ocultadas] = await prisma.$transaction([
+    prisma.navNode.updateMany({
+      where: { kind: 'LEAF', OR: [{ href: null }, { href: { notIn: Array.from(BLOCO_1_HREFS) } }] },
+      data: { hidden: true },
+    }),
+    prisma.navNode.updateMany({
+      where: { kind: 'LEAF', href: { in: Array.from(BLOCO_1_HREFS) } },
+      data: { hidden: false },
+    }),
+    // Grupos ficam visíveis/ocultos por derivação (grupo sem filho visível some
+    // na renderização) — não mexemos no hidden dos grupos para preservar a
+    // estrutura na restauração.
+    prisma.navNode.updateMany({
+      where: { kind: 'GROUP' },
+      data: { hidden: false },
+    }),
+  ])
+
+  await writeAuditLog({
+    actorId: auth.session.userId,
+    actorRole: auth.session.role,
+    action: 'nav_tree.modo_fundacao',
+    entityType: 'NavNode',
+    entityId: 'ALL',
+    metadata: { bloco: 1, ocultadas: ocultadas.count },
+  })
+
+  revalidateNav()
+  return { ok: true, data: { ocultadas: ocultadas.count } }
+}
