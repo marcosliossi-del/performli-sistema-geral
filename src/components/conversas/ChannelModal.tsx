@@ -7,7 +7,7 @@ import { createConversationChannel } from '@/app/actions/conversas'
 import { toast } from '@/lib/toast'
 import { Input } from '@/components/ui/input'
 
-type ClientOption = { id: string; name: string }
+type ClientOption = { id: string; name: string; razaoSocial?: string | null }
 
 /**
  * Modal ADMIN de conexão de canal WhatsApp Cloud. O accessToken é enviado uma
@@ -78,7 +78,11 @@ export function ChannelModal({
             >
               <option value="">Selecione...</option>
               {clients.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>
+                  {c.razaoSocial && c.razaoSocial.trim().toLowerCase() !== c.name.trim().toLowerCase()
+                    ? `${c.name} — ${c.razaoSocial}`
+                    : c.name}
+                </option>
               ))}
             </select>
           </Field>

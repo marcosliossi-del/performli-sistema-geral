@@ -33,15 +33,21 @@ export function ClientIdentity({ name, razaoSocial, href, size = 'sm' }: Props) 
     <span className={nameClass}>{name}</span>
   )
 
+  // Só mostra a razão social quando existe e é DIFERENTE do nome fantasia
+  // (comparação case-insensitive, ignorando espaços nas pontas).
+  const legal = razaoSocial?.trim()
+  const showLegal =
+    !!legal && legal.toLowerCase() !== name.trim().toLowerCase()
+
   return (
     <span className="block min-w-0">
       <span className="block truncate">{nameNode}</span>
-      {razaoSocial && (
+      {showLegal && (
         <span
-          className="block truncate text-[10px] text-[#647488]"
-          title={razaoSocial}
+          className="block truncate text-[11px] text-[#647488]"
+          title={legal}
         >
-          {razaoSocial}
+          {legal}
         </span>
       )}
     </span>

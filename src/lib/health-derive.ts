@@ -1,8 +1,8 @@
 import 'server-only'
-import type { HealthStatus, GoalPeriod, MetricType, ClientResultado } from '@prisma/client'
+import type { HealthStatus, GoalPeriod, MetricType, ClientResultado, BusinessType } from '@prisma/client'
 import { prisma } from './prisma'
 import { getWeekRange, getMonthRange } from './utils'
-import { BUDGET_CONSUMPTION_METRICS } from '@/services/health-scorer'
+import { BUDGET_CONSUMPTION_METRICS, aggregateSnapshots, isAdPlatform, type AggregatableSnapshot } from '@/services/health-scorer'
 import { getRealizadoBatch } from './metas/realizado'
 import { spDayInfo, projectMonth, proRataExpected } from './metas/pace'
 
@@ -232,6 +232,158 @@ export async function getUnifiedClientHealthBatch(
 export async function getUnifiedClientHealth(clientId: string): Promise<UnifiedClientHealth | null> {
   const map = await getUnifiedClientHealthBatch([clientId])
   return map.get(clientId) ?? null
+}
+
+// ─── Tendência dos últimos 7 dias (Operação Fundação · Bloco 1) ───────────────
+
+/** Veredito operacional da tendência de 7 dias. */
+export type WeeklyTrendVerdict = 'SUBINDO' | 'ESTAVEL' | 'DECAINDO' | 'SEM_FONTE' | 'SEM_DADOS'
+
+/**
+ * Tendência de faturamento dos últimos 7 dias COMPLETOS vs os 7 dias anteriores.
+ *
+ * Fonte canônica: aggregateSnapshots (health-scorer) — a MESMA de
+ * getRealizado/getRealizadoBatch, aplicando precedência GA4SYNC>GA4 POR DIA.
+ * NÃO reimplementa agregação; só fatia por dia a partir de UMA query de
+ * snapshots (sem N+1). Janelas em UTC-midnight sobre MetricSnapshot.date
+ * (@db.Date), ancoradas no dia-parede SP via spDayInfo (NUNCA saoPauloDayStart).
+ *
+ * Janela atual  = [D-7 .. D-1]  (7 dias fechados; D = dia-parede SP de hoje)
+ * Janela anterior = [D-14 .. D-8] (os 7 dias imediatamente anteriores)
+ *
+ * `series` = 14 pontos diários (D-14 → D-1) de faturamento, p/ o sparkline.
+ */
+export type WeeklyTrend = {
+  clientId: string
+  /** false = cliente sem GA4/GA4SYNC (ecom) ou sem plataforma de anúncio (local). */
+  hasRevenueSource: boolean
+  faturamento7d: number | null
+  faturamentoPrev7d: number | null
+  /** (atual - anterior) / anterior × 100. null quando base anterior é 0/indeterminada. */
+  variacaoPct: number | null
+  veredito: WeeklyTrendVerdict
+  roas7d: number | null
+  spend7d: number | null
+  /** 14 pontos diários de faturamento (D-14 → D-1) p/ sparkline; gaps = 0. */
+  series: number[]
+  calculatedAt: Date
+}
+
+const TREND_SNAP_INCLUDE = { platformAccount: { select: { platform: true } } } as const
+
+export async function getWeeklyTrendBatch(
+  clients: Array<{ id: string; businessType: BusinessType }>,
+): Promise<Map<string, WeeklyTrend>> {
+  const out = new Map<string, WeeklyTrend>()
+  if (clients.length === 0) return out
+
+  const now = new Date()
+  const sp = spDayInfo(now)
+  const dayMs = 86_400_000
+  const s0 = sp.spDayStartUtc.getTime() // 00:00Z do dia-parede SP de hoje
+
+  // Chaves de dia (YYYY-MM-DD, 00:00Z) em ordem cronológica: D-14 → D-1.
+  const dayKeys: string[] = []
+  for (let k = 14; k >= 1; k--) dayKeys.push(new Date(s0 - k * dayMs).toISOString().slice(0, 10))
+  const curKeys = new Set(dayKeys.slice(7)) // D-7 .. D-1
+  const prevKeys = new Set(dayKeys.slice(0, 7)) // D-14 .. D-8
+
+  const windowStart = new Date(s0 - 14 * dayMs) // 00:00Z de D-14
+  const windowEnd = new Date(s0 - dayMs) // 00:00Z de D-1 (lte inclusivo → inclui D-1)
+
+  const clientIds = clients.map((c) => c.id)
+  const btById = new Map(clients.map((c) => [c.id, c.businessType]))
+
+  const [snaps, accounts] = await Promise.all([
+    prisma.metricSnapshot.findMany({
+      where: { clientId: { in: clientIds }, date: { gte: windowStart, lte: windowEnd } },
+      include: TREND_SNAP_INCLUDE,
+    }),
+    prisma.platformAccount.findMany({
+      where: { clientId: { in: clientIds }, active: true },
+      select: { clientId: true, platform: true },
+    }),
+  ])
+
+  // hasRevenueSource: ECOMMERCE mede receita por GA4/GA4SYNC; LOCAL/B2B medem
+  // por plataforma de anúncio (mesma régua de aggregateSnapshots/resultado-engine).
+  const platformsByClient = new Map<string, Set<string>>()
+  for (const a of accounts) {
+    const set = platformsByClient.get(a.clientId) ?? new Set<string>()
+    set.add(a.platform)
+    platformsByClient.set(a.clientId, set)
+  }
+  const hasRevenueSourceOf = (clientId: string, bt: BusinessType): boolean => {
+    const set = platformsByClient.get(clientId)
+    if (!set) return false
+    if (bt === 'ECOMMERCE') return set.has('GA4') || set.has('GA4SYNC')
+    for (const p of set) if (isAdPlatform(p)) return true
+    return false
+  }
+
+  // Agrupa snapshots por cliente e por dia (chave ISO 00:00Z).
+  const byClient = new Map<string, Map<string, AggregatableSnapshot[]>>()
+  const anyByClient = new Set<string>()
+  for (const s of snaps) {
+    const dayKey = (s.date instanceof Date ? s.date : new Date(String(s.date))).toISOString().slice(0, 10)
+    const perDay = byClient.get(s.clientId) ?? new Map<string, AggregatableSnapshot[]>()
+    const arr = perDay.get(dayKey) ?? []
+    arr.push(s as AggregatableSnapshot)
+    perDay.set(dayKey, arr)
+    byClient.set(s.clientId, perDay)
+    anyByClient.add(s.clientId)
+  }
+
+  for (const c of clients) {
+    const bt = btById.get(c.id) ?? 'ECOMMERCE'
+    const perDay = byClient.get(c.id) ?? new Map<string, AggregatableSnapshot[]>()
+
+    // Sparkline: faturamento por dia (gap = 0).
+    const series = dayKeys.map((k) => aggregateSnapshots(perDay.get(k) ?? [], 'FATURAMENTO', bt) ?? 0)
+
+    const curSnaps: AggregatableSnapshot[] = []
+    const prevSnaps: AggregatableSnapshot[] = []
+    for (const [k, arr] of perDay) {
+      if (curKeys.has(k)) curSnaps.push(...arr)
+      else if (prevKeys.has(k)) prevSnaps.push(...arr)
+    }
+
+    const faturamento7d = aggregateSnapshots(curSnaps, 'FATURAMENTO', bt)
+    const faturamentoPrev7d = aggregateSnapshots(prevSnaps, 'FATURAMENTO', bt)
+    const roas7d = aggregateSnapshots(curSnaps, 'ROAS', bt)
+    const spend7d = aggregateSnapshots(curSnaps, 'SPEND', bt)
+
+    const hasRevenueSource = hasRevenueSourceOf(c.id, bt)
+
+    let variacaoPct: number | null = null
+    let veredito: WeeklyTrendVerdict
+    if (!hasRevenueSource) {
+      veredito = 'SEM_FONTE'
+    } else if (!anyByClient.has(c.id) || (faturamento7d == null && faturamentoPrev7d == null)) {
+      veredito = 'SEM_DADOS'
+    } else if (faturamentoPrev7d == null || faturamentoPrev7d === 0) {
+      // Sem base comparável: só há faturamento novo (subiu do zero) ou tudo zero.
+      veredito = (faturamento7d ?? 0) > 0 ? 'SUBINDO' : 'ESTAVEL'
+    } else {
+      variacaoPct = Math.round((((faturamento7d ?? 0) - faturamentoPrev7d) / faturamentoPrev7d) * 100)
+      veredito = variacaoPct > 10 ? 'SUBINDO' : variacaoPct < -10 ? 'DECAINDO' : 'ESTAVEL'
+    }
+
+    out.set(c.id, {
+      clientId: c.id,
+      hasRevenueSource,
+      faturamento7d,
+      faturamentoPrev7d,
+      variacaoPct,
+      veredito,
+      roas7d,
+      spend7d,
+      series,
+      calculatedAt: now,
+    })
+  }
+
+  return out
 }
 
 /**

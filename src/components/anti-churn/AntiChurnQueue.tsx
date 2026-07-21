@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from 'react'
 import { Card } from '@/components/ui/card'
-import Link from 'next/link'
 import { HeartPulse, CheckCircle2, Send, BellRing } from 'lucide-react'
 import { registerProactiveAction } from '@/app/actions/antiChurn'
+import { ClientIdentity } from '@/components/clients/ClientIdentity'
 import type { AntiChurnQueueRow } from '@/lib/dal'
 
 function riskColor(score: number | null): string {
@@ -44,9 +44,7 @@ function ClientRow({ row, canEdit }: { row: AntiChurnQueueRow; canEdit: boolean 
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <Link href={`/clients/${row.slug}`} className="text-xs font-medium text-[#95BBE2] hover:underline truncate">
-              {row.name}
-            </Link>
+            <ClientIdentity name={row.name} razaoSocial={row.razaoSocial} href={`/clients/${row.slug}`} />
             {row.isSilent && (
               <span className="flex items-center gap-1 text-[9px] text-[#EF4444] bg-[#EF4444]/10 border border-[#EF4444]/20 rounded px-1.5 py-0.5">
                 <BellRing size={9} /> silencioso

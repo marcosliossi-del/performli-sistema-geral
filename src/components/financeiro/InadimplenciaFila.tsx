@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { AlertCircle, CheckCircle2, ExternalLink, UserX } from 'lucide-react'
+import { ClientIdentity } from '@/components/clients/ClientIdentity'
 import type { OverdueInvoiceRow, ClientWithoutBillingRow, ReguaStep } from '@/lib/dal'
 
 const BRL = (n: number) =>
@@ -57,13 +58,11 @@ export function InadimplenciaFila({
                 className="flex items-center justify-between gap-3 py-2 px-3 rounded-lg bg-[#0A1E2C]/40 border border-[#38435C]/50"
               >
                 <div className="min-w-0">
-                  {r.clientSlug ? (
-                    <Link href={`/clients/${r.clientSlug}`} className="text-xs font-medium text-[#95BBE2] hover:underline">
-                      {r.clientName}
-                    </Link>
-                  ) : (
-                    <span className="text-xs font-medium text-[#EBEBEB]">{r.clientName}</span>
-                  )}
+                  <ClientIdentity
+                    name={r.clientName}
+                    razaoSocial={r.clientRazaoSocial}
+                    href={r.clientSlug ? `/clients/${r.clientSlug}` : undefined}
+                  />
                   <p className="text-[10px] text-[#87919E]">
                     {BRL(r.value)} · vencida há {r.daysOverdue} dia{r.daysOverdue !== 1 ? 's' : ''}
                   </p>

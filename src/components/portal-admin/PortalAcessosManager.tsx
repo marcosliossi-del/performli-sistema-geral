@@ -8,6 +8,7 @@ import {
   setPortalAccessActive,
 } from '@/app/actions/portalAccess'
 import { toast } from '@/lib/toast'
+import { ClientIdentity } from '@/components/clients/ClientIdentity'
 import {
   UserPlus,
   KeyRound,
@@ -29,6 +30,7 @@ type PortalUser = {
 type ClientRow = {
   id: string
   name: string
+  razaoSocial: string | null
   users: PortalUser[]
 }
 
@@ -126,7 +128,7 @@ function ClientBlock({ client }: { client: ClientRow }) {
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Store size={16} className="text-[#95BBE2]" />
-          <h2 className="text-sm font-semibold text-[#EBEBEB]">{client.name}</h2>
+          <ClientIdentity name={client.name} razaoSocial={client.razaoSocial} size="md" />
         </div>
         <button
           type="button"

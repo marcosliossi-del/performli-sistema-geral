@@ -28,6 +28,12 @@ OPE-06 (4.39) · CSX-12 (4.32) · CRM-18 (4.19) · ONB-05 (4.09). Detalhe em
 | /processos | **EM REVISÃO (catálogo vivo dos 21 POPs, branch feat/processos)** |
 | demais 15 | mapeados, aguardando fatia |
 
+## MUDANÇAS DE UI SEM REMOÇÃO DE FUNCIONALIDADE (regra 12)
+- 2026-07-21 — Cockpit "Saúde por cliente": render trocado de `ClientHealthGrid`
+  para `ClientHealthViews` (toggle Últimos 7 dias × Resultado do mês, design
+  limpo por diretriz do Marcos). `ClientHealthGrid.tsx` mantido (não removido).
+  Nenhum dado/fonte canônica alterada. Aguardando veredito do `guardiao`.
+
 ## MODELS NOVOS (cumulativo)
 - `AuditLog` (WAR-14) · `WarRoomOutcome` enum (WAR-14)
 - `ClientWeeklyCheckin` + `CheckinStatus` enum (OPE-06) — check-in por cliente

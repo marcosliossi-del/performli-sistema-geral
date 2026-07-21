@@ -23,6 +23,7 @@ export default async function PortalAcessosPage() {
     select: {
       id: true,
       name: true,
+      razaoSocial: true,
       // relation 'portalUsers' — model ClientPortalUser (criado em paralelo)
       portalUsers: {
         orderBy: { createdAt: 'asc' },
@@ -40,6 +41,7 @@ export default async function PortalAcessosPage() {
   const data = clients.map((c) => ({
     id: c.id,
     name: c.name,
+    razaoSocial: c.razaoSocial ?? null,
     users: c.portalUsers.map((u) => ({
       id: u.id,
       email: u.email,
