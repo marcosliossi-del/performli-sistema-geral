@@ -1524,3 +1524,10 @@ Achados A-101, A-102, A-103, A-111, A-120 (ver `MATRIZ.md`). Sem migration.
   (spend TikTok nunca entra — lacuna estrutural registrada).
 - Criada tela ADMIN /diagnostico-fontes: contas vinculadas (externalId +
   última sync), snapshots 8 dias lado a lado por plataforma, SyncLog recente.
+
+### 2026-07-21 — Regra permanente "DADO AMARRADO" (Marcos)
+- Toda informação repetida entre telas tem UMA fonte canônica + UM ponto de
+  leitura na DAL; alteração reflete em todo o sistema. Registrada como regra 0
+  das REGRAS TÉCNICAS do CLAUDE.md. Fontes canônicas nomeadas: gestor =
+  ClientAssignment(isPrimary); contrato = Contract vigente (Jurídico); saúde =
+  getUnifiedClientHealth; realizado = aggregateSnapshots/getRealizado*.
