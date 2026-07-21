@@ -763,6 +763,63 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-21 — Tela Clientes: edição inline estilo ClickUp (todas as colunas) + "Em renovação" derivado — AGUARDANDO APROVAÇÃO
+Fatia aprovada pelo Marcos (ADMIN). Todas as colunas da tela de Clientes viram
+editáveis in-place (clicar na célula abre o editor; Enter/blur salva, Esc cancela;
+sem lápis, sem modal). O `EditClientModal` continua existindo como caminho
+alternativo. Sem `npm` (revisão estática). NÃO commitado — pendente `guardiao`.
+
+- **Actions REUSADAS (sem caminho paralelo — regra 0 DADO AMARRADO):**
+  - Campos nativos do Client (nome/classificação/modelo/investimentos/ROAS) →
+    `updateClientField(clientId, patch)` (novo `src/app/actions/clientInline.ts`),
+    action FINA que DELEGA 100% para `updateClient` — mantém
+    `requireSession + assertClientMutationAccess` e a derivação de metas
+    (`computeMetasFromBudget` → upsert Goals MONTHLY + AuditLog).
+  - Tipo de Serviço → `updateClientProdutos` (já existente; versiona histórico +
+    gatilho de downgrade).
+  - Responsável (gestor) → `updateClientPrimaryManager` (assignments.ts; ADMIN;
+    `ClientAssignment.isPrimary` = fonte única; reatribui tarefas/War Rooms).
+  - Período/Valor do contrato → `updateClientContractInline` (novo, ADMIN only,
+    espelha o gate de `contracts.ts`): edita o Contract VIGENTE do Jurídico
+    (fonte única) e sincroniza o cache do cadastro
+    (`contractStart/contractEndDate/contractValue/feeAmount`); se não há contrato
+    vigente (`fonteContrato = cadastro`), edita só o cadastro (a UI avisa via
+    tooltip). AuditLog `contract.inline_update` / `client.contract_cadastro_update`.
+- **Extensão de `updateClient`:** passa a aceitar `curva?: ClientCurva|null`
+  (classificação Ouro/Prata/Bronze = A/B/C — sem campo `classificacao` paralelo).
+- **`ClientCurva` como fonte da Classificação:** o select grava a CURVA canônica;
+  o mapa OURO/PRATA/BRONZE ↔ A/B/C continua único.
+- **RBAC na UI (espelho, servidor manda):** `canEditFields` (ADMIN/SUPERVISOR/
+  ANALISTA/GESTOR — GESTOR só vê seus clientes, já escopados) libera nome/serviço/
+  classificação/modelo/ROAS; financeiros (investimentos, valor, período) e
+  responsável só ADMIN. CS/leitura não editam.
+- **Salvamento OTIMISTA:** `saveField` genérico aplica override na linha, chama a
+  action e faz rollback + `toast(msg,'err')` em falha; sucesso → `toast(msg,'ok')`.
+  Rodapé (somas ADMIN) recalcula sobre a visão otimista quando filtrado; sem filtro
+  usa o total do servidor até o `revalidatePath('/clients')`.
+- **"Em renovação" DERIVADO do Contract (sem depender do cron):**
+  `clients/page.tsx` estende `emRenovacao` para cobrir DOIS casos quando a fonte é
+  o Jurídico: (a) Contract `RENOVACAO`, e (b) Contract `VIGENTE` já VENCIDO
+  (`endDate < spDayInfo(now).spDayStartUtc` — dia-parede SP, nunca
+  `saoPauloDayStart`). Na pill de status, cliente ACTIVE + `emRenovacao` mostra
+  rótulo "Em renovação" (âmbar) — DISPLAY, não grava nada no Client. O badge da
+  coluna Período segue.
+- **Auto-renovação no caminho INDIVIDUAL:** a pill individual usa a MESMA action
+  `updateClientsStatus` do bulk; a query de contratos a renovar em ACTIVE foi
+  estendida de `status=RENOVACAO` para `RENOVACAO OR (VIGENTE e endDate < hoje SP)`,
+  em `$transaction` com `computeRenewalDates` (novo início = fim anterior, mesma
+  duração), `status→VIGENTE` + AuditLog. Toast "Contrato renovado até DD/MM/AAAA".
+  O cron `flagExpiredContractsForRenewal` fica como redundância de notificação,
+  não é mais a fonte do estado visual.
+- **Coluna PLATAFORMA:** mantida somente-leitura (fonte = `PlatformAccount` ativa;
+  editar inline criaria acoplamento a credenciais/integração). Edição segue no
+  cadastro do cliente. Ponto sinalizado ao guardião.
+- **Arquivos:** `src/app/actions/clientInline.ts` (novo), `updateClient.ts`
+  (+curva, +auto-renovação VIGENTE vencido), `assignments.ts` (reuso),
+  `src/components/clientes/ClientesTable.tsx` (editores inline reutilizáveis),
+  `src/app/(dashboard)/clients/page.tsx` (staff + responsavelId/curva/produtos +
+  `emRenovacao` derivado + `canEditFields`).
+
 ### 2026-07-21 — Operação Fundação: Budget mensal → Metas automáticas → Health Score — AGUARDANDO APROVAÇÃO
 Fatia aprovada pelo Marcos: o INVESTIMENTO (budget mensal por plataforma) passa a
 ser a métrica-mãe editável no início de cada mês; a partir dela derivam-se as
