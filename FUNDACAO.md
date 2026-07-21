@@ -32,6 +32,42 @@ Lacunas propostas: Classificação derivada de `curva` A/B/C; Tipo de Serviço d
 `produtos[]`; Investimento = metas investimento (não SPEND). Detalhes no DOSSIE §15.
 Pendente: veredito do `guardiao` + certificação por escrito do Marcos.
 
+### Budget mensal → Metas automáticas → Health Score (2026-07-21) — AGUARDANDO APROVAÇÃO DO MARCOS
+O INVESTIMENTO (budget mensal por plataforma) vira a métrica-mãe editável no
+início do mês. Direção INVERTIDA: `roasMinimo` agora é INPUT humano e o
+faturamento é DERIVADO (`faturamento-alvo = investimento total × ROAS mínimo`).
+- Fonte única de derivação: `src/lib/metas/budget.ts` (`computeMetasFromBudget`) —
+  `spendGoal = soma`, `faturamentoGoal = soma × roasMinimo`, `roasGoal = roasMinimo`.
+- Ao salvar budget/ROAS na ficha do cliente (`EditClientModal` → `updateClient`),
+  UPSERT das Goals MONTHLY do mês corrente (SPEND/FATURAMENTO/ROAS) + AuditLog
+  `goals.auto_from_budget`. Health score já lê essas Goals (nada a mudar lá).
+- Convivência com o cron `projetarMetasDoMes`: mesma chave de Goal do mês →
+  **budget (decisão humana) SOBRESCREVE a projeção automática do mês corrente**;
+  meses futuros seguem a projeção. Cron não alterado.
+- `roasMinimo` já existia no schema (`Decimal?`) — NENHUMA migration criada.
+- UI: coluna "Invest. Anúncios" da tela Clientes virou 4 colunas do print
+  (Invest. Meta · Google · TikTok · ROAS mín.) com soma dos 3 investimentos no
+  rodapé (ADMIN). Tipo de Serviço: sugestões canônicas "Tráfego Pago", "CRM",
+  "Traqueamento". Detalhes no DOSSIE §15.
+
+### Status editável (inline + massa) + ciclo de renovação de contrato
+- Tela Clientes: célula STATUS virou dropdown-pill (Ativo/Pausado/Cancelado)
+  editável inline + barra de ação em massa, otimista com rollback/toast. Escreve
+  em `Client.status` (fonte única). Confirm ao Cancelar. Visível só p/ papéis
+  autorizados; demais veem pill estática.
+- "Em renovação" = badge de leitura (âmbar) na coluna Período, derivada do
+  Contract vigente status RENOVACAO — NÃO é opção do seletor.
+- Action `updateClientsStatus` (ADMIN/SUPERVISOR only; zod máx 100; AuditLog
+  `client.status.bulk`; revalidate /clients+/cockpit). CHURNED → offboarding
+  por cliente.
+- Adendo — ciclo de renovação: cron `flagExpiredContractsForRenewal` (vencido →
+  RENOVACAO + Alert CONTRACT_EXPIRING_SOON + AuditLog); reativação renova pelo
+  mesmo período em $transaction (`computeRenewalDates`) + toast. Substituiu o
+  antigo `renewExpiredContracts` silencioso (justificativa em PROJECT_STATE.md).
+  Nenhum model/enum novo; `CONTRACT_EXPIRING_SOON` e `ClientStatus` reaproveitados.
+
+Pendente: veredito do `guardiao` + certificação por escrito do Marcos.
+
 ## Blocos seguintes (aguardando)
 2. Tarefas/rotinas · 3. Clientes/CS · 4. Comercial/Conversas · 5. Financeiro · 6. Portal
 

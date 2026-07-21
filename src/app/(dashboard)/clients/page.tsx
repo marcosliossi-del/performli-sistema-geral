@@ -45,7 +45,7 @@ async function getClientesData(userId: string, role: string) {
         nps: true, relacionamento: true, curva: true,
         // Fatia FUNDACAO (tela Clientes / print Marcos):
         produtos: true,
-        investimentoMeta: true, investimentoGoogle: true, investimentoTiktok: true,
+        investimentoMeta: true, investimentoGoogle: true, investimentoTiktok: true, roasMinimo: true,
         // Fallback de contrato (cache do cadastro) quando NÃO há Contract vigente
         contractStart: true, contractEndDate: true, feeAmount: true,
         // Contrato vigente do Jurídico = FONTE ÚNICA de período + valor.
@@ -110,11 +110,17 @@ async function getClientesData(userId: string, role: string) {
   // (contrato vigente com fallback), não o cache bruto, p/ bater com a coluna.
   let somaContrato   = 0
   let somaInvestimento = 0
+  let somaInvestMeta   = 0
+  let somaInvestGoogle = 0
+  let somaInvestTiktok = 0
 
   const rows = clients.map(c => {
     // ── Amarração Jurídico: contrato vigente é a fonte única de período+valor ──
     const vigente = c.contracts[0] ?? null
     const fonteContrato: 'juridico' | 'cadastro' = vigente ? 'juridico' : 'cadastro'
+    // "Em renovação" = derivado do Contract vigente (Jurídico), NUNCA um status do
+    // seletor. Vira badge de leitura na coluna Período (DADO AMARRADO).
+    const emRenovacao = vigente?.status === 'RENOVACAO'
 
     const periodoInicio = vigente?.startDate ?? c.contractStart ?? null
     const periodoFim    = vigente?.endDate   ?? c.contractEndDate ?? null
@@ -146,6 +152,9 @@ async function getClientesData(userId: string, role: string) {
     if (isAdmin) {
       if (valorContrato) somaContrato += valorContrato
       if (investimento)  somaInvestimento += investimento
+      somaInvestMeta   += Number(c.investimentoMeta   ?? 0)
+      somaInvestGoogle += Number(c.investimentoGoogle ?? 0)
+      somaInvestTiktok += Number(c.investimentoTiktok ?? 0)
     }
 
     return {
@@ -167,11 +176,18 @@ async function getClientesData(userId: string, role: string) {
       periodoInicio: periodoInicio ? periodoInicio.toISOString() : null,
       periodoFim:    periodoFim ? periodoFim.toISOString() : null,
       fonteContrato,
+      emRenovacao,
       vencido,
       venceEmDias,
       plataformas:   c.platformAccounts.map(p => p.platform),
       responsavel:   c.assignments[0]?.user?.name ?? c.gestor?.name ?? null,
       investimento,
+      // Breakdown do budget por plataforma (print Marcos): 4 colunas. Financeiro
+      // → só ADMIN vê valores; para os demais mandamos null (a UI mostra "—").
+      investimentoMeta:   isAdmin ? (c.investimentoMeta   != null ? Number(c.investimentoMeta)   : null) : null,
+      investimentoGoogle: isAdmin ? (c.investimentoGoogle != null ? Number(c.investimentoGoogle) : null) : null,
+      investimentoTiktok: isAdmin ? (c.investimentoTiktok != null ? Number(c.investimentoTiktok) : null) : null,
+      roasMinimo:         c.roasMinimo != null ? Number(c.roasMinimo) : null,
       contractValue: valorContrato,
     }
   })
@@ -182,6 +198,9 @@ async function getClientesData(userId: string, role: string) {
       count:            rows.length,
       somaContrato:     isAdmin ? somaContrato : null,
       somaInvestimento: isAdmin ? somaInvestimento : null,
+      somaInvestMeta:   isAdmin ? somaInvestMeta : null,
+      somaInvestGoogle: isAdmin ? somaInvestGoogle : null,
+      somaInvestTiktok: isAdmin ? somaInvestTiktok : null,
     },
     kpis: {
       recorrentes:       active.length,
@@ -199,7 +218,11 @@ async function getClientesData(userId: string, role: string) {
 export default async function ClientsPage() {
   const session = await requireSession()
   const { clients, kpis, totals } = await getClientesData(session.userId, session.role)
-  const isAdmin = normalizeRole(session.role) === 'ADMIN'
+  const viewerRole = normalizeRole(session.role)
+  const isAdmin = viewerRole === 'ADMIN'
+  // Editar status (inline + massa) é ação estrutural: só ADMIN e SUPERVISOR.
+  // Espelha o gate da action updateClientsStatus (defesa em profundidade na UI).
+  const canEditStatus = viewerRole === 'ADMIN' || viewerRole === 'SUPERVISOR_TRAFEGO'
 
   const cards = [
     {
@@ -283,7 +306,7 @@ export default async function ClientsPage() {
       </div>
 
       {/* Table */}
-      <ClientesTable clients={clients} totals={totals} isAdmin={isAdmin} />
+      <ClientesTable clients={clients} totals={totals} isAdmin={isAdmin} canEditStatus={canEditStatus} />
     </div>
   )
 }

@@ -23,6 +23,7 @@ interface Props {
     investimentoMeta: number | null
     investimentoGoogle: number | null
     investimentoTiktok: number | null
+    roasMinimo: number | null
     produtos: string[]
   }
 }

@@ -1,76 +1,92 @@
 /**
- * Renovação automática de contratos.
+ * Ciclo de renovação de contratos (fatia FUNDACAO — adendo Marcos 2026-07-21).
  *
- * Regra da agência: todo contrato tem renovação automática por igual período.
- * Se o contrato venceu (endDate passou) e o cliente NÃO se manifestou
- * (continua ACTIVE — não foi cancelado), o contrato é renovado por um novo
- * período de mesma duração, a partir da data de encerramento anterior.
+ * Regra da agência (revista): contrato que VENCE não é renovado em silêncio. Ele
+ * entra em RENOVAÇÃO (status RENOVACAO) e gera um ALERTA operacional para o
+ * cliente — a renovação vira PROCESSO visível ("Arkza em processo, não em
+ * memória"), não uma mudança automática invisível. A conclusão da renovação
+ * acontece:
+ *   (a) na REATIVAÇÃO do cliente (status → ACTIVE) — ver updateClientsStatus,
+ *       que renova o mesmo contrato por igual período; ou
+ *   (b) manualmente no Jurídico (renewContract).
  *
- * Roda no cron diário. Idempotente: após renovar, endDate fica no futuro e não
- * dispara de novo. try/catch por contrato. Registra AuditLog de cada renovação.
+ * SUBSTITUI o antigo `renewExpiredContracts` (renovava em silêncio p/ VIGENTE).
+ * Justificativa registrada em PROJECT_STATE.md e DOSSIE §15 (decisão do Marcos).
+ *
+ * Roda no cron diário. Idempotente: VIGENTE→RENOVACAO só transita uma vez (no dia
+ * seguinte o contrato já é RENOVACAO e não é recapturado). try/catch por contrato
+ * (CLAUDE.md #7). AuditLog por transição.
  */
 
 import { prisma } from '@/lib/prisma'
 import { writeAuditLog } from '@/lib/audit'
+import { spDayInfo } from '@/lib/metas/pace'
 
-function addMonths(base: Date, months: number): Date {
-  const dt = new Date(base)
-  dt.setMonth(dt.getMonth() + months)
-  return dt
-}
+// Fonte única das datas de renovação (módulo puro, testável isolado).
+export { computeRenewalDates } from './contract-renewal-dates'
 
-export async function renewExpiredContracts(): Promise<{ checked: number; renewed: number; failed: number }> {
-  const now = new Date()
+/**
+ * Marca como RENOVACAO todo contrato VIGENTE já vencido (endDate < hoje, no
+ * dia-parede SP; Contract.endDate é @db.Date = 00:00Z) e abre um alerta
+ * operacional para o cliente. Independe do status do cliente.
+ */
+export async function flagExpiredContractsForRenewal(): Promise<{
+  checked: number
+  flagged: number
+  alertsFired: number
+  failed: number
+}> {
+  const { spDayStartUtc } = spDayInfo(new Date())
 
-  // Contratos vigentes já vencidos, de clientes ATIVOS (não cancelados).
-  const contracts = await prisma.contract.findMany({
-    where: {
-      status: 'VIGENTE',
-      endDate: { lt: now },
-      client: { status: 'ACTIVE' },
+  const expired = await prisma.contract.findMany({
+    where: { status: 'VIGENTE', endDate: { lt: spDayStartUtc } },
+    select: {
+      id: true,
+      clientId: true,
+      endDate: true,
+      client: { select: { name: true } },
     },
-    select: { id: true, clientId: true, startDate: true, endDate: true },
   })
 
-  let renewed = 0
+  let flagged = 0
+  let alertsFired = 0
   let failed = 0
 
-  for (const c of contracts) {
+  for (const c of expired) {
     try {
-      // Duração original em meses (contratos são múltiplos de mês).
-      const months =
-        (c.endDate.getFullYear() - c.startDate.getFullYear()) * 12 +
-        (c.endDate.getMonth() - c.startDate.getMonth())
-      const period = months > 0 ? months : 6 // fallback defensivo
-
-      const newStart = c.endDate
-      const newEnd = addMonths(c.endDate, period)
-
       await prisma.contract.update({
         where: { id: c.id },
-        data: { startDate: newStart, endDate: newEnd, status: 'VIGENTE' },
+        data: { status: 'RENOVACAO' },
       })
+      flagged++
 
-      // Mantém o cache do Client em dia.
-      await prisma.client.update({
-        where: { id: c.clientId },
-        data: { contractStart: newStart, contractEndDate: newEnd },
-      }).catch(() => {})
+      // Cache do Client (contractEndDate) permanece apontando p/ o fim vencido
+      // até a renovação ser concluída (reativação/manual) — reflete a realidade.
+      const dataFim = c.endDate.toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+      await prisma.alert.create({
+        data: {
+          clientId: c.clientId,
+          type: 'CONTRACT_EXPIRING_SOON',
+          title: 'Contrato em renovação',
+          body: `Contrato de ${c.client.name} venceu em ${dataFim} — em renovação.`,
+          read: false,
+        },
+      })
+      alertsFired++
 
       await writeAuditLog({
-        action: 'contract.autoRenew',
+        actorRole: 'SYSTEM',
+        action: 'contract.expired_to_renewal',
         entityType: 'Contract',
         entityId: c.id,
         clientId: c.clientId,
-        metadata: { period, newStart: newStart.toISOString(), newEnd: newEnd.toISOString() },
+        metadata: { endDate: c.endDate.toISOString() },
       })
-
-      renewed++
     } catch (err) {
-      console.error(`[contract-renewal] falha ao renovar contrato ${c.id}:`, err)
+      console.error(`[contract-renewal] falha ao marcar contrato ${c.id} em renovação:`, err)
       failed++
     }
   }
 
-  return { checked: contracts.length, renewed, failed }
+  return { checked: expired.length, flagged, alertsFired, failed }
 }

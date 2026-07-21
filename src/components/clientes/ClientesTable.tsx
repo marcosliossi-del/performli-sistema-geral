@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { Search, Plus, MessageCircle, Pencil, ShoppingCart, MapPin, ArrowRight } from 'lucide-react'
+import { useState, useTransition, useEffect } from 'react'
+import { Search, Plus, MessageCircle, Pencil, ShoppingCart, MapPin, ArrowRight, ChevronDown, Check } from 'lucide-react'
+import type { ClientStatus } from '@prisma/client'
 import { formatCurrency } from '@/lib/utils'
-import { bulkSetBusinessType } from '@/app/actions/updateClient'
+import { bulkSetBusinessType, updateClientsStatus } from '@/app/actions/updateClient'
 import { ClientIdentity } from '@/components/clients/ClientIdentity'
+import { toast } from '@/lib/toast'
 
 export interface ClientRow {
   id:            string
@@ -23,11 +25,16 @@ export interface ClientRow {
   periodoInicio: string | null
   periodoFim:    string | null
   fonteContrato: 'juridico' | 'cadastro'
+  emRenovacao:   boolean
   vencido:       boolean
   venceEmDias:   number | null
   plataformas:   string[]
   responsavel:   string | null
   investimento:  number | null
+  investimentoMeta:   number | null
+  investimentoGoogle: number | null
+  investimentoTiktok: number | null
+  roasMinimo:         number | null
   contractValue: number | null
 }
 
@@ -35,13 +42,25 @@ interface Totals {
   count:            number
   somaContrato:     number | null
   somaInvestimento: number | null
+  somaInvestMeta:   number | null
+  somaInvestGoogle: number | null
+  somaInvestTiktok: number | null
 }
 
 interface Props {
   clients: ClientRow[]
   totals:  Totals
   isAdmin: boolean
+  /** ADMIN/SUPERVISOR: pode editar status (inline + massa). Demais: pill estática. */
+  canEditStatus?: boolean
 }
+
+// Ordem e rótulos das opções do seletor de status (print do Marcos).
+const STATUS_OPTIONS: { value: ClientStatus; label: string; color: string }[] = [
+  { value: 'ACTIVE',  label: 'Ativo',     color: '#22C55E' },
+  { value: 'PAUSED',  label: 'Pausado',   color: '#F59E0B' },
+  { value: 'CHURNED', label: 'Cancelado', color: '#EF4444' },
+]
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   ACTIVE:  { label: 'Ativo',     color: '#22C55E' },
@@ -75,21 +94,83 @@ function fmtDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-export function ClientesTable({ clients, totals, isAdmin }: Props) {
+export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false }: Props) {
   const [search,   setSearch]   = useState('')
   const [filter,   setFilter]   = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'CHURNED'>('ALL')
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'ECOMMERCE' | 'LOCAL'>('ALL')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [isPending, startTransition] = useTransition()
 
+  // Overrides otimistas de status (id → status). Aplicados por cima do prop até o
+  // revalidate do servidor trazer o valor persistido. Rollback em caso de erro.
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, ClientStatus>>({})
+  const statusOf = (c: ClientRow): string => statusOverrides[c.id] ?? c.status
+
+  // Menu de status aberto (id da linha) — dropdown-pill inline.
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
+
   const filtered = clients.filter(c => {
     const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) ||
       (c.email ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (c.phone ?? '').includes(search)
-    const matchFilter = filter === 'ALL' || c.status === filter
+    const matchFilter = filter === 'ALL' || statusOf(c) === filter
     const matchType   = typeFilter === 'ALL' || c.businessType === typeFilter
     return matchSearch && matchFilter && matchType
   })
+
+  /**
+   * Aplica um status a um conjunto de clientes de forma OTIMISTA e chama a action.
+   * Rollback + toast de erro se a action falhar. `confirmChurn` mostra confirm
+   * antes de cancelar (ação estrutural).
+   */
+  function applyStatus(ids: string[], status: ClientStatus) {
+    if (ids.length === 0) return
+    if (status === 'CHURNED') {
+      const ok = window.confirm(
+        `Cancelar ${ids.length} cliente${ids.length !== 1 ? 's' : ''}? Eles saem das rotinas e metas ativas.`,
+      )
+      if (!ok) return
+    }
+
+    // Snapshot para rollback.
+    const prev: Record<string, ClientStatus | undefined> = {}
+    for (const id of ids) prev[id] = statusOverrides[id]
+
+    setStatusOverrides(o => {
+      const next = { ...o }
+      for (const id of ids) next[id] = status
+      return next
+    })
+    setOpenMenu(null)
+
+    startTransition(async () => {
+      const res = await updateClientsStatus(ids, status)
+      if (res.error) {
+        // Rollback.
+        setStatusOverrides(o => {
+          const next = { ...o }
+          for (const id of ids) {
+            if (prev[id] === undefined) delete next[id]
+            else next[id] = prev[id]!
+          }
+          return next
+        })
+        toast(res.error, 'err')
+        return
+      }
+      const label = STATUS_OPTIONS.find(s => s.value === status)?.label ?? status
+      toast(`${res.updated} cliente${res.updated !== 1 ? 's' : ''} → ${label}`, 'ok')
+      if (res.renewedCount && res.renewedCount > 0) {
+        toast(
+          res.renewedUntil
+            ? `Contrato renovado automaticamente até ${res.renewedUntil}`
+            : `${res.renewedCount} contrato${res.renewedCount !== 1 ? 's' : ''} renovado${res.renewedCount !== 1 ? 's' : ''} automaticamente`,
+          'info',
+        )
+      }
+      setSelected(new Set())
+    })
+  }
 
   // Somas do rodapé recalculadas sobre o subconjunto FILTRADO (o que está à vista),
   // só para ADMIN (valores financeiros). Não filtrado → usa o total do servidor.
@@ -97,9 +178,25 @@ export function ClientesTable({ clients, totals, isAdmin }: Props) {
   const footContrato = isAdmin
     ? (isFilteredView ? filtered.reduce((s, c) => s + (c.contractValue ?? 0), 0) : totals.somaContrato ?? 0)
     : null
-  const footInvest = isAdmin
-    ? (isFilteredView ? filtered.reduce((s, c) => s + (c.investimento ?? 0), 0) : totals.somaInvestimento ?? 0)
+  // Somas por plataforma (print Marcos) — no rodapé. Filtrado → recalcula sobre a
+  // visão; sem filtro → usa o total do servidor.
+  const footInvestMeta = isAdmin
+    ? (isFilteredView ? filtered.reduce((s, c) => s + (c.investimentoMeta ?? 0), 0) : totals.somaInvestMeta ?? 0)
     : null
+  const footInvestGoogle = isAdmin
+    ? (isFilteredView ? filtered.reduce((s, c) => s + (c.investimentoGoogle ?? 0), 0) : totals.somaInvestGoogle ?? 0)
+    : null
+  const footInvestTiktok = isAdmin
+    ? (isFilteredView ? filtered.reduce((s, c) => s + (c.investimentoTiktok ?? 0), 0) : totals.somaInvestTiktok ?? 0)
+    : null
+
+  // Fecha o menu de status ao clicar fora.
+  useEffect(() => {
+    if (!openMenu) return
+    const close = () => setOpenMenu(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [openMenu])
 
   function toggleAll() {
     if (selected.size === filtered.length) {
@@ -201,12 +298,30 @@ export function ClientesTable({ clients, totals, isAdmin }: Props) {
             <MapPin size={12} />
             Negócio Local
           </button>
+          {canEditStatus && (
+            <>
+              <span className="text-[#38435C]">·</span>
+              <span className="text-xs text-[#87919E]">Marcar como:</span>
+              {STATUS_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => applyStatus(Array.from(selected), opt.value)}
+                  disabled={isPending}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 transition-colors"
+                  style={{ color: opt.color, background: `${opt.color}22` }}
+                >
+                  <span className="w-2 h-2 rounded-full" style={{ background: opt.color }} />
+                  {opt.label}
+                </button>
+              ))}
+            </>
+          )}
           {isPending && <span className="text-xs text-[#87919E]">Salvando...</span>}
           <button
             onClick={() => setSelected(new Set())}
             className="ml-auto text-xs text-[#87919E] hover:text-[#EBEBEB] transition-colors"
           >
-            Cancelar seleção
+            Limpar
           </button>
         </div>
       )}
@@ -232,7 +347,10 @@ export function ClientesTable({ clients, totals, isAdmin }: Props) {
               <th className="text-left px-3 py-3 font-medium">MODELO DE NEGÓCIO</th>
               <th className="text-left px-3 py-3 font-medium">PLATAFORMA</th>
               <th className="text-left px-3 py-3 font-medium">RESPONSÁVEL</th>
-              <th className="text-right px-3 py-3 font-medium">INVEST. ANÚNCIOS</th>
+              <th className="text-right px-3 py-3 font-medium">INVEST. META</th>
+              <th className="text-right px-3 py-3 font-medium">INVEST. GOOGLE</th>
+              <th className="text-right px-3 py-3 font-medium">INVEST. TIKTOK</th>
+              <th className="text-right px-3 py-3 font-medium">ROAS MÍN.</th>
               <th className="text-right px-3 py-3 font-medium">VALOR CONTRATO</th>
               {/* Saúde vive num LUGAR SÓ: link para o quadro único (Client 360). */}
               <th className="text-left px-3 py-3 font-medium">SAÚDE</th>
@@ -242,13 +360,14 @@ export function ClientesTable({ clients, totals, isAdmin }: Props) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={13} className="text-center py-12 text-sm text-[#87919E]">
+                <td colSpan={16} className="text-center py-12 text-sm text-[#87919E]">
                   Nenhum cliente encontrado
                 </td>
               </tr>
             ) : (
               filtered.map(client => {
-                const st  = STATUS_LABELS[client.status] ?? STATUS_LABELS.ACTIVE
+                const curStatus = statusOf(client)
+                const st  = STATUS_LABELS[curStatus] ?? STATUS_LABELS.ACTIVE
                 const typ = TYPE_CONFIG[client.businessType as 'ECOMMERCE' | 'LOCAL'] ?? TYPE_CONFIG.ECOMMERCE
                 const TypeIcon = typ.icon
                 const classif = client.classificacao ? CLASSIF_CONFIG[client.classificacao] : null
@@ -283,19 +402,54 @@ export function ClientesTable({ clients, totals, isAdmin }: Props) {
                       />
                     </td>
 
-                    {/* STATUS */}
+                    {/* STATUS — dropdown-pill editável (ADMIN/SUPERVISOR) ou pill estática */}
                     <td className="px-3 py-3">
-                      <span
-                        className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-                        style={{ color: st.color, background: `${st.color}18` }}
-                        title={
-                          client.status === 'PAUSED'
-                            ? `Pausado${client.pausedAt ? ` desde ${new Date(client.pausedAt).toLocaleDateString('pt-BR')}` : ''}${client.pauseReason ? ` — ${client.pauseReason}` : ''}`
-                            : undefined
-                        }
-                      >
-                        {st.label}
-                      </span>
+                      {canEditStatus ? (
+                        <div className="relative inline-block">
+                          <button
+                            type="button"
+                            onClick={() => setOpenMenu(m => (m === client.id ? null : client.id))}
+                            disabled={isPending}
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap hover:brightness-110 disabled:opacity-50 transition"
+                            style={{ color: st.color, background: `${st.color}18` }}
+                            title="Alterar status do cliente"
+                          >
+                            {st.label}
+                            <ChevronDown size={11} />
+                          </button>
+                          {openMenu === client.id && (
+                            <div className="absolute z-20 mt-1 left-0 w-36 rounded-lg border border-[#38435C] bg-[#0D2137] shadow-xl py-1">
+                              {STATUS_OPTIONS.map(opt => (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => applyStatus([client.id], opt.value)}
+                                  className="flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-[#EBEBEB] hover:bg-[#38435C]/40 transition"
+                                >
+                                  <span
+                                    className="w-2 h-2 rounded-full flex-shrink-0"
+                                    style={{ background: opt.color }}
+                                  />
+                                  <span className="flex-1 text-left">{opt.label}</span>
+                                  {curStatus === opt.value && <Check size={12} className="text-[#95BBE2]" />}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+                          style={{ color: st.color, background: `${st.color}18` }}
+                          title={
+                            curStatus === 'PAUSED'
+                              ? `Pausado${client.pausedAt ? ` desde ${new Date(client.pausedAt).toLocaleDateString('pt-BR')}` : ''}${client.pauseReason ? ` — ${client.pauseReason}` : ''}`
+                              : undefined
+                          }
+                        >
+                          {st.label}
+                        </span>
+                      )}
                     </td>
 
                     {/* NOME */}
@@ -335,8 +489,17 @@ export function ClientesTable({ clients, totals, isAdmin }: Props) {
                     <td className="px-3 py-3 whitespace-nowrap">
                       {client.periodoFim ? (
                         <div className="flex flex-col leading-tight">
-                          <span className="text-xs" style={{ color: periodoColor }}>
+                          <span className="text-xs flex items-center gap-1.5" style={{ color: periodoColor }}>
                             {fmtDate(client.periodoInicio)} → {fmtDate(client.periodoFim)}
+                            {client.emRenovacao && (
+                              <span
+                                className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                                style={{ color: '#F59E0B', background: '#F59E0B18' }}
+                                title="Contrato vigente em renovação no Jurídico"
+                              >
+                                Em renovação
+                              </span>
+                            )}
                           </span>
                           <span className="text-[10px] flex items-center gap-1">
                             {periodoNota && (
@@ -400,11 +563,27 @@ export function ClientesTable({ clients, totals, isAdmin }: Props) {
                       {client.responsavel ?? <span className="text-[#F59E0B]">Sem gestor</span>}
                     </td>
 
-                    {/* INVESTIMENTO EM ANÚNCIOS */}
+                    {/* BUDGET POR PLATAFORMA (print Marcos): Meta · Google · TikTok · ROAS mín. */}
                     <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
                       {isAdmin
-                        ? (client.investimento ? formatCurrency(client.investimento) : <span className="text-[#38435C]">—</span>)
+                        ? (client.investimentoMeta ? formatCurrency(client.investimentoMeta) : <span className="text-[#38435C]">—</span>)
                         : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
+                      {isAdmin
+                        ? (client.investimentoGoogle ? formatCurrency(client.investimentoGoogle) : <span className="text-[#38435C]">—</span>)
+                        : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
+                      {isAdmin
+                        ? (client.investimentoTiktok ? formatCurrency(client.investimentoTiktok) : <span className="text-[#38435C]">—</span>)
+                        : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
+                    </td>
+                    {/* ROAS mínimo NÃO é financeiro sensível (é meta operacional) → visível a todos. */}
+                    <td className="px-3 py-3 text-right text-xs text-[#C7CDD6] whitespace-nowrap">
+                      {client.roasMinimo != null
+                        ? `${client.roasMinimo.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`
+                        : <span className="text-[#38435C]">—</span>}
                     </td>
 
                     {/* VALOR DO CONTRATO */}
@@ -465,8 +644,16 @@ export function ClientesTable({ clients, totals, isAdmin }: Props) {
                   {isFilteredView && ' (filtrado)'}
                 </td>
                 <td className="px-3 py-3 text-right whitespace-nowrap">
-                  {isAdmin ? formatCurrency(footInvest ?? 0) : '—'}
+                  {isAdmin ? formatCurrency(footInvestMeta ?? 0) : '—'}
                 </td>
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  {isAdmin ? formatCurrency(footInvestGoogle ?? 0) : '—'}
+                </td>
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  {isAdmin ? formatCurrency(footInvestTiktok ?? 0) : '—'}
+                </td>
+                {/* ROAS mín. não soma (é taxa) */}
+                <td className="px-3 py-3" />
                 <td className="px-3 py-3 text-right text-[#22C55E] whitespace-nowrap">
                   {isAdmin ? formatCurrency(footContrato ?? 0) : '—'}
                 </td>
