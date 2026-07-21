@@ -54,6 +54,15 @@ CEO/comercial sem que processos críticos quebrem.
 
 ## REGRAS TÉCNICAS INEGOCIÁVEIS (toda implementação)
 
+0. **DADO AMARRADO (regra do Marcos, 2026-07-21).** Toda informação que aparece
+   em mais de uma tela tem UMA fonte canônica no banco e UM ponto de leitura na
+   DAL; alterou numa tela, reflete em todas (revalidate incluso). Exemplos:
+   gestor responsável = `ClientAssignment(isPrimary)`; período/valor de
+   contrato = `Contract` vigente do Jurídico; saúde = `getUnifiedClientHealth`;
+   realizado = `aggregateSnapshots`/`getRealizado*`. É PROIBIDO criar campo ou
+   cálculo paralelo para dado que já tem dono — se a fonte não servir, evolua a
+   fonte, nunca duplique.
+
 1. Toda **leitura** passa pela camada de dados/DAL quando aplicável.
 2. Toda **mutação** valida: **autenticação + papel + posse (ownership)**.
 3. **NUNCA** criar bypass de autorização.

@@ -763,6 +763,39 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-21 — Operação Fundação: tela Clientes reformatada (print do Marcos) — AGUARDANDO APROVAÇÃO
+Ajuste da lista `/clients` para o layout pedido pelo Marcos (referência: ClickUp).
+Sem `npm` (revisão estática). NÃO commitado — pendente veredito do `guardiao` +
+certificação do Marcos.
+
+- **Colunas na ordem do print** (`ClientesTable.tsx`): Status · Nome · Tipo de
+  Serviço · Classificação (OURO/PRATA/BRONZE) · Período do Contrato · Modelo de
+  Negócio · Plataforma (badges) · Responsável · Investimento em anúncios · Valor
+  do Contrato. Rodapé (`<tfoot>`) fixo com CONTAGEM N + SOMA investimento + SOMA
+  contrato — valores financeiros só ADMIN (stripSensitive mantido); recalcula
+  sobre o subconjunto filtrado quando há busca/filtro ativo.
+- **Amarração Jurídico (regra nova do Marcos: "dado amarrado"):** período e valor
+  do contrato vêm do CONTRATO VIGENTE (`Contract` status VIGENTE|RENOVACAO, mais
+  recente por `startDate`) — fonte única. Editar em `/juridico` reflete aqui
+  (as actions em `src/app/actions/contracts.ts` já faziam `revalidatePath('/clients')`).
+  Fallback documentado: sem Contract vigente usa `Client.contractStart` /
+  `contractEndDate` / `feeAmount|contractValue` (cache do cadastro) com flag
+  `fonteContrato: 'cadastro'` exibida na UI ("do cadastro").
+- **Vencimento** calculado em dia-parede SP (`spDayInfo` de `src/lib/metas/pace.ts`):
+  vencido (fim < hoje) em vermelho com "Vencido há Xd"; vence em <30d em âmbar com
+  "Vence em Xd" (regra UX: dizer o porquê). Plataformas = `PlatformAccount` ativas.
+  Responsável = `ClientAssignment.isPrimary` (fallback `gestor`). Sem N+1 (includes
+  batelados numa única query).
+- **Lacunas reportadas (dado honesto, nada inventado):**
+  - *Classificação OURO/PRATA/BRONZE* não existe no schema; derivada do enum
+    `ClientCurva` A/B/C (A→OURO, B→PRATA, C→BRONZE). Proposta: manter mapeamento
+    OU migration aditiva `classificacao` se o Marcos quiser desacoplar da curva.
+  - *Tipo de Serviço* não tem campo dedicado; usa `Client.produtos[]` (ex.
+    "Tráfego Pago"), com rótulo padrão "Gestão de Tráfego" quando vazio.
+  - *Investimento em anúncios* = soma de `investimentoMeta+investimentoGoogle+
+    investimentoTiktok` (metas de investimento existentes no cadastro), não gasto
+    realizado. Reavaliar com Marcos se ele quer SPEND real (MetricSnapshot) no lugar.
+
 ### 2026-07-18 — Saúde única (A-009 fatia 2/2) — UI + Radar operacional no Cockpit
 Fatia de FRONTEND da "Saúde única" (consome o contrato de `health-derive.ts` da
 fatia 1). Decisão do Marcos: a saúde vive num LUGAR SÓ (o quadro canônico no
@@ -1524,3 +1557,10 @@ Achados A-101, A-102, A-103, A-111, A-120 (ver `MATRIZ.md`). Sem migration.
   (spend TikTok nunca entra — lacuna estrutural registrada).
 - Criada tela ADMIN /diagnostico-fontes: contas vinculadas (externalId +
   última sync), snapshots 8 dias lado a lado por plataforma, SyncLog recente.
+
+### 2026-07-21 — Regra permanente "DADO AMARRADO" (Marcos)
+- Toda informação repetida entre telas tem UMA fonte canônica + UM ponto de
+  leitura na DAL; alteração reflete em todo o sistema. Registrada como regra 0
+  das REGRAS TÉCNICAS do CLAUDE.md. Fontes canônicas nomeadas: gestor =
+  ClientAssignment(isPrimary); contrato = Contract vigente (Jurídico); saúde =
+  getUnifiedClientHealth; realizado = aggregateSnapshots/getRealizado*.
