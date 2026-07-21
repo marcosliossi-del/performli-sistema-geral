@@ -7,6 +7,7 @@ import { CronHealthBanner } from '@/components/cockpit/CronHealthBanner'
 import { OperationalCard } from '@/components/cockpit/OperationalCard'
 import { ClientHealthViews, type HealthViewClient } from '@/components/dashboard/ClientHealthViews'
 import { getUnifiedClientHealthBatch, getWeeklyTrendBatch } from '@/lib/health-derive'
+import { readCronHeartbeat, CRON_STALE_HOURS } from '@/lib/cron-heartbeat'
 import { Card } from '@/components/ui/card'
 import { prisma } from '@/lib/prisma'
 import { timeAgo } from '@/lib/utils'
@@ -96,6 +97,16 @@ export default async function CockpitPage() {
     getUnifiedClientHealthBatch(clientIds),
     getWeeklyTrendBatch(clients.map((c) => ({ id: c.id, businessType: btById.get(c.id) ?? 'ECOMMERCE' }))),
   ])
+
+  // Heartbeat do robô diário: parado/nunca rodou → os números da Saúde estão
+  // desatualizados e o quadro exibe banner dominante (caso apontado pelo Marcos:
+  // "Crítico" + "sem dados" = coleta parada, não cálculo errado).
+  const dailyHeartbeat = await readCronHeartbeat('DAILY')
+  const dailyStaleHours = dailyHeartbeat ? (Date.now() - dailyHeartbeat.getTime()) / 3_600_000 : null
+  const syncAlert =
+    dailyStaleHours === null || dailyStaleHours > CRON_STALE_HOURS
+      ? { lastRunIso: dailyHeartbeat ? dailyHeartbeat.toISOString() : null, staleHours: dailyStaleHours ?? 0 }
+      : null
 
   const healthUpdatedAt = new Date().toISOString()
   const healthClients: HealthViewClient[] = clients.map((c) => {
@@ -314,7 +325,7 @@ export default async function CockpitPage() {
               Ver todos →
             </Link>
           </div>
-          <ClientHealthViews clients={healthClients} updatedAt={healthUpdatedAt} />
+          <ClientHealthViews clients={healthClients} updatedAt={healthUpdatedAt} syncAlert={syncAlert} />
         </div>
       </section>
 

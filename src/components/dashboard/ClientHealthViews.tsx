@@ -52,6 +52,10 @@ export interface HealthViewClient {
 interface Props {
   clients: HealthViewClient[]
   updatedAt: string // ISO
+  /** Estado do robô diário de sync (heartbeat): quando parado/atrasado, os
+   *  números das duas visões estão DESATUALIZADOS e a tela precisa gritar isso
+   *  em vez de exibi-los como verdade. null = nunca rodou. */
+  syncAlert?: { lastRunIso: string | null; staleHours: number } | null
 }
 
 // ─── Paleta (design system dark do Performli) ─────────────────────────────────
@@ -125,7 +129,7 @@ function monthRank(c: HealthViewClient): number {
   return v.projPct ?? 0
 }
 
-export function ClientHealthViews({ clients, updatedAt }: Props) {
+export function ClientHealthViews({ clients, updatedAt, syncAlert }: Props) {
   const [view, setView] = useState<'week' | 'month'>('week')
 
   const sorted = useMemo(() => {
@@ -160,6 +164,28 @@ export function ClientHealthViews({ clients, updatedAt }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Falha silenciosa de coleta: robô diário parado → números abaixo NÃO
+          refletem a realidade. Banner dominante nas DUAS visões. */}
+      {syncAlert && (
+        <div className="rounded-xl border border-[#EF4444]/60 bg-[#EF4444]/10 px-4 py-3">
+          <p className="text-sm font-bold text-[#EF4444]">
+            {syncAlert.lastRunIso
+              ? `Sincronização automática parada há ${Math.floor(syncAlert.staleHours / 24) > 0 ? `${Math.floor(syncAlert.staleHours / 24)} dia(s)` : `${Math.round(syncAlert.staleHours)}h`} — os números abaixo estão desatualizados`
+              : 'A sincronização automática NUNCA rodou — os números abaixo estão desatualizados'}
+          </p>
+          <p className="text-[11px] text-[#EBA0A0] mt-0.5">
+            Faturamento e gasto param no último sync manual. Configure o CRON_SECRET na Vercel e
+            confira em{' '}
+            <Link href="/diagnostico-fontes" className="underline">
+              Diagnóstico de Fontes
+            </Link>
+            {syncAlert.lastRunIso
+              ? ` · último robô: ${new Date(syncAlert.lastRunIso).toLocaleString('pt-BR')}`
+              : ''}
+          </p>
+        </div>
+      )}
+
       {/* Toggle + carimbo de atualização (regra UX #10) */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="inline-flex rounded-lg bg-[#0A1E2C] border border-[#38435C]/60 p-0.5">
@@ -298,13 +324,28 @@ function WeekRow({ c }: { c: HealthViewClient }) {
 
   return (
     <RowShell c={c}>
-      {/* Veredito dominante */}
+      {/* Veredito dominante. SEM_DADOS com gasto no período = falha silenciosa
+          de coleta (anúncio rodou, faturamento não sincronizou) — gritar isso,
+          não um genérico "sem dados". */}
       <div className="flex items-center gap-2 w-44 flex-shrink-0">
-        <Icon size={20} style={{ color: meta.color }} className="flex-shrink-0" />
+        <Icon
+          size={20}
+          style={{ color: w?.veredito === 'SEM_DADOS' && (w?.spend7d ?? 0) > 0 ? AMBER : meta.color }}
+          className="flex-shrink-0"
+        />
         <div className="min-w-0">
-          <p className="text-sm font-bold leading-tight" style={{ color: meta.color }}>
-            {meta.label}
-          </p>
+          {w?.veredito === 'SEM_DADOS' && (w?.spend7d ?? 0) > 0 ? (
+            <>
+              <p className="text-sm font-bold leading-tight" style={{ color: AMBER }}>
+                Faturamento não sincronizado
+              </p>
+              <p className="text-[11px] text-[#87919E]">anúncios rodaram no período</p>
+            </>
+          ) : (
+            <p className="text-sm font-bold leading-tight" style={{ color: meta.color }}>
+              {w?.veredito === 'SEM_DADOS' ? 'Sem sincronização no período' : meta.label}
+            </p>
+          )}
           {measurable && w?.variacaoPct != null && (
             <p className="text-[11px] text-[#87919E] tabular-nums">
               {w.variacaoPct > 0 ? '+' : ''}
