@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
+import { readCronHeartbeat, CRON_STALE_HOURS, type CronName } from '@/lib/cron-heartbeat'
 import { formatCurrency, formatNumber, formatSaoPauloDateTime } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -20,6 +21,12 @@ export default async function DiagnosticoFontesPage({
   const session = await requireSession()
   if (session.role !== 'ADMIN') redirect('/cockpit')
   const { slug } = await searchParams
+
+  // Heartbeats dos robôs — a resposta definitiva para "o sync roda sozinho?"
+  const cronNames: CronName[] = ['DAILY', 'DIGEST', 'RECURRENCES', 'RESULTADOS', 'ASAAS', 'CONVERSAS']
+  const heartbeats = await Promise.all(
+    cronNames.map(async (n) => ({ name: n, lastRun: await readCronHeartbeat(n) })),
+  )
 
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
@@ -92,6 +99,39 @@ export default async function DiagnosticoFontesPage({
           O que está vinculado e o que cada sincronização gravou, dia a dia — para conferir
           contra o GA4/Looker real. Se o número já chega pequeno aqui, o problema é o vínculo
           da conta; se chega certo e a tela mostra errado, é agregação.
+        </p>
+      </div>
+
+      {/* Heartbeats dos robôs */}
+      <div className="bg-[#0D2137] border border-[#38435C] rounded-2xl p-4">
+        <h2 className="text-sm font-semibold text-[#EBEBEB] mb-3">
+          Robôs (crons) — última execução automática
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          {heartbeats.map((h) => {
+            const horas = h.lastRun ? (Date.now() - h.lastRun.getTime()) / 3_600_000 : null
+            const atrasado = h.name === 'CONVERSAS'
+              ? horas === null || horas > 1
+              : horas === null || horas > CRON_STALE_HOURS
+            return (
+              <div
+                key={h.name}
+                className={`px-3 py-2 rounded-xl border text-[12px] ${
+                  atrasado ? 'border-[#EF4444]/60 text-[#EF4444]' : 'border-[#22C55E]/40 text-[#22C55E]'
+                }`}
+              >
+                <span className="font-semibold">{h.name}</span>{' '}
+                {h.lastRun
+                  ? `· ${formatSaoPauloDateTime(h.lastRun)}${atrasado ? ' · ATRASADO' : ''}`
+                  : '· NUNCA RODOU'}
+              </div>
+            )
+          })}
+        </div>
+        <p className="text-[11px] text-[#87919E] mt-2">
+          "NUNCA RODOU"/"ATRASADO" no DAILY = o agendador da Vercel não está executando
+          (checar CRON_SECRET nas variáveis de ambiente + Settings → Cron Jobs). Os
+          botões manuais NÃO atualizam estes carimbos — aqui só conta execução automática.
         </p>
       </div>
 
