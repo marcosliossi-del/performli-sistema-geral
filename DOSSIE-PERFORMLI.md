@@ -763,6 +763,59 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-22 — Diagnóstico de Fontes: debug do selo mensal (metas cruas + eleição)
+Caso: locais com meta principal salva na grade `/agency/metas` (print do Marcos)
+seguiam caindo no fallback FATURAMENTO no Cockpit mesmo após o deploy da eleição
+(`electPrimaryLocalGoal`) e o recálculo. Estaticamente o caminho está correto —
+a resposta está nos dados de produção, inacessíveis ao desenvolvimento. Nova
+seção ADMIN em `/diagnostico-fontes` (cliente selecionado): tabela das Goals
+MONTHLY cruas do banco (métrica, alvo, início/fim, updatedAt), o resultado de
+`electPrimaryLocalGoal` sobre elas e o que `getUnifiedClientHealth` devolve no
+`monthlyPacing` (métrica medida, meta, realizado). Evidência direta para cravar
+se o bug é dado (meta ausente/mês errado) ou código (eleição/janela). Leitura
+pura, 2 queries (findMany take 40 + health de 1 cliente), sem mutação.
+
+### 2026-07-22 — Receita LÍQUIDA canônica de e-commerce (régua Marcos) — AGUARDANDO GUARDIÃO
+Diretriz do Marcos: "quem for e-commerce, calcular sobre receita LÍQUIDA; clientes
+COM GA4Sync medem líquido, sem GA4Sync seguem bruto". Divergência dele com o Looker
+= bruta×líquida (o sistema rotulava explicitamente "faturamento bruto" em
+`realizado.ts`) + inclusão de frete no caminho Nuvemshop.
+
+**Fase A (fontes reais, evidência):**
+- `ga4sync/types.ts` — bloco `/kpis` entrega `netRevenue`, `newCustomers`, `orders`
+  (AGREGADO do período); `/timeline` (o que era persistido) entrega SÓ `revenue`
+  BRUTO + `orders` por dia. Receita líquida diária NÃO existia na fonte consumida.
+- `nuvemshop/transformers.ts` — pedido tem `total` (inclui frete), `shippingCost`,
+  `discount`; só PAID entra. Líquido real = `total - frete` por pedido.
+- `dal.ts`/`health-scorer.ts` — FATURAMENTO e-commerce = `conversionValue` (BRUTO)
+  com precedência GA4SYNC>GA4 por dia; NUVEMSHOP era IGNORADO no faturamento.
+
+**Fase B (implementação, ADITIVA):**
+- Migration `20260722120000_metric_snapshot_net_revenue`: `MetricSnapshot.netRevenue`
+  (Decimal) + `newCustomers` (Int), ambos nullable. Nada removido/alterado.
+- `nuvemshop/sync.ts`+`transformers.ts`: persiste `netRevenue = total - frete`
+  (PAID) por dia; ticket médio agora líquido.
+- `ga4sync/sync.ts`: além do bruto do timeline, busca `/kpis` e deriva o líquido
+  diário pela razão real `netRevenue/revenue` do período (soma MTD bate com o
+  líquido do GA4Sync); `newCustomers` rateado por participação de pedidos. Falha do
+  /kpis não derruba o sync (netRevenue null → cai no bruto).
+- `health-scorer.ts::aggregateSnapshots`: receita/pedidos de e-commerce por dia com
+  precedência de FONTE **NUVEMSHOP(líquido) > GA4SYNC(líquido, senão bruto) > GA4(bruto)**.
+  FATURAMENTO/ROAS/TICKET_MEDIO viram LÍQUIDO onde há dado real; onde não há
+  `netRevenue` capturado, comportamento 100% idêntico ao anterior (sem regressão).
+  Consumidores atualizados para trazer `netRevenue` no select: `dal.ts` (toAgg +
+  selects), `resultado-engine.ts`, `progress.ts`, `sync/stream/route.ts`; os que usam
+  `include` (realizado.ts, cron de health) já recebem o campo.
+- Locais (`electPrimaryLocalGoal`, caminho Meta/`isLocalLike`) INTACTOS.
+
+**Lacunas honestas (para o guardião):** (1) o líquido diário do GA4Sync é DERIVADO
+por razão do período — o total MTD é fiel, mas a distribuição por dia é aproximada
+(margem uniforme); um campo `netRevenue` por ponto no /timeline (se existir no
+openapi, egress bloqueado em dev) o tornaria exato. (2) Backfill: dado histórico só
+recebe netRevenue no próximo sync; até lá cai no bruto. (3) New Man (GA4 puro) mostra
+R$29 mil no Performli × R$185 mil no Looker: como é GA4 puro, é BURACO DE DADOS
+(sync parado / cron novo de 7 dias), NÃO conceito bruto×líquido — precisa backfill.
+
 ### 2026-07-22 — Onda autocrítica: 10 correções de coerência entre telas — AGUARDANDO GUARDIÃO
 Auditoria adversarial (aprovada pelo Marcos: "verificar mais bugs… corrija")
 encontrou 10 incoerências onde a MESMA grandeza aparecia com número/percentual/

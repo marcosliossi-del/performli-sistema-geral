@@ -295,6 +295,7 @@ type SnapForAgg = {
   spend?: unknown
   conversions?: unknown
   conversionValue?: unknown
+  netRevenue?: unknown
   clicks?: unknown
   impressions?: unknown
   reach?: unknown
@@ -314,6 +315,7 @@ function toAgg(s: SnapForAgg): AggregatableSnapshot {
     cpc:              null,
     conversions:      s.conversions ?? null,
     conversionValue:  s.conversionValue ?? null,
+    netRevenue:       s.netRevenue ?? null,
     impressions:      s.impressions ?? null,
     reach:            s.reach ?? null,
     clicks:           s.clicks ?? null,
@@ -379,6 +381,7 @@ export const getClientsOperationalTable = cache(async (
           clicks: true,
           conversions: true,
           conversionValue: true,
+          netRevenue: true,
           date: true,
           platformAccount: { select: { platform: true } },
         },
@@ -508,7 +511,7 @@ async function _fetchClientsList(userId: string, role: string) {
   // Fetch current month KPIs for all clients in one query (sem N+1: um findMany).
   const allSnaps = await prisma.metricSnapshot.findMany({
     where: { clientId: { in: clients.map((c) => c.id) }, date: { gte: monthStart } },
-    select: { clientId: true, date: true, spend: true, conversions: true, conversionValue: true, platformAccount: { select: { platform: true } } },
+    select: { clientId: true, date: true, spend: true, conversions: true, conversionValue: true, netRevenue: true, platformAccount: { select: { platform: true } } },
   })
   // Agrupa por cliente para rotear receita/ROAS por businessType (fonte única).
   const snapsByClient = new Map<string, AggregatableSnapshot[]>()
@@ -1035,6 +1038,7 @@ export async function getClientDailyRevenue(
         spend: true,
         conversions: true,
         conversionValue: true,
+        netRevenue: true,
         platformAccount: { select: { platform: true } },
       },
       orderBy: { date: 'asc' },
@@ -1094,6 +1098,7 @@ async function _fetchMonthlyComparison(clientId: string, months: number): Promis
         spend: true,
         conversions: true,
         conversionValue: true,
+        netRevenue: true,
         platformAccount: { select: { platform: true } },
       },
     }),
@@ -3257,6 +3262,7 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
       spend: true,
       conversions: true,
       conversionValue: true,
+      netRevenue: true,
       platformAccount: { select: { platform: true } },
     },
   })

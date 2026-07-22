@@ -129,9 +129,17 @@ export interface Ga4SyncKpisData {
 
 export interface Ga4SyncTimelinePoint {
   date: string // YYYY-MM-DD
-  revenue: number
+  revenue: number // RECEITA BRUTA do dia (espelha kpis.revenue).
   orders: number
-  // TODO conferir openapi: possíveis métricas extras por ponto.
+  // ── Receita LÍQUIDA diária (diretriz Marcos 2026-07-22) ──────────────────────
+  // O bloco /kpis expõe `netRevenue` no AGREGADO do período, mas NÃO se sabe (egress
+  // bloqueado em dev, /openapi.json não verificado) se o /timeline traz o líquido
+  // POR DIA. Modelamos `netRevenue`/`newCustomers` como OPCIONAIS: se a API vier a
+  // expô-los por ponto, o sync já os persiste; enquanto não, ficam undefined e o
+  // faturamento líquido de e-commerce sai da fonte real por-pedido (Nuvemshop).
+  // TODO conferir openapi: confirmar se timeline expõe netRevenue/newCustomers por dia.
+  netRevenue?: number
+  newCustomers?: number
 }
 
 export interface Ga4SyncTimelineData {

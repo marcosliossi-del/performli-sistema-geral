@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { readCronHeartbeat, readCronProgress, CRON_STALE_HOURS, type CronName } from '@/lib/cron-heartbeat'
 import { formatCurrency, formatNumber, formatSaoPauloDateTime } from '@/lib/utils'
+import { getUnifiedClientHealth } from '@/lib/health-derive'
+import { electPrimaryLocalGoal } from '@/lib/metas/metricOptions'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,10 +33,35 @@ export default async function DiagnosticoFontesPage({
 
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
-    select: { id: true, name: true, slug: true },
+    select: { id: true, name: true, slug: true, businessType: true },
     orderBy: { name: 'asc' },
   })
   const client = slug ? clients.find((c) => c.slug === slug) ?? null : null
+
+  // Debug do selo mensal (caso 2026-07-22: local caindo no fallback FATURAMENTO
+  // mesmo com meta principal salva): metas MONTHLY cruas do cliente + eleição +
+  // o que getUnifiedClientHealth devolve. Evidência direta do banco de produção.
+  let goalDebug: {
+    goals: Array<{ metric: string; targetValue: number; startDate: Date; endDate: Date; updatedAt: Date; period: string }>
+    elected: { metric: string; goal: number } | null
+    pacing: { metric: string; meta: number | null; realizado: number | null } | null
+  } | null = null
+  if (client) {
+    const rawGoals = await prisma.goal.findMany({
+      where: { clientId: client.id, period: 'MONTHLY' },
+      orderBy: { updatedAt: 'asc' },
+      select: { metric: true, targetValue: true, startDate: true, endDate: true, updatedAt: true, period: true },
+      take: 40,
+    })
+    const unified = await getUnifiedClientHealth(client.id)
+    goalDebug = {
+      goals: rawGoals.map((g) => ({ ...g, targetValue: Number(g.targetValue) })),
+      elected: electPrimaryLocalGoal(rawGoals.map((g) => ({ metric: g.metric, targetValue: g.targetValue }))),
+      pacing: unified
+        ? { metric: unified.monthlyPacing.metric, meta: unified.monthlyPacing.meta, realizado: unified.monthlyPacing.realizado }
+        : null,
+    }
+  }
 
   let accounts: Array<{
     id: string; platform: string; externalId: string | null; name: string | null
@@ -166,6 +193,52 @@ export default async function DiagnosticoFontesPage({
           </a>
         ))}
       </div>
+
+      {client && goalDebug && (
+        <div className="bg-[#0D2137] border border-[#38435C] rounded-2xl p-4">
+          <h2 className="text-sm font-semibold text-[#EBEBEB] mb-1">
+            Selo mensal (debug) — {client.name} · tipo {client.businessType}
+          </h2>
+          <p className="text-[12px] mb-2">
+            <span className="text-[#87919E]">Métrica principal eleita: </span>
+            <span className={goalDebug.elected ? 'text-[#22C55E] font-semibold' : 'text-[#EF4444] font-semibold'}>
+              {goalDebug.elected ? `${goalDebug.elected.metric} · meta ${goalDebug.elected.goal}` : 'NENHUMA (cai no fallback faturamento)'}
+            </span>
+            {goalDebug.pacing && (
+              <span className="text-[#87919E]">
+                {' '}· Cockpit está medindo: <span className="text-[#EBEBEB]">{goalDebug.pacing.metric}</span> (meta{' '}
+                {goalDebug.pacing.meta ?? '—'} · realizado {goalDebug.pacing.realizado ?? '—'})
+              </span>
+            )}
+          </p>
+          {goalDebug.goals.length === 0 ? (
+            <p className="text-sm text-[#EF4444]">Nenhuma Goal MONTHLY no banco para este cliente.</p>
+          ) : (
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="text-[#87919E] text-left">
+                  <th className="py-1 pr-3">Métrica</th>
+                  <th className="py-1 pr-3">Alvo</th>
+                  <th className="py-1 pr-3">Início</th>
+                  <th className="py-1 pr-3">Fim</th>
+                  <th className="py-1">Atualizada em</th>
+                </tr>
+              </thead>
+              <tbody className="text-[#EBEBEB]">
+                {goalDebug.goals.map((g, i) => (
+                  <tr key={i} className="border-t border-white/5">
+                    <td className="py-1 pr-3 font-medium">{g.metric}</td>
+                    <td className="py-1 pr-3">{g.targetValue}</td>
+                    <td className="py-1 pr-3">{g.startDate.toISOString().slice(0, 10)}</td>
+                    <td className="py-1 pr-3">{g.endDate.toISOString().slice(0, 10)}</td>
+                    <td className="py-1">{formatSaoPauloDateTime(g.updatedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       {client && (
         <>

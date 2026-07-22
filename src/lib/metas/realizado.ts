@@ -81,8 +81,11 @@ export function resolveJanela(periodo: PeriodoOuJanela, now: Date = new Date()):
 
 /** Fonte canônica declarada por métrica (apenas rótulo p/ a UI). */
 function fonteDe(metric: MetricType): string {
-  if (metric === 'FATURAMENTO' || metric === 'SALES') return 'GA4 (faturamento bruto)'
-  if (metric === 'ROAS') return 'GA4 ÷ investimento (mesma janela)'
+  // Faturamento/ROAS: LÍQUIDO quando o cliente tem GA4Sync/Nuvemshop (receita real
+  // da loja, sem frete); BRUTO (GA4 atribuído) nos demais e-commerces. A régua é
+  // dinâmica por dia dentro de aggregateSnapshots — aqui só o rótulo genérico.
+  if (metric === 'FATURAMENTO' || metric === 'SALES') return 'faturamento líquido (loja) ou bruto (GA4)'
+  if (metric === 'ROAS') return 'faturamento ÷ investimento (mesma janela)'
   return 'plataformas de anúncio'
 }
 

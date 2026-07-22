@@ -408,7 +408,9 @@ model MetricSnapshot {
   ctr             Decimal? @db.Decimal(8, 4)
   cpc             Decimal? @db.Decimal(10, 4)
   conversions     Int?
-  conversionValue Decimal? @db.Decimal(12, 2)
+  conversionValue Decimal? @db.Decimal(12, 2) // RECEITA BRUTA do dia (GA4/GA4SYNC timeline; Nuvemshop = Σ total pago, INCLUI frete)
+  netRevenue      Decimal? @db.Decimal(12, 2) // RECEITA LÍQUIDA do dia (Nuvemshop: Σ (total - frete) de pedidos PAGOS; null = ainda não capturado). Fonte canônica do faturamento líquido de e-commerce.
+  newCustomers    Int?     // Clientes NOVOS (1ª compra) no dia — GA4Sync kpis.newCustomers / Nuvemshop first-time buyer. null = não capturado
   roas            Decimal? @db.Decimal(8, 4)
   cpl             Decimal? @db.Decimal(10, 4)
   cpa             Decimal? @db.Decimal(10, 4)

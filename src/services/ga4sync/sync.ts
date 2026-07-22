@@ -21,8 +21,11 @@
  * contra meia-noite UTC do dia. Gravamos `new Date(`${dateStr}T00:00:00.000Z`)`,
  * nunca fuso local.
  *
- * NÃO altera aggregateSnapshots nem KPIs — esta fatia SÓ persiste. O consumo
- * da nova fonte GA4SYNC pela agregação é a próxima fatia.
+ * Persiste, por dia: receita BRUTA (conversionValue) + pedidos (conversions) do
+ * /timeline, e a receita LÍQUIDA (netRevenue) derivada da razão real líquido/bruto
+ * do /kpis do período (decisão Marcos 2026-07-22: clientes COM GA4Sync medem
+ * líquido). O consumo do netRevenue pela agregação canônica está em
+ * aggregateSnapshots (precedência NUVEMSHOP/GA4SYNC líquido > GA4 bruto).
  *
  * ⚠️ Shape do timeline (points[].date/revenue/orders) foi modelado a partir da
  * SPEC textual, não do /openapi.json (egress bloqueado em dev). Conferir contra
@@ -30,9 +33,38 @@
  */
 
 import { prisma } from '@/lib/prisma'
-import { getTimeline } from './client'
+import { getTimeline, getKpis } from './client'
 import { getGa4SyncConfig, Ga4SyncConfigError } from './config'
 import { resolveGa4SyncStoreId } from './store-resolver'
+
+/**
+ * Razão RECEITA LÍQUIDA ÷ BRUTA + novos clientes do período (decisão Marcos
+ * 2026-07-22: clientes COM GA4Sync medem LÍQUIDO). O /timeline entrega só o BRUTO
+ * por dia (revenue); o líquido real está no bloco /kpis (netRevenue, agregado do
+ * período). Buscamos os agregados e derivamos o líquido diário aplicando a razão
+ * real do período a cada dia (netRatio = netRevenue/revenue) — o somatório MTD
+ * bate com o líquido do GA4Sync; NUNCA inventamos desconto. Falha aqui NÃO derruba
+ * o sync: sem razão, netRevenue fica null e o consumo cai no bruto (degrade honesto).
+ */
+async function loadGa4SyncNetContext(storeId: string): Promise<{
+  netRatio: number | null
+  newCustomers: number | null
+  totalOrders: number | null
+}> {
+  try {
+    const kpis = (await getKpis(storeId, SYNC_PRESET)).data?.kpis
+    if (!kpis) return { netRatio: null, newCustomers: null, totalOrders: null }
+    const gross = Number(kpis.revenue)
+    const net = Number(kpis.netRevenue)
+    const netRatio =
+      Number.isFinite(gross) && gross > 0 && Number.isFinite(net) && net > 0 ? net / gross : null
+    const newCustomers = Number.isFinite(kpis.newCustomers) ? kpis.newCustomers : null
+    const totalOrders = Number.isFinite(kpis.orders) && kpis.orders > 0 ? kpis.orders : null
+    return { netRatio, newCustomers, totalOrders }
+  } catch {
+    return { netRatio: null, newCustomers: null, totalOrders: null }
+  }
+}
 
 /** Janela sincronizada a cada rodada (preset da API). */
 const SYNC_PRESET = 'last_90d' as const
@@ -99,6 +131,9 @@ export async function syncGa4SyncAccount(clientId: string): Promise<Ga4SyncAccou
     const envelope = await getTimeline(storeId, SYNC_PRESET)
     const points = envelope.data?.points ?? []
 
+    // Contexto de receita LÍQUIDA do período (razão líquido/bruto + novos clientes).
+    const netCtx = await loadGa4SyncNetContext(storeId)
+
     let snapshotsUpserted = 0
     for (const point of points) {
       if (!point?.date) continue
@@ -107,13 +142,33 @@ export async function syncGa4SyncAccount(clientId: string): Promise<Ga4SyncAccou
       // conversions é Int no schema — arredonda para não estourar o upsert se a
       // API devolver fracionário.
       const orders = Number.isFinite(point.orders) ? Math.round(point.orders) : 0
+      // Receita LÍQUIDA por dia (decisão Marcos: GA4Sync = líquido). Precedência:
+      //  1. netRevenue explícito do ponto, se a API do timeline vier a expor;
+      //  2. derivação pela razão real do período (bruto do dia × netRatio /kpis);
+      //  3. null → o consumo cai no bruto (degrade honesto, sem inventar desconto).
+      const netRevenue =
+        typeof point.netRevenue === 'number' && Number.isFinite(point.netRevenue)
+          ? point.netRevenue
+          : netCtx.netRatio != null
+            ? Math.round(revenue * netCtx.netRatio * 100) / 100
+            : null
+      // Novos clientes do dia: explícito do ponto, senão rateio do total do período
+      // pela participação do dia nos pedidos (soma ≈ novos clientes do período).
+      const newCustomers =
+        typeof point.newCustomers === 'number' && Number.isFinite(point.newCustomers)
+          ? Math.round(point.newCustomers)
+          : netCtx.newCustomers != null && netCtx.totalOrders != null && netCtx.totalOrders > 0
+            ? Math.round(netCtx.newCustomers * (orders / netCtx.totalOrders))
+            : null
 
       await prisma.metricSnapshot.upsert({
         where: { platformAccountId_date: { platformAccountId: account.id, date } },
         update: {
           conversions: orders,
           conversionValue: revenue,
-          rawData: { source: 'ga4sync', date: point.date, revenue, orders },
+          netRevenue,
+          newCustomers,
+          rawData: { source: 'ga4sync', date: point.date, revenue, orders, netRevenue, newCustomers },
           syncedAt: new Date(),
         },
         create: {
@@ -122,7 +177,9 @@ export async function syncGa4SyncAccount(clientId: string): Promise<Ga4SyncAccou
           date,
           conversions: orders,
           conversionValue: revenue,
-          rawData: { source: 'ga4sync', date: point.date, revenue, orders },
+          netRevenue,
+          newCustomers,
+          rawData: { source: 'ga4sync', date: point.date, revenue, orders, netRevenue, newCustomers },
         },
       })
       snapshotsUpserted++
