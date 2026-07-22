@@ -20,6 +20,8 @@ import { dispatchAlertsForClient } from '@/services/alert-dispatcher'
 interface SyncOptions {
   since?: string  // YYYY-MM-DD
   until?: string  // YYYY-MM-DD
+  /** Cron diário: pula recálculo de saúde por conta (Step 3 recalcula todos em lote). */
+  skipHealthRecalc?: boolean
 }
 
 export interface NuvemshopSyncResult {
@@ -221,9 +223,14 @@ export async function syncNuvemshopAccount(
       data: { read: true },
     })
 
-    // Recalcula health e dispara alertas
-    const { created, updated, scores } = await recalculateClientHealth(account.clientId)
-    const alertsCreated = await dispatchAlertsForClient(account.clientId, scores)
+    // Recalcula health e dispara alertas (pulado no cron diário — Step 3 faz em lote)
+    let healthScoresUpdated = 0
+    let alertsCreated = 0
+    if (!options.skipHealthRecalc) {
+      const { created, updated, scores } = await recalculateClientHealth(account.clientId)
+      alertsCreated = await dispatchAlertsForClient(account.clientId, scores)
+      healthScoresUpdated = created + updated
+    }
 
     return {
       platformAccountId,
@@ -231,7 +238,7 @@ export async function syncNuvemshopAccount(
       status: 'SUCCESS',
       ordersUpserted,
       snapshotsUpserted,
-      healthScoresUpdated: created + updated,
+      healthScoresUpdated,
       alertsCreated,
     }
   } catch (error) {

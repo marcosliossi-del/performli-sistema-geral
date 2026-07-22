@@ -20,6 +20,10 @@ import { createSyncFailedAlert } from '@/lib/sync-alert'
 interface SyncOptions {
   since?: string // YYYY-MM-DD (default: 7 dias atrás)
   until?: string // YYYY-MM-DD (default: hoje)
+  /** Pula recálculo de saúde/alertas por conta (cron diário: o Step 3 já
+   *  recalcula TODOS em lote — recalcular por conta era retrabalho que
+   *  estourava o teto de 800s; caso 2026-07-22). */
+  skipHealthRecalc?: boolean
 }
 
 export interface SyncResult {
@@ -199,15 +203,20 @@ export async function syncMetaAccount(
       data: { read: true },
     })
 
-    const { created, updated, scores } = await recalculateClientHealth(account.clientId)
-    const alertsCreated = await dispatchAlertsForClient(account.clientId, scores)
+    let healthScoresUpdated = 0
+    let alertsCreated = 0
+    if (!options.skipHealthRecalc) {
+      const { created, updated, scores } = await recalculateClientHealth(account.clientId)
+      alertsCreated = await dispatchAlertsForClient(account.clientId, scores)
+      healthScoresUpdated = created + updated
+    }
 
     return {
       platformAccountId,
       adAccountId: account.externalId,
       status: 'SUCCESS',
       recordsUpserted,
-      healthScoresUpdated: created + updated,
+      healthScoresUpdated,
       alertsCreated,
     }
   } catch (error) {

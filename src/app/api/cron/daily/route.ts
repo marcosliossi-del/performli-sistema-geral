@@ -120,7 +120,7 @@ async function runDailySync() {
   // ── Step 1: Sync Meta Ads ──────────────────────────────────────────────────
   await recordCronProgress('Step 1')
   try {
-    const metaResults = await syncAllMetaAccounts({ since: cronSince })
+    const metaResults = await syncAllMetaAccounts({ since: cronSince, skipHealthRecalc: true })
     ;(summary.synced as Record<string, unknown>).meta = { ok: true, accounts: metaResults.length }
   } catch (err) {
     ;(summary.synced as Record<string, unknown>).meta = {
@@ -132,7 +132,7 @@ async function runDailySync() {
   // ── Step 2: Sync GA4 ───────────────────────────────────────────────────────
   await recordCronProgress('Step 2')
   try {
-    const ga4Results = await syncAllGA4Accounts({ since: cronSince })
+    const ga4Results = await syncAllGA4Accounts({ since: cronSince, skipHealthRecalc: true })
     ;(summary.synced as Record<string, unknown>).ga4 = { ok: true, accounts: ga4Results.length }
   } catch (err) {
     ;(summary.synced as Record<string, unknown>).ga4 = {
@@ -143,7 +143,7 @@ async function runDailySync() {
   // ── Step 2b: Sync Google Ads ───────────────────────────────────────────────
   await recordCronProgress('Step 2b')
   try {
-    const gadsResults = await syncAllGoogleAdsAccounts({ since: cronSince })
+    const gadsResults = await syncAllGoogleAdsAccounts({ since: cronSince, skipHealthRecalc: true })
     ;(summary.synced as Record<string, unknown>).googleAds = { ok: true, accounts: gadsResults.length }
   } catch (err) {
     ;(summary.synced as Record<string, unknown>).googleAds = {
@@ -154,7 +154,7 @@ async function runDailySync() {
   // ── Step 2c: Sync Nuvemshop ─────────────────────────────────────────────
   await recordCronProgress('Step 2c')
   try {
-    const nuvemshopResults = await syncAllNuvemshopAccounts({ since: cronSince })
+    const nuvemshopResults = await syncAllNuvemshopAccounts({ since: cronSince, skipHealthRecalc: true })
     ;(summary.synced as Record<string, unknown>).nuvemshop = { ok: true, accounts: nuvemshopResults.length }
   } catch (err) {
     ;(summary.synced as Record<string, unknown>).nuvemshop = {

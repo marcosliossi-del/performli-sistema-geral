@@ -20,6 +20,8 @@ import { createSyncFailedAlert } from '@/lib/sync-alert'
 interface SyncOptions {
   since?: string
   until?: string
+  /** Cron diário: pula recálculo de saúde por conta (Step 3 recalcula todos em lote). */
+  skipHealthRecalc?: boolean
 }
 
 export interface GA4SyncResult {
@@ -142,15 +144,20 @@ export async function syncGA4Account(
       data: { read: true },
     })
 
-    const { created, updated, scores } = await recalculateClientHealth(account.clientId)
-    const alertsCreated = await dispatchAlertsForClient(account.clientId, scores)
+    let healthScoresUpdated = 0
+    let alertsCreated = 0
+    if (!options.skipHealthRecalc) {
+      const { created, updated, scores } = await recalculateClientHealth(account.clientId)
+      alertsCreated = await dispatchAlertsForClient(account.clientId, scores)
+      healthScoresUpdated = created + updated
+    }
 
     return {
       platformAccountId,
       propertyId: account.externalId,
       status: 'SUCCESS',
       recordsUpserted,
-      healthScoresUpdated: created + updated,
+      healthScoresUpdated,
       alertsCreated,
     }
   } catch (error) {
