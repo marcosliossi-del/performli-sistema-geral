@@ -77,18 +77,17 @@ export function JuridicoPageTabs({ contracts, clients, users, feesData }: Props)
           </button>
         </div>
 
-        {/* Seed button — only visible when no contracts exist yet */}
-        {contracts.length === 0 && (
-          <button
-            onClick={handleSeed}
-            disabled={seeding}
-            className="flex items-center gap-2 h-9 px-4 rounded-xl text-xs font-medium transition-colors border
-              bg-[#38435C]/40 text-[#87919E] hover:text-[#EBEBEB] hover:bg-[#38435C]/70 border-[#38435C]"
-          >
-            {seeding ? <Loader2 size={13} className="animate-spin" /> : <DatabaseZap size={13} />}
-            Importar do ClickUp
-          </button>
-        )}
+        {/* Seed idempotente: cria só para clientes SEM contrato (rota pula quem
+            já tem) — sempre visível para lotes novos de datas (ex.: 2026-07-22). */}
+        <button
+          onClick={handleSeed}
+          disabled={seeding}
+          className="flex items-center gap-2 h-9 px-4 rounded-xl text-xs font-medium transition-colors border
+            bg-[#38435C]/40 text-[#87919E] hover:text-[#EBEBEB] hover:bg-[#38435C]/70 border-[#38435C]"
+        >
+          {seeding ? <Loader2 size={13} className="animate-spin" /> : <DatabaseZap size={13} />}
+          Importar contratos pendentes
+        </button>
       </div>
 
       {/* Seed result feedback */}
