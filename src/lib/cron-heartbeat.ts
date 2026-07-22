@@ -43,6 +43,41 @@ export async function recordCronHeartbeat(name: CronName, at: Date = new Date())
   }
 }
 
+/**
+ * RASTRO DE PROGRESSO do cron DAILY (diagnóstico do caso 2026-07-22: o robô
+ * morre no meio sem deixar log acessível). Cada passo grava seu nome ao INICIAR;
+ * se a execução morrer (timeout/crash), a chave aponta o passo culpado. NUNCA
+ * lança — instrumentação não pode derrubar o cron.
+ */
+const CRON_PROGRESS_KEY = 'CRON_DAILY_PROGRESS'
+
+export async function recordCronProgress(step: string): Promise<void> {
+  const value = JSON.stringify({ step, at: new Date().toISOString() })
+  try {
+    await prisma.integrationSetting.upsert({
+      where: { key: CRON_PROGRESS_KEY },
+      create: { key: CRON_PROGRESS_KEY, value },
+      update: { value },
+    })
+  } catch (err) {
+    console.error(`[cron-heartbeat] falha ao gravar ${CRON_PROGRESS_KEY}:`, err)
+  }
+}
+
+export async function readCronProgress(): Promise<{ step: string; at: Date } | null> {
+  try {
+    const row = await prisma.integrationSetting.findUnique({ where: { key: CRON_PROGRESS_KEY } })
+    if (!row?.value) return null
+    const parsed = JSON.parse(row.value) as { step?: string; at?: string }
+    if (!parsed.step || !parsed.at) return null
+    const d = new Date(parsed.at)
+    return Number.isNaN(d.getTime()) ? null : { step: parsed.step, at: d }
+  } catch (err) {
+    console.error(`[cron-heartbeat] falha ao ler ${CRON_PROGRESS_KEY}:`, err)
+    return null
+  }
+}
+
 /** Lê o timestamp bruto do heartbeat de um cron (null = nunca rodou / erro). */
 export async function readCronHeartbeat(name: CronName): Promise<Date | null> {
   try {

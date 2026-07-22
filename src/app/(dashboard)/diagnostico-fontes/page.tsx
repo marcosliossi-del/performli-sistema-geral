@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
-import { readCronHeartbeat, CRON_STALE_HOURS, type CronName } from '@/lib/cron-heartbeat'
+import { readCronHeartbeat, readCronProgress, CRON_STALE_HOURS, type CronName } from '@/lib/cron-heartbeat'
 import { formatCurrency, formatNumber, formatSaoPauloDateTime } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -24,9 +24,10 @@ export default async function DiagnosticoFontesPage({
 
   // Heartbeats dos robôs — a resposta definitiva para "o sync roda sozinho?"
   const cronNames: CronName[] = ['DAILY', 'DIGEST', 'RECURRENCES', 'RESULTADOS', 'ASAAS', 'CONVERSAS']
-  const heartbeats = await Promise.all(
-    cronNames.map(async (n) => ({ name: n, lastRun: await readCronHeartbeat(n) })),
-  )
+  const [heartbeats, dailyProgress] = await Promise.all([
+    Promise.all(cronNames.map(async (n) => ({ name: n, lastRun: await readCronHeartbeat(n) }))),
+    readCronProgress(),
+  ])
 
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
@@ -128,6 +129,15 @@ export default async function DiagnosticoFontesPage({
             )
           })}
         </div>
+        {dailyProgress && (
+          <p className={`text-[12px] mt-2 font-medium ${dailyProgress.step === 'CONCLUÍDO' ? 'text-[#22C55E]' : 'text-[#EAB308]'}`}>
+            {dailyProgress.step === 'CONCLUÍDO'
+              ? `Robô DAILY: última execução COMPLETOU todos os passos (${formatSaoPauloDateTime(dailyProgress.at)}).`
+              : Date.now() - dailyProgress.at.getTime() < 15 * 60_000
+              ? `Robô DAILY: executando AGORA — no "${dailyProgress.step}" desde ${formatSaoPauloDateTime(dailyProgress.at)}. Recarregue em alguns minutos.`
+              : `Robô DAILY: a última execução MORREU no "${dailyProgress.step}" (iniciado ${formatSaoPauloDateTime(dailyProgress.at)}) — esse é o passo culpado.`}
+          </p>
+        )}
         <p className="text-[11px] text-[#87919E] mt-2">
           "NUNCA RODOU"/"ATRASADO" no DAILY = o agendador da Vercel não está executando
           (checar CRON_SECRET nas variáveis de ambiente + Settings → Cron Jobs). Os
