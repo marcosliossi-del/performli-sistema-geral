@@ -763,6 +763,225 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-22 — Onda autocrítica: 10 correções de coerência entre telas — AGUARDANDO GUARDIÃO
+Auditoria adversarial (aprovada pelo Marcos: "verificar mais bugs… corrija")
+encontrou 10 incoerências onde a MESMA grandeza aparecia com número/percentual/
+fonte divergente entre telas, ou com janela temporal distorcida. Todas
+corrigidas via fonte canônica e linguagem operacional; nenhuma feature removida.
+
+1. **`src/app/(dashboard)/clients/[slug]/page.tsx` — card "Metas da Semana".**
+   O número (`actual`) vinha da SEMANA_FECHADA (`getRealizadoForMetrics`), mas o
+   `%` vinha de `HealthScore.achievementPct` (semana ATUAL, congelada no cron) —
+   número e % de semanas diferentes. Agora o `%` é recalculado sobre o MESMO
+   `actual`/semana via a régua canônica `computeAchievementPct(actual, target,
+   LOWER_IS_BETTER.has(metric))` (importada de `@/services/health-scorer`;
+   métricas lowerIsBetter dividem `target/actual`). O badge de saúde segue do
+   HealthScore (inalterado, por design). *Divergência do descrito:* a linha do
+   `actual` e o comentário SEMANA_FECHADA já estavam corretos; só o `pct` mudou.
+
+2. **`src/lib/dal.ts` `getDreTotals` — deltas mês parcial × mês cheio.** `duration
+   = to − from` usava o mês INTEIRO (o `to` é o 1º dia do mês seguinte), então o
+   delta comparava os ~N dias corridos do mês atual contra 30/31 dias do mês
+   anterior. Agora `duration = min(to, agora) − from` (duração DECORRIDA) e a
+   janela anterior `[from − duration, from)` cobre a MESMA duração. Período
+   passado fechado (seletor) não muda (`to < agora` ⇒ compara cheio × cheio).
+
+3. **`src/components/financeiro/ReceitaMediaChart.tsx` — rótulo colidia com o
+   KPI.** Gráfico e KPI usavam "Receita média por cliente" com fórmulas
+   diferentes (gráfico = entradas do mês ÷ clientes ativos; KPI = MRR ÷
+   assinaturas). Gráfico renomeado para **"Entradas médias por cliente ativo"**
+   + subtítulo com a fórmula ("Entradas do mês ÷ clientes ativos · últimos 6
+   meses") e label do tooltip alinhada ("Entradas médias").
+
+4. **`src/app/(dashboard)/financeiro/page.tsx` — "Tempo médio do cliente"
+   diluído.** O numerador somava só quem tinha `contractStart`, mas o
+   denominador era `allClients.length` (quem não tinha data somava 0 e puxava a
+   média para baixo). Agora divide só por `clientesComData` (`|| 1` guard) e
+   expõe a base. *Divergência do descrito:* `FinanceiroKpiCard` não tinha
+   subtítulo — adicionado prop **opcional** `sub?: string` (aditivo, não afeta os
+   demais cards) e passado `sub={"média de N cliente(s) com data de início"}`.
+
+5. **`EntradaSaidaChart.tsx` + `ReceitaMediaChart.tsx` — gráficos fixos em 6
+   meses ignoram o seletor de período dos KPIs.** Correção mínima (não plugar o
+   seletor agora): subtítulo fixo esclarecendo — EntradaSaída "Últimos 6 meses —
+   não segue o período selecionado acima"; ReceitaMédia já carrega "· últimos 6
+   meses" no subtítulo do item 3.
+
+6. **`src/services/critical-account-detector.ts` — War Room de ROAS/Faturamento
+   para LOCAL/B2B.** O `findMany` pegava todos os `status:'ACTIVE'`; os gatilhos
+   (ROAS 2 semanas / Faturamento <70%) são conceito de e-commerce. Adicionado
+   `businessType:'ECOMMERCE'` no where (mesma regra de `resultado-engine.ts:62`).
+   `clientsChecked` (campo só de log no cron daily) passa a contar só ecom.
+
+7. **`src/lib/dal.ts` `getDashboardData` — "Oscilações de hoje" em fuso do
+   servidor.** `new Date(); setHours(0,0,0,0)` marcava o dia no fuso do servidor,
+   não o dia-parede SP. Trocado por `startOfTodaySaoPaulo(new Date())` (helper já
+   usado no mesmo arquivo, ex.: linha ~1588), alinhando o boundary de "hoje".
+
+8. **`src/app/(dashboard)/agency/page.tsx` — legenda "fonte: GA4" errada.** A
+   "Receita Total MTD" (`getAgencyOverview`) é canônica por tipo: ECOMMERCE =
+   GA4SYNC>GA4 por dia (loja real > atribuído); LOCAL/B2B = Meta (`META_ADS`).
+   Sub trocado para **"e-commerce: loja · local: Meta"** (linguagem operacional).
+
+9. **`src/components/agency/MetasDashboard.tsx` — "Total Carteira" incoerente.** O
+   numerador somava a receita de TODOS os clientes (inclui locais) e o
+   denominador só as metas de FATURAMENTO (ecom), inflando o total. Agora ambos
+   percorrem o MESMO conjunto `faturamentoClients` (`c.goalFaturamento != null`).
+   `totalGoal` mantém o mesmo valor (locais já somavam 0); só o numerador muda.
+
+10. **`src/app/(dashboard)/agency/metas/page.tsx` — `suggestedCpa`/
+    `prevTicketMedio` divergiam do canônico.** Vinham de uma query própria de
+    `HealthScore` TICKET_MEDIO do mês anterior, diferente do `prevTicketMedio`
+    que o `MetasDashboard` exibe (via `fetchMonthProgress` → `getRealizadoBatch`,
+    prevRevenue/prevPurchases GA4SYNC>GA4 por dia). *Divergência do descrito
+    (encanamento):* removida a query `prevHealthScores` inteira + `prevStart`/
+    `prevEnd` (evita var órfã) e `prevTicket` passa a derivar do `progress` já
+    buscado (`progress.map((p) => [p.id, p.prevTicketMedio])`). O CPA sugerido
+    (10% do TM anterior) e o TM prev na grade passam a bater com o dashboard.
+    Nenhuma modificação em `progress.ts` (apenas consumo do campo já existente).
+
+Áreas em QA já pronta (goals/budget/metricOptions/health-derive/ClientHealthViews/
+ClientesTable/lista de clients/cockpit/oscillation-detector/metas-reconcile/
+sync-health/RecalcularTudo/progress) NÃO foram tocadas. Sem migration.
+
+### 2026-07-22 — BUG (Marcos, caso DonnaSo): detector de oscilações reescrito — alertas contraditórios
+Print do Cockpit "Oscilações de hoje": DonnaSo Pastelaria com **"Conversões
+caiu 80%" + "Faturamento caiu 62%" + "ROAS subiu 318%"** simultâneos. Três
+defeitos no `src/services/oscillation-detector.ts` (rotina do cron daily,
+step 4), todos corrigidos na reescrita:
+
+1. **Comparava HOJE (dia PARCIAL — o cron roda 08:00) contra ontem completo** →
+   quedas falsas de 60-80% toda manhã. Agora compara **ontem × anteontem**
+   (dois dias-parede SP COMPLETOS), janelas em UTC-midnight via
+   `spDayInfo().spDayStartUtc` contra `MetricSnapshot.date @db.Date` — nunca
+   `setHours(0,0,0,0)` no fuso do servidor.
+2. **Cada KPI tinha agregação própria e inconsistente** (`extractKPIValue`:
+   FATURAMENTO preferia GA4, ROAS somava tudo) → contradições matemáticas no
+   mesmo card. Agora **TODOS os KPIs saem de `aggregateSnapshots`** (fonte
+   canônica, regra 0), com precedência GA4SYNC>GA4 por dia e roteamento por
+   `businessType`.
+3. **Monitorava ROAS/FATURAMENTO em negócio local** (pastelaria com alerta de
+   ROAS). Agora o conjunto de KPIs é por tipo: ECOMMERCE =
+   FATURAMENTO/ROAS/CONVERSIONS; LOCAL/B2B = LEADS/MENSAGENS/CONVERSIONS/CPL/CPA.
+
+Títulos passam de "nas últimas 24h" para "**subiu/caiu X% ontem**" (corpo cita
+anteontem→ontem). Dedupe por título/24h e resiliência por cliente (regra 7)
+preservados. API pública (`detectOscillationsForClient/ForAll`) inalterada —
+caller único é o cron daily.
+
+### 2026-07-22 — BUG (Marcos): "Resultado do mês" ignorava a métrica principal dos locais/B2B — AGUARDANDO GUARDIÃO
+Print do Cockpit → Saúde por cliente → "Resultado do mês": clientes LOCAL/B2B
+(Brazolli, DonnaSo, Dr. Auyber, Draft, Duplo Sentido, Family, Lalolli, Svn,
+Tuca, Via Miami…) apareciam **"Sem meta definida"** mesmo com metas recém-
+cadastradas na grade `/agency/metas` (MENSAGENS/LEADS/CONVERSIONS + CPL/CPA +
+SPEND). Alguns mostravam realizado em R$ com meta "—". **Causa:** o
+`monthlyPacing` de `getUnifiedClientHealthBatch` só olhava a Goal de FATURAMENTO;
+locais medem a **métrica-resultado principal**, não faturamento.
+
+- **Fonte canônica da métrica principal (REUSO, sem campo novo):** ela é
+  DERIVADA da `Goal`, não um campo do `Client`. Regra: entre as Goals MONTHLY do
+  mês cuja métrica ∈ `LOCAL_RESULT_METRIC_SET`
+  (CONVERSIONS/LEADS/MENSAGENS/AGENDAMENTOS/LIGACOES/SEGUIDORES/VISITAS_PERFIL,
+  em `src/lib/metas/metricOptions.ts`) com alvo > 0, vence a **mais recente**
+  (`updatedAt`). A eleição vivia INLINE em `progress.ts` (`fetchMonthProgress`) e
+  em `goals.ts` (`fetchMonthlyGoals`).
+- **Correção (regra 0 · DADO AMARRADO — uma eleição só):** extraída a fonte
+  única `electPrimaryLocalGoal(goals)` + `pacingMetricLabel`/`isMonetaryMetric`
+  em `src/lib/metas/metricOptions.ts`. `getUnifiedClientHealthBatch`
+  (`src/lib/health-derive.ts`) passa a rotear o selo mensal por `businessType`:
+  ECOMMERCE = FATURAMENTO (R$); LOCAL/B2B = métrica principal eleita (meta = Goal
+  MONTHLY; realizado = `getRealizadoBatch(metric,'MTD')` → `aggregateSnapshots`
+  roteia LEADS/MENSAGENS/CONVERSIONS por businessType; projeção/pró-rata via
+  `pace.ts`, que já proratiza essas métricas em `PRORATE_METRICS`). LOCAL/B2B sem
+  métrica principal cai em FATURAMENTO (fallback); "Sem meta definida" só quando
+  não há NENHUMA das duas. Batch sem N+1 (UM `getRealizadoBatch` por métrica
+  distinta). Diagnóstico `semReceitaComGasto` segue ECOMMERCE-only.
+- **`monthlyPacing` ganhou** `metric`/`metricLabel`/`isMonetary` (aditivo).
+  `progress.ts` passou a consumir `electPrimaryLocalGoal` (mesma eleição do
+  Cockpit — o mesmo cliente não tem "Mensagens" numa tela e "Leads" noutra).
+- **UI (`ClientHealthViews.tsx` · linha mensal):** valores NÃO monetários
+  formatados como número (`Math.round(v).toLocaleString('pt-BR')`), não R$; linha
+  operacional rotulando a métrica ("Mensagens: 84 de 150 · projeção 92% da
+  meta"). E-commerce permanece como está (R$, só a barra).
+- **Arquivos:** `src/lib/metas/metricOptions.ts` (+helpers),
+  `src/lib/health-derive.ts` (routing monthlyPacing + 3 campos),
+  `src/app/(dashboard)/cockpit/page.tsx` (passa metricLabel/isMonetary),
+  `src/components/dashboard/ClientHealthViews.tsx` (formatação/rótulo),
+  `src/app/actions/progress.ts` (adota a eleição única). Sem `npm`/`tsc` (npm
+  bloqueado; revisão estática: strict-null, Decimal→Number, imports conferidos).
+  **NÃO commitado — pendente `guardiao`.**
+- **Pendência p/ guardião:** `ClientHealthGrid.tsx` (código MORTO — não renderiza
+  desde a troca por `ClientHealthViews`, ver entrada 2026-07-21) ainda formata
+  `monthlyPacing` como R$ via `PacingCell`; se for RE-ligado, precisa respeitar
+  `isMonetary`. `goals.ts` (`fetchMonthlyGoals`) mantém eleição inline
+  equivalente — NÃO tocado (outro agente edita `upsertMonthlyGoals`/`updateClient`
+  agora); convergir para `electPrimaryLocalGoal` numa fatia futura.
+
+### 2026-07-22 — DADO AMARRADO: metas de /agency/metas ⇄ budget/ROAS da aba Clientes (ciclo completo) — AGUARDANDO GUARDIÃO
+Pedido do Marcos (verbatim): "GARANTA que essas mesmas metas cadastradas em
+agency/metas estejam em sinergia com a aba de clientes… alterado em qualquer
+lugar, altera nas outras telas." Decisão complementar: "deixe exatamente iguais
+nas duas telas, o dado mais correto é o da aba clientes — preenchido por último".
+E: "os locais deveriam ter campo espelho já que e-commerces têm."
+
+**O ciclo agora fecha nas DUAS direções (fonte única = Goal MONTHLY + campos de
+budget/roasMinimo da ficha, sem campo novo — regra 0):**
+
+- **CLIENTES → METAS (já existia).** `updateClient`/`clientInline` edita budget
+  por plataforma (`Client.investimentoMeta/Google/Tiktok`) + `roasMinimo` →
+  `computeMetasFromBudget` (`src/lib/metas/budget.ts`) deriva SPEND=soma,
+  FATURAMENTO=soma×roasMin, ROAS=roasMin → upsert Goals MONTHLY do mês corrente.
+
+- **METAS → CLIENTES (NOVO).** `upsertMonthlyGoals` (`src/app/actions/goals.ts`)
+  passou a sincronizar, para as metas do MÊS CORRENTE de cada cliente:
+  1. **ROAS da ficha (`Client.roasMinimo`):** se a grade enviou FATURAMENTO **e**
+     SPEND, `roasMinimo = FATURAMENTO ÷ SPEND` (inverso legítimo — no e-commerce
+     os inputs humanos são faturamento + budget e o ROAS é a razão); senão usa o
+     Goal ROAS enviado. **Regra de consistência do trio:** a grade
+     (`MetasBulkTable.calcAutoFieldsEcommerce`) já mantém `spend×roas ≈
+     faturamento` (auto-preenche o campo que falta), então FATURAMENTO÷SPEND == o
+     ROAS enviado; escolhemos FATURAMENTO÷SPEND como autoritativo para não
+     depender de qual campo o usuário digitou por último.
+  2. **Budget por plataforma:** `syncBudgetToTotal(current, novoSPEND)` distribui
+     o novo total — **reescala proporcional** se o cliente já tem breakdown
+     (preserva a proporção que o Marcos definiu), senão joga tudo em
+     `investimentoMeta` (**convenção: Meta é a plataforma dominante da agência**).
+     Resíduo de arredondamento vai ao maior canal p/ a soma bater EXATO.
+  3. `faturamentoEsperado` (cache da ficha) = SPEND × roasMinimo.
+  4. Só mês CORRENTE mexe na ficha (os campos representam o mês vigente); metas de
+     meses passados/futuros só gravam a Goal.
+  5. `AuditLog` `client.budget.sync_from_goals` + `revalidatePath('/clients')` e
+     `/agency/metas` (já havia).
+  6. Locais/B2B: SPEND sincroniza o budget (mesma regra); métrica-principal e
+     CPL/CPA **não têm espelho no Client** — nada além da Goal.
+
+- **RECONCILIAÇÃO EM MASSA (aba Clientes é a verdade de hoje).**
+  `reconcileMonthlyGoalsFromBudget()` (`src/services/metas-reconcile.ts`) regenera
+  as Goals MONTHLY do mês corrente a partir do budget/roasMinimo da ficha de TODOS
+  os clientes ativos (mesmo fluxo do `updateClient`, try/catch por cliente,
+  `AuditLog` `goals.reconcile_from_budget`). **Disparo pelo Marcos:** botão
+  **"Recalcular saúde (todos)"** na tela `/clients` (`RecalcularTudoButton` →
+  `POST /api/sync/health` com `recalcResultado:true`), acoplado ao recálculo geral
+  ADMIN/CRON. Revalida `/agency/metas` também.
+
+- **ESPELHO LOCAL na aba Clientes (NOVO).** Clientes LOCAL/B2B agora exibem, nas
+  4 colunas que no e-commerce são Meta/Google/TikTok/ROAS, o espelho da grade:
+  **Métrica principal · Meta · Custo-alvo (CPL/CPA) · Budget** — fonte de leitura
+  = Goal MONTHLY do mês corrente (`getClientesData` em
+  `src/app/(dashboard)/clients/page.tsx` lê as Goals; `LocalMetasCells` em
+  `src/components/clientes/ClientesTable.tsx` renderiza). Edição inline (ADMIN,
+  espelhando o gate da grade) grava via a MESMA `upsertMonthlyGoals` →
+  bidirecional com `/agency/metas`. Cabeçalhos das 4 colunas ganharam rótulo duplo
+  (linha 2 = uso local) por a tabela misturar tipos. Rodapé: budget-por-plataforma
+  soma só e-commerce; budget dos locais soma à parte na coluna Budget (métrica
+  principal não soma entre métricas diferentes → sem total).
+
+**Convenções/limitações registradas:** (a) sem breakdown → budget total em
+`investimentoMeta`; (b) valor null/0 numa célula local NÃO limpa a Goal (herdado
+da grade — "sem meta" não é enviado); (c) edição de metas locais é ADMIN-only por
+usar `upsertMonthlyGoals` (mesmo gate da grade). Testes: `src/lib/metas/budget.test.ts`
+cobre `syncBudgetToTotal` (reescala, sem-breakdown, resíduo exato) + o trio.
+
 ### 2026-07-22 — /clients: cards de Tempo de casa/LTV médio e Taxa de churn (12m) — AGUARDANDO GUARDIÃO
 Pedido do Marcos: dois cards novos na grade do topo de `/clients` — (1) tempo
 médio de casa dos cancelados + LTV médio em R$; (2) taxa de churn.

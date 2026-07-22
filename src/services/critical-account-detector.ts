@@ -30,8 +30,12 @@ export async function detectCriticalAccounts(): Promise<{
   const lastWeekStart = getWeekRange(new Date(today.getTime() - 7 * 86_400_000)).start
   const prevWeekStart = getWeekRange(new Date(today.getTime() - 14 * 86_400_000)).start
 
+  // Só ECOMMERCE: os gatilhos medem ROAS/Faturamento de e-commerce. LOCAL/B2B se
+  // medem por leads/mensagens (não têm meta de ROAS/faturamento nesse formato) —
+  // mesma regra do resultado-engine. Antes abria War Room indevido para conta
+  // LOCAL/B2B sem meta de ROAS/faturamento.
   const clients = await prisma.client.findMany({
-    where: { status: 'ACTIVE' },
+    where: { status: 'ACTIVE', businessType: 'ECOMMERCE' },
     select: {
       id: true,
       name: true,

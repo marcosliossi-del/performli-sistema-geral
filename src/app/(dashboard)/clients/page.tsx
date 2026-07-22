@@ -6,6 +6,8 @@ import { ClientesTable } from '@/components/clientes/ClientesTable'
 import { RecalcularTudoButton } from '@/components/clients/RecalcularTudoButton'
 import { normalizeRole, scopeClients } from '@/lib/rbac'
 import { spDayInfo } from '@/lib/metas/pace'
+import { LOCAL_RESULT_METRICS, costMetricFor } from '@/lib/metas/metricOptions'
+import { MetricType } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -115,6 +117,48 @@ async function getClientesData(userId: string, role: string) {
   const { spDayStartUtc } = spDayInfo(now)
   const hojeUtc = spDayStartUtc.getTime()
 
+  // ── ESPELHO DE METAS DO MÊS CORRENTE (clientes LOCAL/B2B) ──────────────────
+  // DADO AMARRADO (§0): clientes LOCAL/B2B NÃO têm campo espelho de
+  // métrica-principal/custo/budget na ficha — a FONTE canônica é a própria Goal
+  // MONTHLY (a mesma que a grade de /agency/metas grava). Lemos as Goals do mês
+  // corrente e projetamos nas 4 colunas de metas (Métrica · Meta · Custo · Budget),
+  // de modo que editar aqui reflete na grade e vice-versa (via upsertMonthlyGoals).
+  const LOCAL_RESULT_METRIC_TYPES = LOCAL_RESULT_METRICS.map((m) => m.value)
+  const goalMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const goalMonthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  const clientIds = clients.map((c) => c.id)
+  const monthlyGoals = clientIds.length > 0
+    ? await prisma.goal.findMany({
+        where: {
+          clientId: { in: clientIds },
+          period:   'MONTHLY',
+          startDate: { lte: goalMonthEnd },
+          endDate:   { gte: goalMonthStart },
+          metric: { in: ['SPEND', 'CPL', 'CPA', ...LOCAL_RESULT_METRIC_TYPES] },
+        },
+        // asc → em empate, a métrica-resultado mais RECENTE vira a principal.
+        orderBy: { updatedAt: 'asc' },
+        select: { clientId: true, metric: true, targetValue: true },
+      })
+    : []
+
+  const localResultSet = new Set<MetricType>(LOCAL_RESULT_METRIC_TYPES)
+  type MetaEspelho = {
+    spend: number | null; cpl: number | null; cpa: number | null
+    mainMetric: MetricType | null; mainValue: number | null
+  }
+  const metasByClient = new Map<string, MetaEspelho>()
+  for (const g of monthlyGoals) {
+    const cur: MetaEspelho =
+      metasByClient.get(g.clientId) ?? { spend: null, cpl: null, cpa: null, mainMetric: null, mainValue: null }
+    const val = Number(g.targetValue)
+    if      (g.metric === 'SPEND') cur.spend = val
+    else if (g.metric === 'CPL')   cur.cpl = val
+    else if (g.metric === 'CPA')   cur.cpa = val
+    else if (localResultSet.has(g.metric)) { cur.mainMetric = g.metric; cur.mainValue = val }
+    metasByClient.set(g.clientId, cur)
+  }
+
   // Somatórios do rodapé (financeiro → só ADMIN). Somamos o valor JÁ RESOLVIDO
   // (contrato vigente com fallback), não o cache bruto, p/ bater com a coluna.
   let somaContrato   = 0
@@ -144,6 +188,21 @@ async function getClientesData(userId: string, role: string) {
       Number(c.investimentoGoogle ?? 0) +
       Number(c.investimentoTiktok ?? 0)
     const investimento = isAdmin ? (invSoma > 0 ? invSoma : null) : null
+
+    // Espelho de metas (LOCAL/B2B): métrica-principal · meta · custo-alvo · budget.
+    // Fonte = Goal MONTHLY do mês corrente (regra 0: sem campo novo no Client).
+    const isLocalType = c.businessType === 'LOCAL' || c.businessType === 'B2B'
+    const metas = isLocalType ? metasByClient.get(c.id) ?? null : null
+    const localMetric = metas?.mainMetric ?? null
+    // Custo-alvo correto p/ a métrica: CPL só p/ LEADS, CPA p/ o resto. Sem métrica
+    // definida ainda → mostra o custo que houver (CPL ou CPA), para não esconder dado.
+    const localCost = metas
+      ? (localMetric
+          ? (costMetricFor(localMetric) === 'CPL' ? metas.cpl : metas.cpa)
+          : (metas.cpl ?? metas.cpa))
+      : null
+    // Budget do local é o Goal SPEND — financeiro, só ADMIN vê valor.
+    const localBudget = isAdmin ? (metas?.spend ?? null) : null
 
     // Vencimento (dia-parede SP): vencido = fim < hoje; alerta se vence em <30d.
     let vencido = false
@@ -210,6 +269,11 @@ async function getClientesData(userId: string, role: string) {
       investimentoGoogle: isAdmin ? (c.investimentoGoogle != null ? Number(c.investimentoGoogle) : null) : null,
       investimentoTiktok: isAdmin ? (c.investimentoTiktok != null ? Number(c.investimentoTiktok) : null) : null,
       roasMinimo:         c.roasMinimo != null ? Number(c.roasMinimo) : null,
+      // Espelho de metas para LOCAL/B2B (null p/ e-commerce — usa as colunas de budget).
+      localMetric,
+      localValue: metas?.mainValue ?? null,
+      localCost,
+      localBudget,
       contractValue: valorContrato,
     }
   })

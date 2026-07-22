@@ -24,6 +24,7 @@ import { HealthStatus } from '@prisma/client'
 import { formatCurrency, formatNumber, timeAgo, getWeekRange, getMonthRange, tabSlug } from '@/lib/utils'
 import { deriveOverallStatus, getUnifiedClientHealth } from '@/lib/health-derive'
 import { getRealizadoForMetrics } from '@/lib/metas/realizado'
+import { computeAchievementPct, LOWER_IS_BETTER } from '@/services/health-scorer'
 import { Target, BookOpen, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { ClientContractCard } from '@/components/clients/ClientContractCard'
 import { GoalFormModal } from '@/components/clients/GoalFormModal'
@@ -726,9 +727,16 @@ export default async function ClientDetailPage({
             {weeklyGoals.map((goal) => {
               const hs = goal.healthScores[0]
               const status = hs?.status ?? null
-              const pct = hs ? Math.round(Number(hs.achievementPct)) : null
               // Realizado da FONTE ÚNICA (SEMANA_FECHADA), não de HealthScore.actualValue.
               const actual = weeklyRealizadoByMetric.get(goal.metric)?.valor ?? null
+              // % coerente com o MESMO actual/semana do número (régua canônica do
+              // scorer; métricas lowerIsBetter dividem target/actual invertido).
+              // Antes o % vinha de hs.achievementPct (semana ATUAL, congelada no
+              // cron), divergindo do realizado da SEMANA_FECHADA exibido acima.
+              const pctRaw = actual != null
+                ? computeAchievementPct(actual, Number(goal.targetValue), LOWER_IS_BETTER.has(goal.metric))
+                : null
+              const pct = pctRaw != null ? Math.round(pctRaw) : null
 
               return (
                 <Card key={goal.id}>

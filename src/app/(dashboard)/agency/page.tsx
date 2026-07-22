@@ -43,7 +43,7 @@ export default async function AgencyPage() {
           icon={<DollarSign size={16} className="text-[#22C55E]" />}
           label="Receita Total MTD"
           value={formatCurrency(data.totalRevenue)}
-          sub="fonte: GA4"
+          sub="e-commerce: loja · local: Meta"
         />
         <KpiCard
           icon={<BarChart2 size={16} className="text-[#95BBE2]" />}

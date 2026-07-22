@@ -2,11 +2,13 @@
 
 import { useState, useTransition, useEffect, useRef, type ReactNode } from 'react'
 import { Search, Plus, MessageCircle, Pencil, ShoppingCart, MapPin, Building2, ArrowRight, ChevronDown, Check, X } from 'lucide-react'
-import type { ClientStatus, BusinessType, ClientCurva } from '@prisma/client'
+import type { ClientStatus, BusinessType, ClientCurva, MetricType } from '@prisma/client'
 import { formatCurrency } from '@/lib/utils'
 import { bulkSetBusinessType, updateClientsStatus, updateClientProdutos } from '@/app/actions/updateClient'
 import { updateClientField, updateClientContractInline } from '@/app/actions/clientInline'
 import { updateClientPrimaryManager } from '@/app/actions/assignments'
+import { upsertMonthlyGoals, type GoalUpsert } from '@/app/actions/goals'
+import { LOCAL_RESULT_METRICS, costMetricFor, costLabelFor } from '@/lib/metas/metricOptions'
 import { ClientIdentity } from '@/components/clients/ClientIdentity'
 import { toast } from '@/lib/toast'
 
@@ -43,7 +45,36 @@ export interface ClientRow {
   investimentoGoogle: number | null
   investimentoTiktok: number | null
   roasMinimo:         number | null
+  // Espelho de metas para LOCAL/B2B (null em e-commerce). Fonte: Goal MONTHLY do
+  // mês corrente — editar aqui grava via upsertMonthlyGoals (bidirecional c/ a grade).
+  localMetric:  MetricType | null
+  localValue:   number | null
+  localCost:    number | null   // custo-alvo (CPL p/ LEADS, senão CPA)
+  localBudget:  number | null   // Goal SPEND (financeiro → só ADMIN)
   contractValue: number | null
+}
+
+/** LOCAL e B2B usam o espelho de metas; e-commerce usa budget por plataforma. */
+function isLocalType(bt: string): boolean {
+  return bt === 'LOCAL' || bt === 'B2B'
+}
+
+/** Rótulo curto da métrica-resultado (Leads/Mensagens/Compras…) p/ a pill. */
+function metricShortLabel(metric: MetricType | null): string {
+  if (!metric) return 'Definir métrica'
+  return LOCAL_RESULT_METRICS.find((m) => m.value === metric)?.label ?? metric
+}
+
+/** Bounds 'YYYY-MM-DD' do MÊS CORRENTE (mesma convenção da grade MetasBulkTable). */
+function currentMonthBounds(): { startDate: string; endDate: string } {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = d.getMonth()
+  const start = new Date(y, m, 1)
+  const end   = new Date(y, m + 1, 0)
+  const fmt = (x: Date) =>
+    `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
+  return { startDate: fmt(start), endDate: fmt(end) }
 }
 
 interface Totals {
@@ -437,6 +468,121 @@ function PeriodoEditor({
   )
 }
 
+/** Patch parcial do espelho de metas de um cliente local (o que o usuário mexeu). */
+type LocalMetaPatch = {
+  localMetric?: MetricType
+  localValue?: number | null
+  localCost?: number | null
+  localBudget?: number | null
+}
+
+/**
+ * As 4 células de metas para clientes LOCAL/B2B (substituem Meta/Google/TikTok/ROAS
+ * do e-commerce): Métrica principal · Meta · Custo-alvo (CPL/CPA) · Budget.
+ *
+ * Fonte de leitura = Goal MONTHLY do mês corrente (regra 0 — sem campo novo no
+ * Client). A edição é ADMIN-only por construção: grava pela MESMA action da grade
+ * (upsertMonthlyGoals, que é ADMIN) → bidirecional com /agency/metas. Budget é
+ * financeiro (só ADMIN vê valor); métrica/meta/custo são operacionais (todos veem,
+ * mas só ADMIN edita).
+ */
+function LocalMetasCells({
+  client, isAdmin, onSave,
+}: {
+  client: ClientRow
+  isAdmin: boolean
+  onSave: (client: ClientRow, patch: LocalMetaPatch) => void
+}) {
+  const metric = client.localMetric
+  const costLabel = costLabelFor(metric ?? 'LEADS')
+
+  const metricPill = (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+      style={{ color: '#A78BFA', background: '#A78BFA18' }}
+    >
+      {metricShortLabel(metric)}
+    </span>
+  )
+
+  return (
+    <>
+      {/* Métrica principal (dropdown ADMIN; pill estática p/ os demais) */}
+      <td className="px-3 py-3 text-left whitespace-nowrap">
+        {isAdmin ? (
+          <InlineDropdown canEdit width="w-48" trigger={metricPill}>
+            {(close) => (
+              <div className="max-h-56 overflow-y-auto">
+                {LOCAL_RESULT_METRICS.map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    onClick={() => {
+                      close()
+                      if (m.value !== (metric ?? 'LEADS')) onSave(client, { localMetric: m.value })
+                    }}
+                    className="flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-[#EBEBEB] hover:bg-[#38435C]/40 transition"
+                  >
+                    <span className="flex-1 text-left">{m.label}</span>
+                    {metric === m.value && <Check size={12} className="text-[#95BBE2]" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </InlineDropdown>
+        ) : (
+          metricPill
+        )}
+      </td>
+
+      {/* Meta (valor da métrica principal) */}
+      <td className="px-3 py-3 text-right text-xs text-[#C7CDD6] whitespace-nowrap">
+        <InlineNumber
+          value={client.localValue}
+          canEdit={isAdmin}
+          step="1"
+          onSave={(v) => onSave(client, { localValue: v })}
+          render={(v) => (v != null ? v.toLocaleString('pt-BR') : <span className="text-[#38435C]">—</span>)}
+        />
+      </td>
+
+      {/* Custo-alvo (CPL/CPA) — operacional, visível a todos, editável só ADMIN */}
+      <td className="px-3 py-3 text-right text-xs text-[#C7CDD6] whitespace-nowrap">
+        <InlineNumber
+          value={client.localCost}
+          canEdit={isAdmin}
+          onSave={(v) => onSave(client, { localCost: v })}
+          render={(v) =>
+            v != null ? (
+              <span>
+                <span className="text-[9px] text-[#87919E] mr-1">{costLabel}</span>
+                {formatCurrency(v)}
+              </span>
+            ) : (
+              <span className="text-[#38435C]">—</span>
+            )
+          }
+        />
+      </td>
+
+      {/* Budget (Goal SPEND) — financeiro, só ADMIN */}
+      <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
+        {isAdmin ? (
+          <InlineNumber
+            value={client.localBudget}
+            canEdit
+            step="100"
+            onSave={(v) => onSave(client, { localBudget: v })}
+            render={(v) => (v ? formatCurrency(v) : <span className="text-[#38435C]">—</span>)}
+          />
+        ) : (
+          <span className="text-[#38435C]" title="Restrito ao administrador">—</span>
+        )}
+      </td>
+    </>
+  )
+}
+
 export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false, canEditFields = false, staff = [] }: Props) {
   const [search,   setSearch]   = useState('')
   const [filter,   setFilter]   = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'CHURNED'>('ALL')
@@ -488,6 +634,36 @@ export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false,
       }
       toast(okMsg, 'ok')
     })
+  }
+
+  /**
+   * Salva o espelho de metas de um cliente LOCAL/B2B. Reconstrói o CONJUNTO
+   * completo (métrica principal · meta · custo-alvo · budget) — igual ao buildGoals
+   * da grade — e grava pela MESMA action (upsertMonthlyGoals). Assim editar na aba
+   * Clientes reflete na grade e vice-versa (DADO AMARRADO §0). Reaproveita o
+   * salvamento otimista de `saveField`. Convenção herdada da grade: valor null/0 é
+   * "sem meta" e NÃO é enviado (não dá para limpar por aqui — igual à grade).
+   */
+  function saveLocalMetas(client: ClientRow, patch: LocalMetaPatch) {
+    const cur = viewOf(client)
+    const metric = patch.localMetric ?? cur.localMetric ?? ('LEADS' as MetricType)
+    const value  = patch.localValue  !== undefined ? patch.localValue  : cur.localValue
+    const cost   = patch.localCost   !== undefined ? patch.localCost   : cur.localCost
+    const budget = patch.localBudget !== undefined ? patch.localBudget : cur.localBudget
+
+    const { startDate, endDate } = currentMonthBounds()
+    const goals: GoalUpsert[] = []
+    if (budget != null && budget >= 0) goals.push({ clientId: client.id, metric: 'SPEND', value: budget, startDate, endDate })
+    if (value  != null && value  >= 0) goals.push({ clientId: client.id, metric, value, startDate, endDate })
+    if (cost   != null && cost   >= 0) goals.push({ clientId: client.id, metric: costMetricFor(metric), value: cost, startDate, endDate })
+    if (goals.length === 0) return
+
+    saveField(
+      client.id,
+      { localMetric: metric, localValue: value, localCost: cost, localBudget: budget },
+      () => upsertMonthlyGoals(goals).then((r) => (r.ok ? {} : { error: r.error ?? 'Falha ao salvar as metas.' })),
+      'Metas do cliente atualizadas · grade sincronizada',
+    )
   }
 
   const filtered = clients.map(viewOf).filter(c => {
@@ -559,17 +735,17 @@ export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false,
   const footContrato = isAdmin
     ? (isFilteredView ? filtered.reduce((s, c) => s + (c.contractValue ?? 0), 0) : totals.somaContrato ?? 0)
     : null
-  // Somas por plataforma (print Marcos) — no rodapé. Filtrado → recalcula sobre a
-  // visão; sem filtro → usa o total do servidor.
-  const footInvestMeta = isAdmin
-    ? (isFilteredView ? filtered.reduce((s, c) => s + (c.investimentoMeta ?? 0), 0) : totals.somaInvestMeta ?? 0)
-    : null
-  const footInvestGoogle = isAdmin
-    ? (isFilteredView ? filtered.reduce((s, c) => s + (c.investimentoGoogle ?? 0), 0) : totals.somaInvestGoogle ?? 0)
-    : null
-  const footInvestTiktok = isAdmin
-    ? (isFilteredView ? filtered.reduce((s, c) => s + (c.investimentoTiktok ?? 0), 0) : totals.somaInvestTiktok ?? 0)
-    : null
+  // Somas por plataforma (colunas mistas): só somam o que é somável POR TIPO.
+  // As 3 colunas de budget-por-plataforma agora somam APENAS e-commerce (locais
+  // exibem a métrica-principal/meta/custo nessas colunas, que não somam entre si);
+  // o budget dos locais soma à parte, na coluna de Budget (última das 4).
+  const ecomFiltered  = filtered.filter((c) => !isLocalType(c.businessType))
+  const localFiltered = filtered.filter((c) => isLocalType(c.businessType))
+  const footInvestMeta   = isAdmin ? ecomFiltered.reduce((s, c) => s + (c.investimentoMeta ?? 0), 0) : null
+  const footInvestGoogle = isAdmin ? ecomFiltered.reduce((s, c) => s + (c.investimentoGoogle ?? 0), 0) : null
+  const footInvestTiktok = isAdmin ? ecomFiltered.reduce((s, c) => s + (c.investimentoTiktok ?? 0), 0) : null
+  // Budget dos locais (Goal SPEND) somado à parte — vai na coluna de Budget/ROAS.
+  const footLocalBudget  = isAdmin ? localFiltered.reduce((s, c) => s + (c.localBudget ?? 0), 0) : null
 
   // Fecha o menu de status ao clicar fora.
   useEffect(() => {
@@ -728,10 +904,33 @@ export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false,
               <th className="text-left px-3 py-3 font-medium">MODELO DE NEGÓCIO</th>
               <th className="text-left px-3 py-3 font-medium">PLATAFORMA</th>
               <th className="text-left px-3 py-3 font-medium">RESPONSÁVEL</th>
-              <th className="text-right px-3 py-3 font-medium">INVEST. META</th>
-              <th className="text-right px-3 py-3 font-medium">INVEST. GOOGLE</th>
-              <th className="text-right px-3 py-3 font-medium">INVEST. TIKTOK</th>
-              <th className="text-right px-3 py-3 font-medium">ROAS MÍN.</th>
+              {/* 4 colunas MISTAS: e-commerce = budget por plataforma + ROAS mín.;
+                  local/B2B = espelho da grade de metas (métrica · meta · custo · budget).
+                  Rótulo duplo p/ manter legível na mesma tabela (linha 2 = uso local). */}
+              <th className="text-right px-3 py-3 font-medium">
+                <div className="flex flex-col items-end leading-tight">
+                  <span>INVEST. META</span>
+                  <span className="text-[9px] text-[#A78BFA]/80 normal-case font-normal">local: métrica</span>
+                </div>
+              </th>
+              <th className="text-right px-3 py-3 font-medium">
+                <div className="flex flex-col items-end leading-tight">
+                  <span>INVEST. GOOGLE</span>
+                  <span className="text-[9px] text-[#A78BFA]/80 normal-case font-normal">local: meta</span>
+                </div>
+              </th>
+              <th className="text-right px-3 py-3 font-medium">
+                <div className="flex flex-col items-end leading-tight">
+                  <span>INVEST. TIKTOK</span>
+                  <span className="text-[9px] text-[#A78BFA]/80 normal-case font-normal">local: custo-alvo</span>
+                </div>
+              </th>
+              <th className="text-right px-3 py-3 font-medium">
+                <div className="flex flex-col items-end leading-tight">
+                  <span>ROAS MÍN.</span>
+                  <span className="text-[9px] text-[#A78BFA]/80 normal-case font-normal">local: budget</span>
+                </div>
+              </th>
               <th className="text-right px-3 py-3 font-medium">VALOR CONTRATO</th>
               {/* Saúde vive num LUGAR SÓ: link para o quadro único (Client 360). */}
               <th className="text-left px-3 py-3 font-medium">SAÚDE</th>
@@ -1102,48 +1301,56 @@ export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false,
                       )}
                     </td>
 
-                    {/* BUDGET POR PLATAFORMA (print Marcos): Meta · Google · TikTok · ROAS mín. */}
-                    <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
-                      {isAdmin ? (
-                        <InlineNumber
-                          value={client.investimentoMeta}
-                          canEdit
-                          onSave={(v) => saveField(client.id, { investimentoMeta: v }, () => updateClientField(client.id, { investimentoMeta: v }), 'Budget Meta atualizado · metas recalculadas')}
-                          render={(v) => v ? formatCurrency(v) : <span className="text-[#38435C]">—</span>}
-                        />
-                      ) : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
-                    </td>
-                    <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
-                      {isAdmin ? (
-                        <InlineNumber
-                          value={client.investimentoGoogle}
-                          canEdit
-                          onSave={(v) => saveField(client.id, { investimentoGoogle: v }, () => updateClientField(client.id, { investimentoGoogle: v }), 'Budget Google atualizado · metas recalculadas')}
-                          render={(v) => v ? formatCurrency(v) : <span className="text-[#38435C]">—</span>}
-                        />
-                      ) : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
-                    </td>
-                    <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
-                      {isAdmin ? (
-                        <InlineNumber
-                          value={client.investimentoTiktok}
-                          canEdit
-                          onSave={(v) => saveField(client.id, { investimentoTiktok: v }, () => updateClientField(client.id, { investimentoTiktok: v }), 'Budget TikTok atualizado · metas recalculadas')}
-                          render={(v) => v ? formatCurrency(v) : <span className="text-[#38435C]">—</span>}
-                        />
-                      ) : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
-                    </td>
-                    {/* ROAS mínimo NÃO é financeiro sensível (é meta operacional) → visível/editável a staff. */}
-                    <td className="px-3 py-3 text-right text-xs text-[#C7CDD6] whitespace-nowrap">
-                      <InlineNumber
-                        value={client.roasMinimo}
-                        canEdit={canEditFields}
-                        onSave={(v) => saveField(client.id, { roasMinimo: v }, () => updateClientField(client.id, { roasMinimo: v }), 'ROAS mínimo atualizado · metas recalculadas')}
-                        render={(v) => v != null
-                          ? `${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`
-                          : <span className="text-[#38435C]">—</span>}
-                      />
-                    </td>
+                    {/* 4 COLUNAS MISTAS — e-commerce: budget por plataforma + ROAS mín.
+                        (campos do Client); LOCAL/B2B: espelho da grade de metas
+                        (Goal MONTHLY do mês), via <LocalMetasCells>. */}
+                    {isLocalType(client.businessType) ? (
+                      <LocalMetasCells client={client} isAdmin={isAdmin} onSave={saveLocalMetas} />
+                    ) : (
+                      <>
+                        <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
+                          {isAdmin ? (
+                            <InlineNumber
+                              value={client.investimentoMeta}
+                              canEdit
+                              onSave={(v) => saveField(client.id, { investimentoMeta: v }, () => updateClientField(client.id, { investimentoMeta: v }), 'Budget Meta atualizado · metas recalculadas')}
+                              render={(v) => v ? formatCurrency(v) : <span className="text-[#38435C]">—</span>}
+                            />
+                          ) : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
+                        </td>
+                        <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
+                          {isAdmin ? (
+                            <InlineNumber
+                              value={client.investimentoGoogle}
+                              canEdit
+                              onSave={(v) => saveField(client.id, { investimentoGoogle: v }, () => updateClientField(client.id, { investimentoGoogle: v }), 'Budget Google atualizado · metas recalculadas')}
+                              render={(v) => v ? formatCurrency(v) : <span className="text-[#38435C]">—</span>}
+                            />
+                          ) : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
+                        </td>
+                        <td className="px-3 py-3 text-right text-xs text-[#EBEBEB] whitespace-nowrap">
+                          {isAdmin ? (
+                            <InlineNumber
+                              value={client.investimentoTiktok}
+                              canEdit
+                              onSave={(v) => saveField(client.id, { investimentoTiktok: v }, () => updateClientField(client.id, { investimentoTiktok: v }), 'Budget TikTok atualizado · metas recalculadas')}
+                              render={(v) => v ? formatCurrency(v) : <span className="text-[#38435C]">—</span>}
+                            />
+                          ) : <span className="text-[#38435C]" title="Restrito ao administrador">—</span>}
+                        </td>
+                        {/* ROAS mínimo NÃO é financeiro sensível (é meta operacional) → visível/editável a staff. */}
+                        <td className="px-3 py-3 text-right text-xs text-[#C7CDD6] whitespace-nowrap">
+                          <InlineNumber
+                            value={client.roasMinimo}
+                            canEdit={canEditFields}
+                            onSave={(v) => saveField(client.id, { roasMinimo: v }, () => updateClientField(client.id, { roasMinimo: v }), 'ROAS mínimo atualizado · metas recalculadas')}
+                            render={(v) => v != null
+                              ? `${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`
+                              : <span className="text-[#38435C]">—</span>}
+                          />
+                        </td>
+                      </>
+                    )}
 
                     {/* VALOR DO CONTRATO — edita o Contract vigente (ou cadastro) */}
                     <td className="px-3 py-3 text-right text-xs font-semibold text-[#22C55E] whitespace-nowrap">
@@ -1216,8 +1423,15 @@ export function ClientesTable({ clients, totals, isAdmin, canEditStatus = false,
                 <td className="px-3 py-3 text-right whitespace-nowrap">
                   {isAdmin ? formatCurrency(footInvestTiktok ?? 0) : '—'}
                 </td>
-                {/* ROAS mín. não soma (é taxa) */}
-                <td className="px-3 py-3" />
+                {/* Coluna mista: ROAS mín. (e-com) não soma; budget dos locais soma. */}
+                <td className="px-3 py-3 text-right whitespace-nowrap">
+                  {isAdmin && footLocalBudget != null && footLocalBudget > 0 ? (
+                    <span className="flex flex-col items-end leading-tight">
+                      <span>{formatCurrency(footLocalBudget)}</span>
+                      <span className="text-[9px] text-[#A78BFA]/80 font-normal">budget locais</span>
+                    </span>
+                  ) : null}
+                </td>
                 <td className="px-3 py-3 text-right text-[#22C55E] whitespace-nowrap">
                   {isAdmin ? formatCurrency(footContrato ?? 0) : '—'}
                 </td>

@@ -18,7 +18,10 @@ function fmt(v: number) {
 export function ReceitaMediaChart({ data }: Props) {
   return (
     <div className="bg-[#38435C]/20 border border-[#38435C] rounded-xl p-4">
-      <h3 className="text-sm font-semibold text-[#EBEBEB] mb-4">Receita média por cliente</h3>
+      <div className="mb-4">
+        <h3 className="text-sm font-semibold text-[#EBEBEB]">Entradas médias por cliente ativo</h3>
+        <p className="text-[11px] text-[#87919E] mt-0.5">Entradas do mês ÷ clientes ativos · últimos 6 meses</p>
+      </div>
       <ResponsiveContainer width="100%" height={220}>
         <LineChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#38435C" />
@@ -27,7 +30,7 @@ export function ReceitaMediaChart({ data }: Props) {
           <Tooltip
             contentStyle={{ background: '#0A1E2C', border: '1px solid #38435C', borderRadius: 8, fontSize: 12 }}
             labelStyle={{ color: '#EBEBEB' }}
-            formatter={(v) => [formatCurrency(Number(v)), 'Receita média']}
+            formatter={(v) => [formatCurrency(Number(v)), 'Entradas médias']}
           />
           <Line
             type="monotone" dataKey="value" stroke="#22C55E"

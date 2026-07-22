@@ -113,10 +113,13 @@ async function getFinanceiroData(from: Date, to: Date, fullAccess: boolean) {
   const clientesRecorrentes = subscriptions.length
   const inadimplenciaValue  = Number(inadimplenciaAgg._sum.value ?? 0)
 
-  const tempoMedioMeses = allClients.reduce((sum, c) => {
-    if (!c.contractStart) return sum
-    return sum + (today.getTime() - new Date(c.contractStart).getTime()) / (1000 * 60 * 60 * 24 * 30.44)
-  }, 0) / (allClients.length || 1)
+  // Tempo médio de casa: divide SÓ por quem TEM contractStart. Antes o
+  // denominador era `allClients.length` — clientes sem data de início somavam 0
+  // no numerador e diluíam a média para baixo. `tempoMedioBase` expõe a base real.
+  const clientesComData = allClients.filter((c) => c.contractStart)
+  const tempoMedioMeses = clientesComData.reduce((sum, c) =>
+    sum + (today.getTime() - new Date(c.contractStart!).getTime()) / (1000 * 60 * 60 * 24 * 30.44),
+  0) / (clientesComData.length || 1)
 
   const receitaMedia = clientesRecorrentes > 0 ? receitaRecorrente / clientesRecorrentes : 0
   const ltv          = receitaMedia * Math.max(tempoMedioMeses, 1)
@@ -180,6 +183,7 @@ async function getFinanceiroData(from: Date, to: Date, fullAccess: boolean) {
     clientesInadimplentes,
     inadimplenciaValue,
     tempoMedioMeses,
+    tempoMedioBase: clientesComData.length,
     entradasPrevistas: Number(entradasPrevAgg._sum.value ?? 0),
     saidasPrevistas:   Number(saidasPrevAgg._sum.value ?? 0),
     distribuicaoEntradas,
@@ -386,6 +390,7 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
           format="months"
           colorScheme="neutral"
           icon={<Clock size={14} />}
+          sub={`média de ${data.tempoMedioBase} cliente(s) com data de início`}
         />
         <FinanceiroKpiCard
           label="Entradas previstas"

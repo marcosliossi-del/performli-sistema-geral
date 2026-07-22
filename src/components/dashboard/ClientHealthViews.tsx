@@ -46,7 +46,16 @@ export interface HealthViewClient {
     esperadoAteHoje: number | null
     projecao: number | null
     pct: number | null
+    /** Rótulo da métrica medida ("Faturamento" p/ ecom · "Mensagens"/"Leads"… p/ local/B2B). */
+    metricLabel: string
+    /** true = R$ (ecom) · false = contagem (local/B2B: nº de mensagens/leads…). */
+    isMonetary: boolean
   } | null
+}
+
+/** Valor do pacing formatado conforme a métrica: R$ (ecom) ou número (local/B2B). */
+function formatMetricValue(v: number, isMonetary: boolean): string {
+  return isMonetary ? formatCurrency(v) : Math.round(v).toLocaleString('pt-BR')
 }
 
 interface Props {
@@ -375,6 +384,18 @@ function MonthRow({ c }: { c: HealthViewClient }) {
   const m = c.month
   const v = monthVerdict(m)
   const hasMeta = m != null && m.meta != null && m.meta > 0
+  // Ecom = R$ · local/B2B = contagem. Sem dado do mês, assume monetário (default ecom).
+  const isMoney = m?.isMonetary ?? true
+  const fmt = (val: number | null | undefined) => (val == null ? '—' : formatMetricValue(val, isMoney))
+
+  // Resumo operacional da métrica (local/B2B): "Mensagens: 84 de 150 · projeção
+  // 92% da meta". Ecom NÃO recebe esta linha (permanece como está, só a barra R$).
+  // No caso "Abaixo do ritmo" a projeção já aparece no veredito → não repetir.
+  const metricLine =
+    hasMeta && m && !isMoney
+      ? `${m.metricLabel}: ${fmt(m.realizado ?? 0)} de ${fmt(m.meta)}` +
+        (v.projPct != null && v.kind !== 'ABAIXO' ? ` · projeção ${v.projPct}% da meta` : '')
+      : null
 
   return (
     <RowShell c={c}>
@@ -386,20 +407,25 @@ function MonthRow({ c }: { c: HealthViewClient }) {
         </p>
       </div>
 
-      {/* Barra realizado × meta com marcador pró-rata */}
+      {/* Barra realizado × meta com marcador pró-rata (+ resumo da métrica p/ local) */}
       <div className="flex-1 min-w-0 hidden sm:block">
         {hasMeta && m ? (
-          <MetaBar realizado={m.realizado ?? 0} meta={m.meta!} esperado={m.esperadoAteHoje} color={v.color} />
+          <>
+            {metricLine && (
+              <p className="text-[10px] text-[#87919E] mb-1 tabular-nums truncate">{metricLine}</p>
+            )}
+            <MetaBar realizado={m.realizado ?? 0} meta={m.meta!} esperado={m.esperadoAteHoje} color={v.color} />
+          </>
         ) : (
           <span className="text-[10px] text-[#576070]">Cadastre a meta mensal para acompanhar</span>
         )}
       </div>
 
-      {/* Números secundários */}
+      {/* Números secundários — R$ (ecom) ou número puro (local/B2B) */}
       <div className="flex items-center gap-5 flex-shrink-0 text-right">
-        <Metric label="Realizado" value={m?.realizado != null ? formatCurrency(m.realizado) : '—'} />
-        <Metric label="Meta" value={hasMeta ? formatCurrency(m!.meta!) : '—'} />
-        <Metric label="Projeção" value={m?.projecao != null ? formatCurrency(m.projecao) : '—'} valueColor={hasMeta ? v.color : undefined} />
+        <Metric label="Realizado" value={fmt(m?.realizado)} />
+        <Metric label="Meta" value={hasMeta ? fmt(m!.meta) : '—'} />
+        <Metric label="Projeção" value={fmt(m?.projecao)} valueColor={hasMeta ? v.color : undefined} />
       </div>
     </RowShell>
   )

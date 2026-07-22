@@ -9,7 +9,7 @@ import {
 } from '@/lib/metas/realizado'
 import {
   LOCAL_RESULT_METRICS,
-  LOCAL_RESULT_METRIC_SET,
+  electPrimaryLocalGoal,
   costLabelFor,
 } from '@/lib/metas/metricOptions'
 import { isAdPlatform } from '@/services/health-scorer'
@@ -151,16 +151,13 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
   // ── Métrica-resultado principal dos clientes local/B2B ────────────────────
   // Elege a meta-resultado principal por cliente (última por updatedAt, já que
   // c.goals vem ordenado asc). E-commerce fica de fora (usa faturamento/ROAS).
+  // Eleição via fonte única (electPrimaryLocalGoal) — a MESMA que o pacing do
+  // Cockpit (getUnifiedClientHealthBatch) usa, para que a métrica principal do
+  // cliente seja idêntica na grade e no selo mensal (regra 0 · DADO AMARRADO).
   const localGoalByClient = new Map<string, { metric: MetricType; goal: number }>()
   for (const c of clients) {
     if (c.businessType === 'ECOMMERCE') continue
-    let elected: { metric: MetricType; goal: number } | null = null
-    for (const g of c.goals) {
-      if (LOCAL_RESULT_METRIC_SET.has(g.metric)) {
-        const goal = Number(g.targetValue)
-        if (goal > 0) elected = { metric: g.metric, goal }
-      }
-    }
+    const elected = electPrimaryLocalGoal(c.goals)
     if (elected) localGoalByClient.set(c.id, elected)
   }
 

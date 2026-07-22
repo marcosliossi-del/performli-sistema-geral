@@ -421,8 +421,13 @@ export function MetasDashboard({ clients }: { clients: ClientProgress[] }) {
 
   const displayClients = [...sorted, ...withoutGoal]
 
-  const totalRevenue = clients.reduce((s, c) => s + c.revenue, 0)
-  const totalGoal    = withGoal.reduce((s, c) => s + (c.goalFaturamento ?? 0), 0)
+  // "Total Carteira" compara REALIZADO × META de FATURAMENTO — ambos restritos
+  // aos MESMOS clientes (os que têm meta de faturamento = e-commerce). Antes o
+  // numerador somava a receita de TODOS (inclui locais), inflando o total contra
+  // um denominador que só considera metas de faturamento.
+  const faturamentoClients = clients.filter((c) => c.goalFaturamento != null)
+  const totalRevenue = faturamentoClients.reduce((s, c) => s + c.revenue, 0)
+  const totalGoal    = faturamentoClients.reduce((s, c) => s + (c.goalFaturamento ?? 0), 0)
 
   return (
     <div className="space-y-6">

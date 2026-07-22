@@ -5,6 +5,12 @@ import { getWeekRange, getMonthRange } from './utils'
 import { BUDGET_CONSUMPTION_METRICS, aggregateSnapshots, isAdPlatform, type AggregatableSnapshot } from '@/services/health-scorer'
 import { getRealizadoBatch } from './metas/realizado'
 import { spDayInfo, projectMonth, proRataExpected } from './metas/pace'
+import {
+  LOCAL_RESULT_METRICS,
+  electPrimaryLocalGoal,
+  pacingMetricLabel,
+  isMonetaryMetric,
+} from './metas/metricOptions'
 
 /**
  * Janela de saúde unificada — fonte única de verdade da régua A (health).
@@ -111,7 +117,14 @@ export type UnifiedClientHealth = {
     label: string // 'semana passada'
     resultado: ClientResultado | null
   }
-  /** Pacing do mês corrente (faturamento) via fonte única. */
+  /**
+   * Pacing do mês corrente via fonte única. A grandeza medida depende do tipo de
+   * negócio (regra 0 · DADO AMARRADO): ECOMMERCE = FATURAMENTO (R$); LOCAL/B2B =
+   * a métrica-resultado PRINCIPAL do cliente (contagem, ex.: MENSAGENS/LEADS/
+   * CONVERSIONS), eleita da Goal via `electPrimaryLocalGoal`. Local/B2B sem
+   * métrica principal cai em FATURAMENTO (fallback), e só é "sem meta" quando não
+   * há NENHUMA das duas.
+   */
   monthlyPacing: {
     realizado: number | null
     meta: number | null
@@ -123,6 +136,12 @@ export type UnifiedClientHealth = {
      * ga4sync.connected na UI ("Loja GA4Sync não vinculada?" vs "sem vendas mesmo").
      */
     semReceitaComGasto: boolean
+    /** Métrica medida no selo mensal: FATURAMENTO (ecom) ou a principal (local/B2B). */
+    metric: MetricType
+    /** Rótulo humano da métrica ("Faturamento", "Mensagens", "Leads"…). */
+    metricLabel: string
+    /** true = grandeza monetária (R$); false = contagem (número puro). */
+    isMonetary: boolean
   }
   ga4sync: { connected: boolean }
   calculatedAt: Date
@@ -131,8 +150,10 @@ export type UnifiedClientHealth = {
 /**
  * Versão BATCH — carteira inteira SEM N+1. Todas as agregações em lote:
  *  - healthScores (1 findMany) → status + atingimento (A-121)
- *  - getRealizadoBatch × FATURAMENTO(MTD) / ROAS(SEMANA_FECHADA) / SPEND(MTD)
- *  - goals FATURAMENTO MONTHLY (1 findMany) → meta do pacing
+ *  - getRealizadoBatch × FATURAMENTO(MTD) / ROAS(SEMANA_FECHADA) / SPEND(MTD) +
+ *    UM batch por métrica-resultado local distinta (MENSAGENS/LEADS/…), sem N+1
+ *  - goals FATURAMENTO + métricas-resultado locais MONTHLY (1 findMany) → meta do
+ *    pacing (ecom = FATURAMENTO · local/B2B = métrica principal eleita)
  *  - PlatformAccount GA4SYNC (1 findMany) → ga4sync.connected
  *  - Client.resultado (já no findMany de clientes) → Resultado antigo
  */
@@ -160,14 +181,16 @@ export async function getUnifiedClientHealthBatch(
       },
       goals: {
         where: {
-          metric: 'FATURAMENTO',
+          // FATURAMENTO (ecom) + métricas-resultado locais (a principal do
+          // cliente local/B2B). orderBy asc → a eleição (electPrimaryLocalGoal)
+          // e a extração do FATURAMENTO mais recente escolhem a ÚLTIMA iterada.
+          metric: { in: ['FATURAMENTO', ...LOCAL_RESULT_METRICS.map((m) => m.value)] },
           period: 'MONTHLY',
           startDate: { lte: now },
           endDate: { gte: monthStart },
         },
-        orderBy: { updatedAt: 'desc' },
-        take: 1,
-        select: { targetValue: true },
+        orderBy: { updatedAt: 'asc' },
+        select: { metric: true, targetValue: true },
       },
     },
   })
@@ -189,25 +212,74 @@ export async function getUnifiedClientHealthBatch(
     getRealizadoBatch(forBatch, 'ROAS', 'SEMANA_FECHADA'),
   ])
 
+  // Métrica-resultado PRINCIPAL dos clientes local/B2B: eleita da Goal via fonte
+  // única (electPrimaryLocalGoal — MESMA regra da grade /agency/metas e do
+  // fetchMonthProgress). ECOMMERCE fica de fora (mede FATURAMENTO). Realizado da
+  // principal via aggregateSnapshots (roteia LEADS/MENSAGENS/CONVERSIONS por
+  // businessType) SEM N+1: agrupa por métrica e dispara UM getRealizadoBatch por
+  // métrica distinta.
+  const btById = new Map(clients.map((c) => [c.id, c.businessType]))
+  const localPrimaryByClient = new Map<string, { metric: MetricType; goal: number }>()
+  for (const c of clients) {
+    if (c.businessType === 'ECOMMERCE') continue
+    const elected = electPrimaryLocalGoal(c.goals)
+    if (elected) localPrimaryByClient.set(c.id, elected)
+  }
+  const localByMetric = new Map<MetricType, Array<{ id: string; businessType: BusinessType }>>()
+  for (const [clientId, { metric }] of localPrimaryByClient) {
+    const arr = localByMetric.get(metric) ?? []
+    arr.push({ id: clientId, businessType: btById.get(clientId) ?? 'LOCAL' })
+    localByMetric.set(metric, arr)
+  }
+  const localRealizadoByClient = new Map<string, number | null>()
+  await Promise.all(
+    [...localByMetric].map(async ([metric, group]) => {
+      const realizados = await getRealizadoBatch(group, metric, 'MTD')
+      for (const [id, r] of realizados) localRealizadoByClient.set(id, r.valor)
+    }),
+  )
+
   for (const c of clients) {
     const canonical = selectCanonicalScores(c.healthScores, weekStart, monthStart)
     const status = worstStatus(canonical)
     const achievement = overallAchievementPct(canonical)
 
-    const meta = c.goals[0] ? Number(c.goals[0].targetValue) : null
-    const realizado = fatMtd.get(c.id)?.valor ?? null
+    const isEcom = c.businessType === 'ECOMMERCE'
+    const localPrimary = localPrimaryByClient.get(c.id)
+
+    // FATURAMENTO mensal (última por updatedAt — goals ordenadas asc, última vence).
+    let fatGoal: number | null = null
+    for (const g of c.goals) if (g.metric === 'FATURAMENTO') fatGoal = Number(g.targetValue)
+
+    // Selo mensal por tipo de negócio (regra 0):
+    //  · ECOMMERCE            → FATURAMENTO (R$).
+    //  · LOCAL/B2B c/ principal → métrica-resultado principal (contagem).
+    //  · LOCAL/B2B s/ principal → FATURAMENTO (fallback; alguns locais têm meta R$).
+    let pacingMetric: MetricType
+    let meta: number | null
+    let realizado: number | null
+    if (!isEcom && localPrimary) {
+      pacingMetric = localPrimary.metric
+      meta = localPrimary.goal
+      realizado = localRealizadoByClient.get(c.id) ?? null
+    } else {
+      pacingMetric = 'FATURAMENTO'
+      meta = fatGoal
+      realizado = fatMtd.get(c.id)?.valor ?? null
+    }
+
     const spend = spendMtd.get(c.id)?.valor ?? null
     const roas = roasSemana.get(c.id)
-    // Grandeza única do selo mensal = FATURAMENTO (ECOM e LOCAL); a barra por
-    // métrica-resultado local segue em progress.ts.
+    // Pró-rata/projeção da fonte única para a MÉTRICA do selo (pace.ts respeita
+    // PRORATE_METRICS: FATURAMENTO e as métricas-resultado locais proratizam).
     const esperadoAteHoje =
-      meta != null ? proRataExpected('FATURAMENTO', meta, sp.daysElapsedInMonth, sp.totalDaysInMonth) : null
+      meta != null ? proRataExpected(pacingMetric, meta, sp.daysElapsedInMonth, sp.totalDaysInMonth) : null
     const projecao =
       realizado != null ? projectMonth(realizado, sp.daysElapsedInMonth, sp.totalDaysInMonth) : null
     const pct = meta != null && meta > 0 && realizado != null ? Math.round((realizado / meta) * 100) : null
 
-    const semReceitaComGasto =
-      c.businessType === 'ECOMMERCE' && (realizado ?? 0) === 0 && (spend ?? 0) > 0
+    // Diagnóstico dos zerados permanece ECOMMERCE-only (realizado aqui já é FATURAMENTO).
+    const semReceitaComGasto = isEcom && (realizado ?? 0) === 0 && (spend ?? 0) > 0
 
     out.set(c.id, {
       clientId: c.id,
@@ -219,7 +291,17 @@ export async function getUnifiedClientHealthBatch(
         label: roas?.periodoLabel ?? 'semana passada',
         resultado: c.resultado ?? null,
       },
-      monthlyPacing: { realizado, meta, esperadoAteHoje, projecao, pct, semReceitaComGasto },
+      monthlyPacing: {
+        realizado,
+        meta,
+        esperadoAteHoje,
+        projecao,
+        pct,
+        semReceitaComGasto,
+        metric: pacingMetric,
+        metricLabel: pacingMetricLabel(pacingMetric),
+        isMonetary: isMonetaryMetric(pacingMetric),
+      },
       ga4sync: { connected: ga4syncConnected.has(c.id) },
       calculatedAt: now,
     })
