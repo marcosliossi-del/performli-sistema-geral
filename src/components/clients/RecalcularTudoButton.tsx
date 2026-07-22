@@ -27,7 +27,12 @@ export function RecalcularTudoButton() {
         toast(json?.error ?? 'Falha ao recalcular. Tente novamente.', 'err')
         return
       }
-      toast('Saúde e Resultado recalculados para todos os clientes.')
+      const rec = json?.reconcile
+      toast(
+        rec
+          ? `Saúde, Resultado e metas alinhadas (${rec.reconciled} clientes sincronizados com a ficha).`
+          : 'Saúde e Resultado recalculados para todos os clientes.',
+      )
       router.refresh()
     } catch {
       toast('Não foi possível conectar. Verifique a conexão e tente de novo.', 'err')

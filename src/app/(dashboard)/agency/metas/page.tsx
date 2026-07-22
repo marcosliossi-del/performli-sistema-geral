@@ -26,11 +26,9 @@ export default async function MetasPage() {
 
   const monthStart = new Date(year, month, 1)
   const monthEnd   = new Date(year, month + 1, 0)
-  const prevStart  = new Date(year, month - 1, 1)
-  const prevEnd    = new Date(year, month, 0)
 
   // Fetch data for both views in parallel
-  const [clients, progress, prevHealthScores] = await Promise.all([
+  const [clients, progress] = await Promise.all([
     prisma.client.findMany({
       where: { status: 'ACTIVE' },
       orderBy: { name: 'asc' },
@@ -59,18 +57,14 @@ export default async function MetasPage() {
       },
     }),
     fetchMonthProgress(year, month),
-    prisma.healthScore.findMany({
-      where: {
-        metric: 'TICKET_MEDIO',
-        period: 'MONTHLY',
-        periodStart: { gte: prevStart, lte: prevEnd },
-      },
-      select: { clientId: true, actualValue: true },
-    }),
   ])
 
+  // prevTicketMedio da FONTE CANÔNICA ÚNICA (fetchMonthProgress → getRealizadoBatch,
+  // prevRevenue/prevPurchases GA4SYNC>GA4 por dia). Antes vinha de HealthScore
+  // TICKET_MEDIO do mês anterior, divergindo do valor mostrado no MetasDashboard.
+  // O CPA sugerido deriva do MESMO ticket médio (10% do TM anterior).
   const prevTicket = new Map(
-    prevHealthScores.map((hs) => [hs.clientId, Number(hs.actualValue)])
+    progress.map((p) => [p.id, p.prevTicketMedio])
   )
 
   const localResultSet = new Set<MetricType>(LOCAL_RESULT_METRICS.map((m) => m.value))

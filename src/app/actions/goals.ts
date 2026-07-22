@@ -9,10 +9,23 @@ import { MetricType } from '@prisma/client'
 import { getMonthRange } from '@/lib/utils'
 import { parseDateInput } from '@/lib/tasks/dateInput'
 import { LOCAL_RESULT_METRICS } from '@/lib/metas/metricOptions'
+import { syncBudgetToTotal } from '@/lib/metas/budget'
 import {
   upsertWeeklyGoalForMonth,
   syncWeeklyGoalsFromMonthly as syncWeeklyGoalsFromMonthlyService,
 } from '@/services/weekly-goals-sync'
+
+/** Converte Decimal? do Prisma em number|null preservando "não informado". */
+function decToNum(v: { toString(): string } | null | undefined): number | null {
+  if (v == null) return null
+  const n = Number(v.toString())
+  return Number.isFinite(n) ? n : null
+}
+
+/** Arredonda para 2 casas evitando ruído de ponto flutuante. */
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100
+}
 
 /**
  * Server action: sincroniza metas mensais → semanais.
@@ -58,6 +71,16 @@ export async function upsertMonthlyGoals(
   let saved = 0
   let ignored = 0
 
+  // DADO AMARRADO (§0) — direção METAS → CLIENTES: acumula por cliente os valores
+  // de SPEND/FATURAMENTO/ROAS do MÊS CORRENTE para, DEPOIS do upsert das Goals,
+  // sincronizar os campos-espelho da ficha (Client.investimentoMeta/Google/Tiktok
+  // e roasMinimo). Metas de meses passados/futuros NÃO tocam a ficha (os campos
+  // representam o mês corrente). Ver DOSSIE §15.
+  const syncByClient = new Map<
+    string,
+    { spend?: number; faturamento?: number; roas?: number }
+  >()
+
   for (const g of goals) {
     // Valor 0/negativo/NaN NÃO é alvo válido: tratado como "sem meta" e ignorado
     // (S1-012). Um 0 gravado faria "meta batida"/"péssimo" falso nos motores.
@@ -89,8 +112,87 @@ export async function upsertMonthlyGoals(
     const isCurrentMonth = startDate <= monthEnd && endDate >= monthStart
     if (isCurrentMonth) {
       await upsertWeeklyGoalForMonth(g.clientId, g.metric, g.value)
+      if (g.metric === 'SPEND' || g.metric === 'FATURAMENTO' || g.metric === 'ROAS') {
+        const agg = syncByClient.get(g.clientId) ?? {}
+        if (g.metric === 'SPEND') agg.spend = g.value
+        else if (g.metric === 'FATURAMENTO') agg.faturamento = g.value
+        else agg.roas = g.value
+        syncByClient.set(g.clientId, agg)
+      }
     }
     saved++
+  }
+
+  // ── SINCRONIZAÇÃO METAS → CLIENTES (mês corrente) ──────────────────────────
+  // Regra de consistência do trio (grade mantém spend×roas ≈ faturamento):
+  //   • roasMinimo da ficha = FATURAMENTO ÷ SPEND quando AMBOS presentes (inverso
+  //     legítimo: para e-commerce os inputs humanos são faturamento + budget e o
+  //     ROAS é a razão); caso contrário usa o Goal ROAS salvo diretamente.
+  //   • budget total (Goal SPEND) → distribui pelos canais via syncBudgetToTotal
+  //     (reescala proporcional se há breakdown; senão joga tudo em investimentoMeta).
+  // Locais/B2B: só enviam SPEND → sincroniza budget; sem espelho p/ CPL/CPA/métrica
+  // principal na ficha (nada a fazer além do Goal já gravado).
+  for (const [clientId, agg] of syncByClient) {
+    const patch: {
+      roasMinimo?: number
+      investimentoMeta?: number | null
+      investimentoGoogle?: number | null
+      investimentoTiktok?: number | null
+      faturamentoEsperado?: number
+    } = {}
+
+    // roasMinimo (mês corrente)
+    let roasMin: number | null = null
+    if (agg.faturamento != null && agg.spend != null && agg.spend > 0) {
+      roasMin = round2(agg.faturamento / agg.spend)
+    } else if (agg.roas != null && agg.roas > 0) {
+      roasMin = agg.roas
+    }
+    if (roasMin != null) patch.roasMinimo = roasMin
+
+    // budget por plataforma (mês corrente) a partir do Goal SPEND
+    if (agg.spend != null && agg.spend > 0) {
+      const c = await prisma.client.findUnique({
+        where: { id: clientId },
+        select: { investimentoMeta: true, investimentoGoogle: true, investimentoTiktok: true },
+      })
+      if (c) {
+        const distrib = syncBudgetToTotal(
+          {
+            investimentoMeta: decToNum(c.investimentoMeta),
+            investimentoGoogle: decToNum(c.investimentoGoogle),
+            investimentoTiktok: decToNum(c.investimentoTiktok),
+          },
+          agg.spend,
+        )
+        patch.investimentoMeta = distrib.investimentoMeta
+        patch.investimentoGoogle = distrib.investimentoGoogle
+        patch.investimentoTiktok = distrib.investimentoTiktok
+      }
+      // Cache de faturamento esperado na ficha (dado amarrado) coerente com o trio.
+      if (roasMin != null) patch.faturamentoEsperado = round2(agg.spend * roasMin)
+    }
+
+    if (Object.keys(patch).length === 0) continue
+
+    await prisma.client.update({ where: { id: clientId }, data: patch })
+
+    await writeAuditLog({
+      actorId: session.userId,
+      actorRole: session.role,
+      action: 'client.budget.sync_from_goals',
+      entityType: 'Client',
+      entityId: clientId,
+      clientId,
+      metadata: {
+        spend: agg.spend ?? null,
+        faturamento: agg.faturamento ?? null,
+        roasMinimo: roasMin,
+        investimentoMeta: patch.investimentoMeta ?? null,
+        investimentoGoogle: patch.investimentoGoogle ?? null,
+        investimentoTiktok: patch.investimentoTiktok ?? null,
+      },
+    })
   }
 
   await writeAuditLog({

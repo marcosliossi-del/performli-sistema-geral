@@ -10,9 +10,10 @@ interface Props {
   delta?: number | null      // % change vs previous period
   icon?: React.ReactNode
   colorScheme?: 'green' | 'red' | 'neutral'
+  sub?: string               // legenda opcional (ex.: base de cálculo do valor)
 }
 
-export function FinanceiroKpiCard({ label, value, format = 'currency', delta, icon, colorScheme = 'neutral' }: Props) {
+export function FinanceiroKpiCard({ label, value, format = 'currency', delta, icon, colorScheme = 'neutral', sub }: Props) {
   function fmt(v: number | null) {
     if (v === null) return '—'
     switch (format) {
@@ -64,6 +65,10 @@ export function FinanceiroKpiCard({ label, value, format = 'currency', delta, ic
             {delta > 0 ? '+' : ''}{formatNumber(delta, 2)}% vs. último período
           </span>
         </div>
+      )}
+
+      {sub && (
+        <span className="text-[10px] text-[#87919E] leading-tight">{sub}</span>
       )}
     </div>
   )

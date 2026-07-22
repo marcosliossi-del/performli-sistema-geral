@@ -160,8 +160,9 @@ export const getDashboardData = cache(async (userId: string, role: string) => {
       ? { status: 'ACTIVE' }
       : { status: 'ACTIVE', assignments: { some: { userId } } }
 
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
+  // "Hoje" (oscilações do dia) = início do dia-parede SP, não do fuso do
+  // servidor. Alinha ao boundary usado no restante do dal (startOfTodaySaoPaulo).
+  const todayStart = startOfTodaySaoPaulo(new Date())
 
   // Run all 4 queries in parallel instead of sequentially
   const [clients, alerts, oscillationAlerts, lastSyncAccount] = await Promise.all([
@@ -1825,12 +1826,19 @@ export type DreTotals = {
  * DONE; entradas = netValue (fallback value).
  *
  * `from`/`to` já normalizados pelo caller (SP; `to` EXCLUSIVO). O período
- * anterior tem a MESMA duração e termina onde o atual começa (exclusivo).
+ * anterior tem a MESMA duração DECORRIDA (min(`to`, agora) − `from`) e termina
+ * onde o atual começa (exclusivo) — evita comparar mês parcial contra mês cheio.
  */
 export const getDreTotals = cache(async (from: Date, to: Date): Promise<DreTotals> => {
-  const duration = to.getTime() - from.getTime()
-  const prevFrom = new Date(from.getTime() - duration)
-  const prevTo   = from
+  // A janela anterior cobre a MESMA duração DECORRIDA do período atual, não o
+  // período cheio: com mês parcial `to` é o 1º dia do mês seguinte, então
+  // `to - from` (mês inteiro) compararia os ~N dias corridos contra 30/31 e
+  // distorceria o delta. duration = min(`to`, agora) − `from`.
+  const now       = new Date()
+  const elapsedTo = to.getTime() < now.getTime() ? to : now
+  const duration  = Math.max(0, elapsedTo.getTime() - from.getTime())
+  const prevFrom  = new Date(from.getTime() - duration)
+  const prevTo    = from
 
   const [
     payments, prevPaymentsAgg,

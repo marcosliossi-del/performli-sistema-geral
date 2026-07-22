@@ -25,7 +25,10 @@ function fmt(v: number) {
 export function EntradaSaidaChart({ data }: Props) {
   return (
     <div className="bg-[#38435C]/20 border border-[#38435C] rounded-xl p-4">
-      <h3 className="text-sm font-semibold text-[#EBEBEB] mb-4">Entrada x Saída</h3>
+      <div className="mb-4">
+        <h3 className="text-sm font-semibold text-[#EBEBEB]">Entrada x Saída</h3>
+        <p className="text-[11px] text-[#87919E] mt-0.5">Últimos 6 meses — não segue o período selecionado acima</p>
+      </div>
       <ResponsiveContainer width="100%" height={220}>
         <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
           <defs>

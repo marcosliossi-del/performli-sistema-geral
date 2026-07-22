@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { recalculateClientHealth } from '@/services/health-scorer'
 import { runResultadoUpdate } from '@/services/resultado-engine'
 import { dispatchAlertsForClient } from '@/services/alert-dispatcher'
+import { reconcileMonthlyGoalsFromBudget } from '@/services/metas-reconcile'
 import { getSession } from '@/lib/session'
 import { z } from 'zod'
 
@@ -113,6 +114,7 @@ export async function POST(request: NextRequest) {
   // Resultado semanal (engine) — só no recálculo GERAL por ADMIN/CRON. force:
   // reprocessa mesmo se já rodou na semana (botão "Recalcular saúde (todos)").
   let resultado: { ok: boolean; error?: string } | null = null
+  let reconcile: { reconciled: number; skipped: number; failed: number } | null = null
   if (recalcResultado && !clientId && (isCron || sessionRole === 'ADMIN')) {
     try {
       await runResultadoUpdate({ force: true })
@@ -120,17 +122,33 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       resultado = { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
+
+    // RECONCILIAÇÃO METAS ⇄ CLIENTES (decisão Marcos 2026-07-22): o budget/roasMinimo
+    // da ficha do cliente (aba Clientes, "preenchido por último") é a verdade de hoje
+    // → regenera as Goals MONTHLY do mês corrente para deixar /clients e /agency/metas
+    // EXATAMENTE iguais. Acoplado ao recálculo geral (botão "Recalcular saúde (todos)"),
+    // que fica na tela de Clientes. best-effort: não derruba o recálculo de saúde.
+    try {
+      reconcile = await reconcileMonthlyGoalsFromBudget({
+        actorId: sessionUserId,
+        actorRole: sessionRole,
+      })
+    } catch (err) {
+      console.error('[sync/health] falha na reconciliação de metas:', err)
+    }
   }
 
   // Invalidate Next.js page cache so the cockpit reloads with fresh health scores
   revalidatePath('/cockpit', 'page')
   revalidatePath('/clients', 'page')
+  revalidatePath('/agency/metas', 'page')
 
   return NextResponse.json({
     ok: true,
     clientsProcessed: clientIds.length,
     ...totals,
     resultado,
+    reconcile,
     results,
   })
 }

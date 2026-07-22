@@ -139,6 +139,8 @@ export default async function CockpitPage() {
             esperadoAteHoje: u.monthlyPacing.esperadoAteHoje,
             projecao: u.monthlyPacing.projecao,
             pct: u.monthlyPacing.pct,
+            metricLabel: u.monthlyPacing.metricLabel,
+            isMonetary: u.monthlyPacing.isMonetary,
           }
         : null,
     }
