@@ -41,6 +41,20 @@ const SEED_DATA: SeedEntry[] = [
   { clientMatch: 'Skaebne',         startDate: '2026-04-01', endDate: '2026-10-03', status: 'VIGENTE' },
   { clientMatch: 'Family Pizzaria', startDate: '2026-05-06', endDate: '2026-11-07', status: 'VIGENTE' },
   { clientMatch: 'Soul By Dm',      startDate: '2026-05-06', endDate: '2026-11-07', status: 'VIGENTE' },
+
+  // ── LOTE 2026-07-22 (datas enviadas pelo Marcos; fim padronizado 25/01/2027
+  //    para amarrar tempo de casa/LTV dos clientes sem contrato) ───────────────
+  { clientMatch: 'Beard',           startDate: '2023-02-10', endDate: '2027-01-25', status: 'VIGENTE' },
+  { clientMatch: 'Brazolli',        startDate: '2025-01-10', endDate: '2027-01-25', status: 'VIGENTE' },
+  { clientMatch: 'DonnaSo',         startDate: '2022-05-05', endDate: '2027-01-25', status: 'VIGENTE' },
+  { clientMatch: 'Auyber',          startDate: '2023-09-30', endDate: '2027-01-25', status: 'VIGENTE' },
+  { clientMatch: 'Draft',           startDate: '2022-10-11', endDate: '2027-01-25', status: 'VIGENTE' },
+  { clientMatch: 'Barbara Issas',   startDate: '2023-02-10', endDate: '2027-01-25', status: 'VIGENTE' },
+  { clientMatch: 'Lazulli',         startDate: '2024-11-11', endDate: '2027-01-25', status: 'VIGENTE' },
+  { clientMatch: 'Michelle Rossi',  startDate: '2022-08-10', endDate: '2027-01-25', status: 'VIGENTE' },
+  { clientMatch: 'Outlet Mauá',     startDate: '2023-05-10', endDate: '2027-01-25', status: 'VIGENTE' },
+  { clientMatch: 'Planet',          startDate: '2022-03-17', endDate: '2027-01-25', status: 'VIGENTE' },
+  { clientMatch: 'Roupa Branca',    startDate: '2024-05-15', endDate: '2027-01-25', status: 'VIGENTE' },
 ]
 
 export async function POST(req: NextRequest) {
