@@ -313,15 +313,15 @@ export default async function ClientsPage() {
       label: 'Tempo de casa · LTV médio',
       value: !isAdmin
         ? '—'
-        : churnLtv?.avgTenureMonths != null
-          ? `${churnLtv.avgTenureMonths.toFixed(1).replace('.', ',')} meses`
+        : churnLtv?.avgTenureAtivosMonths != null
+          ? `${churnLtv.avgTenureAtivosMonths.toFixed(1).replace('.', ',')} meses (base ativa)`
           : 'Sem histórico',
       icon:  Clock,
       color: '#54e0ee',
       sub:   !isAdmin
         ? 'Restrito ao administrador'
         : churnLtv && churnLtv.baseComputados > 0
-          ? `${churnLtv.avgLtv != null ? `${formatCurrency(churnLtv.avgLtv)} por cliente (${churnLtv.baseLtv} com valor)` : '—'} · tempo médio de ${churnLtv.baseComputados} cancelado${churnLtv.baseComputados === 1 ? '' : 's'} com histórico`
+          ? `Cancelados saíram com ${churnLtv.avgTenureMonths != null ? `${churnLtv.avgTenureMonths.toFixed(1).replace('.', ',')} meses` : '—'} · LTV ${churnLtv.avgLtv != null ? `${formatCurrency(churnLtv.avgLtv)} (${churnLtv.baseLtv} com valor)` : '—'}`
           : 'Nenhum cancelado com data de saída confiável ainda',
     },
     // ── Taxa de churn (12 meses) — só ADMIN ────────────────────────────────────
