@@ -57,6 +57,13 @@ async function runDailySync() {
   const isFriday       = day === 5
   const isFirstOfMonth = new Date().getDate() === 1
 
+  // JANELA DO CRON (caso 2026-07-22: Step 1 estourava até o teto de 800s):
+  // os syncs por padrão baixam o MÊS inteiro (nível adset) — no diário isso é
+  // redundante, os dias anteriores já foram gravados nas execuções anteriores.
+  // 7 dias cobrem a visão semanal e re-corrigem atribuição tardia do Meta/GA4.
+  // Backfill do mês continua disponível pelos botões manuais (janela default).
+  const cronSince = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10)
+
   const summary: Record<string, unknown> = {
     synced: { meta: { ok: false }, ga4: { ok: false }, googleAds: { ok: false }, nuvemshop: { ok: false } },
     weeklyGoalsSync: isMonday ? { ok: false } : { ok: true, skipped: true },
@@ -113,7 +120,7 @@ async function runDailySync() {
   // ── Step 1: Sync Meta Ads ──────────────────────────────────────────────────
   await recordCronProgress('Step 1')
   try {
-    const metaResults = await syncAllMetaAccounts()
+    const metaResults = await syncAllMetaAccounts({ since: cronSince })
     ;(summary.synced as Record<string, unknown>).meta = { ok: true, accounts: metaResults.length }
   } catch (err) {
     ;(summary.synced as Record<string, unknown>).meta = {
@@ -125,7 +132,7 @@ async function runDailySync() {
   // ── Step 2: Sync GA4 ───────────────────────────────────────────────────────
   await recordCronProgress('Step 2')
   try {
-    const ga4Results = await syncAllGA4Accounts()
+    const ga4Results = await syncAllGA4Accounts({ since: cronSince })
     ;(summary.synced as Record<string, unknown>).ga4 = { ok: true, accounts: ga4Results.length }
   } catch (err) {
     ;(summary.synced as Record<string, unknown>).ga4 = {
@@ -136,7 +143,7 @@ async function runDailySync() {
   // ── Step 2b: Sync Google Ads ───────────────────────────────────────────────
   await recordCronProgress('Step 2b')
   try {
-    const gadsResults = await syncAllGoogleAdsAccounts()
+    const gadsResults = await syncAllGoogleAdsAccounts({ since: cronSince })
     ;(summary.synced as Record<string, unknown>).googleAds = { ok: true, accounts: gadsResults.length }
   } catch (err) {
     ;(summary.synced as Record<string, unknown>).googleAds = {
@@ -147,7 +154,7 @@ async function runDailySync() {
   // ── Step 2c: Sync Nuvemshop ─────────────────────────────────────────────
   await recordCronProgress('Step 2c')
   try {
-    const nuvemshopResults = await syncAllNuvemshopAccounts()
+    const nuvemshopResults = await syncAllNuvemshopAccounts({ since: cronSince })
     ;(summary.synced as Record<string, unknown>).nuvemshop = { ok: true, accounts: nuvemshopResults.length }
   } catch (err) {
     ;(summary.synced as Record<string, unknown>).nuvemshop = {
