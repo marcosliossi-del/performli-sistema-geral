@@ -8,6 +8,8 @@ import { createSyncFailedAlert } from '@/lib/sync-alert'
 interface SyncOptions {
   since?: string
   until?: string
+  /** Cron diário: pula recálculo de saúde por conta (Step 3 recalcula todos em lote). */
+  skipHealthRecalc?: boolean
 }
 
 export interface GoogleAdsSyncResult {
@@ -89,8 +91,13 @@ export async function syncGoogleAdsAccount(
       data:  { lastSyncAt: new Date() },
     })
 
-    const healthResult = await recalculateClientHealth(account.clientId)
-    const alertsCreated = await dispatchAlertsForClient(account.clientId, healthResult.scores)
+    let healthScoresUpdated = 0
+    let alertsCreated = 0
+    if (!options.skipHealthRecalc) {
+      const healthResult = await recalculateClientHealth(account.clientId)
+      alertsCreated = await dispatchAlertsForClient(account.clientId, healthResult.scores)
+      healthScoresUpdated = healthResult.updated
+    }
 
     await prisma.syncLog.update({
       where: { id: syncLog.id },
@@ -102,7 +109,7 @@ export async function syncGoogleAdsAccount(
       customerId:          account.externalId,
       status:              'SUCCESS',
       recordsUpserted,
-      healthScoresUpdated: healthResult.updated,
+      healthScoresUpdated,
       alertsCreated,
     }
   } catch (err) {
