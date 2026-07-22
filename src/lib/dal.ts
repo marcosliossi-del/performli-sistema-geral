@@ -3391,6 +3391,9 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
 export type ChurnLtvStats = {
   // Tenure médio (meses, 1 casa) dos cancelados COM data confiável.
   avgTenureMonths: number | null
+  // Tempo de casa médio (meses, 1 casa) da base ATIVA hoje (1º Contract →
+  // cadastro → createdAt).
+  avgTenureAtivosMonths: number | null
   // LTV médio (R$) dos cancelados computáveis.
   avgLtv: number | null
   // Quantos cancelados entraram na média de tenure (têm data + start).
@@ -3413,8 +3416,17 @@ export const getChurnLtvStats = cache(async (): Promise<ChurnLtvStats> => {
   const now = new Date()
   const dozeMesesAtras = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())
 
-  const [ativosHoje, churned] = await Promise.all([
-    prisma.client.count({ where: { status: 'ACTIVE' } }),
+  const [ativos, churned] = await Promise.all([
+    // Tempo de casa da BASE ATIVA: início = 1º Contract do Jurídico (fonte
+    // canônica), fallback cadastro/createdAt (pedido Marcos 2026-07-22).
+    prisma.client.findMany({
+      where: { status: 'ACTIVE' },
+      select: {
+        contractStart: true,
+        createdAt: true,
+        contracts: { orderBy: { startDate: 'asc' }, take: 1, select: { startDate: true } },
+      },
+    }),
     prisma.client.findMany({
       where: { status: 'CHURNED' },
       select: {
@@ -3435,6 +3447,15 @@ export const getChurnLtvStats = cache(async (): Promise<ChurnLtvStats> => {
       },
     }),
   ])
+
+  const ativosHoje = ativos.length
+  let somaTenureAtivos = 0
+  for (const a of ativos) {
+    const start = a.contracts[0]?.startDate ?? a.contractStart ?? a.createdAt
+    somaTenureAtivos += Math.max(0, (now.getTime() - start.getTime()) / MS_MES)
+  }
+  const avgTenureAtivosMonths =
+    ativosHoje > 0 ? Math.round((somaTenureAtivos / ativosHoje) * 10) / 10 : null
 
   const churnedIds = churned.map((c) => c.id)
 
@@ -3507,6 +3528,7 @@ export const getChurnLtvStats = cache(async (): Promise<ChurnLtvStats> => {
 
   return {
     avgTenureMonths: baseComputados > 0 ? Math.round((somaTenure / baseComputados) * 10) / 10 : null,
+    avgTenureAtivosMonths,
     avgLtv: baseLtv > 0 ? Math.round(somaLtv / baseLtv) : null,
     baseComputados,
     baseLtv,
