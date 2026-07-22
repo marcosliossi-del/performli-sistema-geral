@@ -1,6 +1,6 @@
-import { Users, AlertTriangle, UserMinus, UserPlus, DollarSign, TrendingUp, PauseCircle } from 'lucide-react'
+import { Users, AlertTriangle, UserMinus, UserPlus, DollarSign, TrendingUp, PauseCircle, Clock, TrendingDown } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
-import { requireSession, countInadimplentes } from '@/lib/dal'
+import { requireSession, countInadimplentes, getChurnLtvStats } from '@/lib/dal'
 import { formatCurrency } from '@/lib/utils'
 import { ClientesTable } from '@/components/clientes/ClientesTable'
 import { RecalcularTudoButton } from '@/components/clients/RecalcularTudoButton'
@@ -243,6 +243,9 @@ export default async function ClientsPage() {
   const { clients, staff, kpis, totals } = await getClientesData(session.userId, session.role)
   const viewerRole = normalizeRole(session.role)
   const isAdmin = viewerRole === 'ADMIN'
+  // LTV/tempo-de-casa/churn são dados estratégicos-financeiros: mesmo recorte de
+  // papel de "receita média/recorrente" (só ADMIN). Fora do ADMIN, nem consulta.
+  const churnLtv = isAdmin ? await getChurnLtvStats() : null
   // Editar status (inline + massa) é ação estrutural: só ADMIN e SUPERVISOR.
   // Espelha o gate da action updateClientsStatus (defesa em profundidade na UI).
   const canEditStatus = viewerRole === 'ADMIN' || viewerRole === 'SUPERVISOR_TRAFEGO'
@@ -304,6 +307,38 @@ export default async function ClientsPage() {
       icon:  TrendingUp,
       color: '#22C55E',
       sub:   'Soma dos contratos ativos',
+    },
+    // ── LTV / tempo de casa (média dos cancelados) — só ADMIN ──────────────────
+    {
+      label: 'Tempo de casa · LTV médio',
+      value: !isAdmin
+        ? '—'
+        : churnLtv?.avgTenureMonths != null
+          ? `${churnLtv.avgTenureMonths.toFixed(1).replace('.', ',')} meses`
+          : 'Sem histórico',
+      icon:  Clock,
+      color: '#54e0ee',
+      sub:   !isAdmin
+        ? 'Restrito ao administrador'
+        : churnLtv && churnLtv.baseComputados > 0
+          ? `${churnLtv.avgLtv != null ? `${formatCurrency(churnLtv.avgLtv)} por cliente (${churnLtv.baseLtv} com valor)` : '—'} · tempo médio de ${churnLtv.baseComputados} cancelado${churnLtv.baseComputados === 1 ? '' : 's'} com histórico`
+          : 'Nenhum cancelado com data de saída confiável ainda',
+    },
+    // ── Taxa de churn (12 meses) — só ADMIN ────────────────────────────────────
+    {
+      label: 'Taxa de churn (12 meses)',
+      value: !isAdmin
+        ? '—'
+        : churnLtv?.churnRate12m != null
+          ? `${churnLtv.churnRate12m.toFixed(1).replace('.', ',')}%`
+          : '—',
+      icon:  TrendingDown,
+      color: '#EF4444',
+      sub:   !isAdmin
+        ? 'Restrito ao administrador'
+        : churnLtv
+          ? `${churnLtv.cancelados12m} cancelamento${churnLtv.cancelados12m === 1 ? '' : 's'} em 12 meses · sobre ${churnLtv.ativosHoje + churnLtv.cancelados12m} clientes da base`
+          : '',
     },
   ]
 

@@ -111,8 +111,13 @@ export default async function DiagnosticoFontesPage({
         <div className="flex flex-wrap gap-2">
           {heartbeats.map((h) => {
             const horas = h.lastRun ? (Date.now() - h.lastRun.getTime()) / 3_600_000 : null
+            // Régua por cron: CONVERSAS roda de hora em hora; RESULTADOS é SEMANAL
+            // (segundas 09:00 UTC) → régua ~170h (7 dias + folga), senão marcaria
+            // ATRASADO todo dia. Os demais seguem a régua diária padrão.
             const atrasado = h.name === 'CONVERSAS'
               ? horas === null || horas > 1
+              : h.name === 'RESULTADOS'
+              ? horas === null || horas > 170
               : horas === null || horas > CRON_STALE_HOURS
             return (
               <div

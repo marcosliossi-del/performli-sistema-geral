@@ -763,6 +763,43 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-22 — /clients: cards de Tempo de casa/LTV médio e Taxa de churn (12m) — AGUARDANDO GUARDIÃO
+Pedido do Marcos: dois cards novos na grade do topo de `/clients` — (1) tempo
+médio de casa dos cancelados + LTV médio em R$; (2) taxa de churn.
+
+- **DAL (ponto único de leitura):** `getChurnLtvStats()` em `src/lib/dal.ts`
+  (logo após `getAgencyOverview`). Retorna `ChurnLtvStats`. Cacheada com
+  `cache()` (padrão da DAL).
+- **Fonte da DATA de cancelamento (não existe `Client.churnedAt`):** ordem de
+  confiança — (1) `AuditLog` `action='client.offboarding'` (gravado por
+  `runClientOffboarding` no momento da transição p/ CHURNED — confirmado em
+  `updateClient.ts` bulk/inline); (2) fallback `Contract.cancelledAt` (Jurídico).
+  Cliente cancelado SEM nenhuma das duas datas (ex.: churned migrado do ClickUp
+  antes do fluxo de offboarding) é EXCLUÍDO das médias — nunca inventamos data.
+  A base real vai no subtítulo ("média de N cancelados com histórico").
+  LIMITAÇÃO documentada: cancelados históricos sem audit/contract não entram na
+  média de tenure/LTV (mas entram no denominador da base via status).
+- **Início do tenure:** `contractStart ?? createdAt`.
+- **Fonte do LTV (mais real primeiro):** (1) soma dos `AsaasPayment`
+  `RECEIVED/CONFIRMED` do cliente (via `AsaasCustomer.payments`) = dinheiro
+  realmente pago, usado quando há ≥1 pagamento; (2) estimativa =
+  `tenureMeses × (feeAmount ?? contractValue)` só quando não há pagamento real.
+  `ltvComAsaas` expõe quantos usaram a fonte real. Decisão: preferir Asaas por
+  ser a verdade financeira.
+- **Taxa de churn (12m):** `cancelados12m ÷ (ativosHoje + cancelados12m)`, 1 casa.
+  NÃO reusa `AgencyOverview.churnRate` (regra 0 checada) porque aquele é
+  ALL-TIME (`churnedTotal` sobre toda a base) — métrica diferente. Esta é a
+  derivação canônica da janela de 12m; **poderia ser consumida também em
+  `/agency`** se o Marcos quiser padronizar 12m lá (anotado como ponto de reúso).
+- **Página:** `src/app/(dashboard)/clients/page.tsx` — dois cards no mesmo
+  componente visual dos existentes. **Gate: só ADMIN** (mesmo recorte de
+  "Receita média/recorrente"); fora do ADMIN o valor é "—" e nem consulta o DAL.
+- **Bônus (mesma fatia):** `src/app/(dashboard)/diagnostico-fontes/page.tsx` — o
+  cartão RESULTADOS usava a régua diária `CRON_STALE_HOURS` (26h), mas o cron é
+  SEMANAL (`0 9 * * 1`, segundas 09:00 UTC). Corrigida a régua de "ATRASADO"
+  desse cartão para ~170h (7 dias + folga); demais cartões inalterados.
+- Sem model novo · sem migration · migrations aditivas N/A.
+
 ### 2026-07-21 — Identidade do cliente: fantasia + razão social em TODA superfície — AGUARDANDO APROVAÇÃO
 Padrão de UI aprovado pelo Marcos: onde o nome do cliente aparece, exibir o
 **nome fantasia** em destaque e a **razão social** abaixo em texto menor/muted
