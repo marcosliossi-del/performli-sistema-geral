@@ -120,7 +120,7 @@ export async function fetchMonthProgress(year: number, month: number): Promise<C
       metricSnapshots: {
         where: { date: { gte: monthStart, lte: isCurrentMonth ? today : monthEnd } },
         select: {
-          spend: true, conversions: true, conversionValue: true,
+          spend: true, conversions: true, conversionValue: true, netRevenue: true,
           clicks: true, impressions: true, cpc: true,
           platformAccount: { select: { platform: true } },
         },

@@ -4,7 +4,7 @@ import { requireSession } from '@/lib/dal'
 import { readCronHeartbeat, readCronProgress, CRON_STALE_HOURS, type CronName } from '@/lib/cron-heartbeat'
 import { formatCurrency, formatNumber, formatSaoPauloDateTime } from '@/lib/utils'
 import { getUnifiedClientHealth } from '@/lib/health-derive'
-import { electPrimaryLocalGoal, LOCAL_RESULT_METRICS } from '@/lib/metas/metricOptions'
+import { electPrimaryLocalGoal } from '@/lib/metas/metricOptions'
 
 export const dynamic = 'force-dynamic'
 

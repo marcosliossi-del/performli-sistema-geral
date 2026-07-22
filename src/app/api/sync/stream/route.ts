@@ -133,7 +133,7 @@ async function getClientOperationalRow(
     prisma.metricSnapshot.findMany({
       where: { clientId: client.id, date: { gte: monthStart, lte: today } },
       select: {
-        spend: true, clicks: true, conversions: true, conversionValue: true,
+        spend: true, clicks: true, conversions: true, conversionValue: true, netRevenue: true,
         date: true, platformAccount: { select: { platform: true } },
       },
     }),

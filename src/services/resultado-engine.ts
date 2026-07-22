@@ -98,6 +98,7 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
           spend: true,
           conversions: true,
           conversionValue: true,
+          netRevenue: true,
           platformAccount: { select: { platform: true } },
         },
       })
@@ -116,6 +117,7 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
         cpc:              null,
         conversions:      s.conversions,
         conversionValue:  s.conversionValue,
+        netRevenue:       s.netRevenue,
         impressions:      null,
         reach:            null,
         clicks:           null,
@@ -132,7 +134,12 @@ export async function runResultadoUpdate(opts: { force?: boolean } = {}): Promis
       // cliente só-GA4Sync agora TEM Resultado). Sem nenhuma das duas: log + pula,
       // nunca classifica PÉSSIMO nem gera Alert/Task de otimização.
       const hasRevenueSource = snaps.some(
-        (s) => s.platformAccount.platform === 'GA4' || s.platformAccount.platform === 'GA4SYNC',
+        (s) =>
+          s.platformAccount.platform === 'GA4' ||
+          s.platformAccount.platform === 'GA4SYNC' ||
+          // NUVEMSHOP conta como fonte de receita SÓ quando traz líquido (netRevenue);
+          // alinhado à precedência de aggregateSnapshots (bruto puro não entra).
+          (s.platformAccount.platform === 'NUVEMSHOP' && Number(s.netRevenue ?? 0) > 0),
       )
       if (!hasRevenueSource) {
         await prisma.automationLog.create({
