@@ -34,7 +34,7 @@ import { flagExpiredContractsForRenewal } from '@/services/contract-renewal'
 import { projetarMetasDoMes } from '@/services/meta-projection'
 import { runTuesdayNpsRitual, runMondayFeedbackReset, runFridayFeedbackSweep } from '@/services/client-feedback-rituais'
 import { isCronAuthorized } from '@/lib/cron-auth'
-import { recordCronHeartbeat } from '@/lib/cron-heartbeat'
+import { recordCronHeartbeat, recordCronProgress } from '@/lib/cron-heartbeat'
 
 /**
  * GET /api/cron/daily  ← Vercel Cron triggers GET requests
@@ -89,6 +89,7 @@ async function runDailySync() {
   // marketing + radares de churn): a função tem teto de 300s e, no fim da fila,
   // o Asaas era morto pelo timeout antes de rodar (última sync ficava dias
   // atrás). Financeiro é leve e independente — rodando primeiro, completa sempre.
+  await recordCronProgress('Step 0')
   try {
     const asaasResult = await syncAsaasData()
     summary.asaas = { ok: true, ...asaasResult }
@@ -110,6 +111,7 @@ async function runDailySync() {
   }
 
   // ── Step 1: Sync Meta Ads ──────────────────────────────────────────────────
+  await recordCronProgress('Step 1')
   try {
     const metaResults = await syncAllMetaAccounts()
     ;(summary.synced as Record<string, unknown>).meta = { ok: true, accounts: metaResults.length }
@@ -121,6 +123,7 @@ async function runDailySync() {
   }
 
   // ── Step 2: Sync GA4 ───────────────────────────────────────────────────────
+  await recordCronProgress('Step 2')
   try {
     const ga4Results = await syncAllGA4Accounts()
     ;(summary.synced as Record<string, unknown>).ga4 = { ok: true, accounts: ga4Results.length }
@@ -131,6 +134,7 @@ async function runDailySync() {
   }
 
   // ── Step 2b: Sync Google Ads ───────────────────────────────────────────────
+  await recordCronProgress('Step 2b')
   try {
     const gadsResults = await syncAllGoogleAdsAccounts()
     ;(summary.synced as Record<string, unknown>).googleAds = { ok: true, accounts: gadsResults.length }
@@ -141,6 +145,7 @@ async function runDailySync() {
   }
 
   // ── Step 2c: Sync Nuvemshop ─────────────────────────────────────────────
+  await recordCronProgress('Step 2c')
   try {
     const nuvemshopResults = await syncAllNuvemshopAccounts()
     ;(summary.synced as Record<string, unknown>).nuvemshop = { ok: true, accounts: nuvemshopResults.length }
@@ -154,6 +159,7 @@ async function runDailySync() {
   // Roda DEPOIS de Nuvemshop e GA4 (depende do mapa loja↔cliente já existir).
   // Só persiste a receita diária autoritativa; a agregação que a consome é a
   // próxima fatia. try/catch isolado — não derruba o cron.
+  await recordCronProgress('Step 2c2')
   try {
     const ga4syncResult = await syncAllGa4SyncAccounts()
     summary.ga4sync = {
@@ -169,6 +175,7 @@ async function runDailySync() {
   // ── Step 2d: Monday — sync weekly goals from monthly ─────────────────────
   // Runs every Monday so new weekly goals exist before health scores are computed.
   // Converts monthly goals → weekly (same target for rates, ÷4.33 for volumes).
+  await recordCronProgress('Step 2d')
   if (isMonday) {
     try {
       const syncResult = await syncWeeklyGoalsFromMonthly()
@@ -190,6 +197,7 @@ async function runDailySync() {
   // ── Step 2e: Dia 1 do mês — projeção automática das metas do mês ─────────
   // Projeta a métrica-resultado de cada cliente (crescimento por tipo de
   // negócio), carrega as taxas do mês anterior e abre alerta de revisão.
+  await recordCronProgress('Step 2e')
   if (isFirstOfMonth) {
     try {
       const projResult = await projetarMetasDoMes()
@@ -203,6 +211,7 @@ async function runDailySync() {
   }
 
   // ── Step 3: Recalculate health scores ─────────────────────────────────────
+  await recordCronProgress('Step 3')
   try {
     const healthResult = await recalculateAllClientsHealth()
     summary.healthScores = {
@@ -219,6 +228,7 @@ async function runDailySync() {
   }
 
   // ── Step 4: Oscillation detection ─────────────────────────────────────────
+  await recordCronProgress('Step 4')
   try {
     const oscillationResult = await detectOscillationsForAll()
     summary.alerts = {
@@ -234,6 +244,7 @@ async function runDailySync() {
   }
 
   // ── Step 5: Churn risk scoring ─────────────────────────────────────────────
+  await recordCronProgress('Step 5')
   try {
     const churnResult = await scoreAllClientsChurnRisk()
     // v2 INFORMATIVO logo após o v1, no MESMO step: enriquece factors.v2 sem
@@ -268,6 +279,7 @@ async function runDailySync() {
   }
 
   // ── Step 5a: Anti-churn — clientes em risco e silenciosos ─────────────────
+  await recordCronProgress('Step 5a')
   try {
     const silentResult = await detectSilentAtRiskClients()
     summary.antiChurnSilent = {
@@ -284,6 +296,7 @@ async function runDailySync() {
 
   // ── Step 5a2: Retention watchdog — escalação de retenção vencida + possível
   //             churn parado sem contato (o "não-evento" da retenção) ──────────
+  await recordCronProgress('Step 5a2')
   try {
     const watchdogResult = await runRetentionWatchdog()
     summary.retentionWatchdog = { ok: true, ...watchdogResult }
@@ -297,6 +310,7 @@ async function runDailySync() {
   // ── Step 5a2a: Monitor anti-esquecimento de clientes PAUSED (T-23) — pausa
   //             longa demais (>45d) vira limbo/churn não assumido. Dedupe
   //             semanal por cliente. try/catch isola falha do step. ────────────
+  await recordCronProgress('Step 5a2a')
   try {
     const pausedStaleResult = await runPausedStaleMonitor()
     summary.pausedStaleMonitor = { ok: true, ...pausedStaleResult }
@@ -310,6 +324,7 @@ async function runDailySync() {
   // ── Step 5a2b: Governança de alertas — SLA com dente + circuit breaker.
   //             Escala alertas não reconhecidos que estouraram o SLA e denuncia
   //             tipos de alerta "gritando demais" (ruído sem sinal). ───────────
+  await recordCronProgress('Step 5a2b')
   try {
     const slaResult = await runAlertSlaWatchdog()
     summary.alertSlaWatchdog = { ok: true, ...slaResult }
@@ -324,6 +339,7 @@ async function runDailySync() {
   //             (#10), silêncio desacoplado (#11) e inadimplência → churn (#14).
   //             Cruza sinais que hoje passam batidos por estarem em tabelas
   //             separadas; cada radar isola falha por cliente. ─────────────────
+  await recordCronProgress('Step 5a4')
   try {
     const churnRadarsResult = await runChurnRadars()
     summary.churnRadars = { ok: true, ...churnRadarsResult }
@@ -337,6 +353,7 @@ async function runDailySync() {
   // ── Step 5a3: Entrega do relatório semanal — funil gerado→enviado→respondido
   //             (A) firstReplyAt automático (quando houver fonte de inbound do
   //             cliente) + (B) terça: relatório gerado e NÃO enviado ao cliente. ─
+  await recordCronProgress('Step 5a3')
   try {
     const deliveryResult = await runReportDeliveryTracker({ isTuesday })
     summary.reportDelivery = { ok: true, ...deliveryResult }
@@ -348,6 +365,7 @@ async function runDailySync() {
   }
 
   // ── Step 5b2: Check-ins — sem check-in + reprovado sem correção ───────────
+  await recordCronProgress('Step 5b2')
   try {
     const checkinResult = await checkCheckins()
     summary.checkins = {
@@ -369,6 +387,7 @@ async function runDailySync() {
   //  topo — antes eram mortos pelo timeout no fim da fila.)
 
   // ── Step 5d: CAP-01 — follow-up comercial de leads quentes sem contato ─────
+  await recordCronProgress('Step 5d')
   try {
     const followupResult = await checkLeadFollowups()
     summary.leadFollowups = { ok: true, ...followupResult }
@@ -377,6 +396,7 @@ async function runDailySync() {
   }
 
   // ── Step 5d.5: Marca tarefas vencidas como ATRASADO (antes de escalar) ─────
+  await recordCronProgress('Step 5d.5')
   try {
     const overdueResult = await markOverdueTasks()
     summary.markOverdue = { ok: true, ...overdueResult }
@@ -385,6 +405,7 @@ async function runDailySync() {
   }
 
   // ── Step 5e: Escalonamento de tarefas atrasadas (2+ dias) ──────────────────
+  await recordCronProgress('Step 5e')
   try {
     const escResult = await escalateOverdueTasks()
     summary.taskEscalation = { ok: true, ...escResult }
@@ -394,6 +415,7 @@ async function runDailySync() {
 
   // ── Step 5e.1: SLA de validação da CS (T-13) — tarefa entregue parada na fila
   //             da CS há >= 3 dias volta ao radar via Alert operacional. ────────
+  await recordCronProgress('Step 5e.1')
   try {
     const slaResult = await checkValidationSla()
     summary.validationSla = { ok: true, ...slaResult }
@@ -403,6 +425,7 @@ async function runDailySync() {
 
   // ── Step 5e.2: Tarefas em responsável desativado (T-15) — dono inativo não
   //             age; cobra reatribuição via Alert (ou AutomationLog se sem cliente). ─
+  await recordCronProgress('Step 5e.2')
   try {
     const orphanResult = await alertOrphanedTasks()
     summary.orphanedTasks = { ok: true, ...orphanResult }
@@ -411,6 +434,7 @@ async function runDailySync() {
   }
 
   // ── Step 6: Budget warnings ────────────────────────────────────────────────
+  await recordCronProgress('Step 6')
   try {
     const budgetResult = await checkBudgetWarnings()
     summary.budgetWarnings = {
@@ -426,6 +450,7 @@ async function runDailySync() {
   }
 
   // ── Step 6b: Critical account protocol detection ──────────────────────────
+  await recordCronProgress('Step 6b')
   try {
     const criticalResult = await detectCriticalAccounts()
     summary.criticalAccounts = {
@@ -441,6 +466,7 @@ async function runDailySync() {
   }
 
   // ── Step 6c: War Room escalation (3 semanas em crítico → Marcos) ──────────
+  await recordCronProgress('Step 6c')
   try {
     const escalationResult = await escalateStaleWarRooms()
     summary.warRoomEscalation = {
@@ -456,6 +482,7 @@ async function runDailySync() {
   }
 
   // ── Step 6d: War Room monitoring (critério de saída + revisão semanal) ────
+  await recordCronProgress('Step 6d')
   try {
     const monitorResult = await monitorWarRooms()
     summary.warRoomMonitor = {
@@ -474,6 +501,7 @@ async function runDailySync() {
   }
 
   // ── Step 7: Sunday-only — weekly reports & checklists (semana Dom-Sab) ─────
+  await recordCronProgress('Step 7')
   if (isSunday) {
     try {
       const reportResult = await generateAllWeeklyReports()
@@ -518,6 +546,7 @@ async function runDailySync() {
   // ANTES de zerar, registra quem fechou a semana em risco (Alert +
   // Client.fechouSemanaEmRisco). Dedupe por dia. Roda cedo o suficiente na
   // segunda; independe do resultado-engine.
+  await recordCronProgress('Step 7a1')
   if (isMonday) {
     try {
       const resetResult = await runMondayFeedbackReset()
@@ -528,6 +557,7 @@ async function runDailySync() {
   }
 
   // ── Step 7a2: TERÇA — ritual de preenchimento de NPS pela CS ──────────────
+  await recordCronProgress('Step 7a2')
   if (isTuesday) {
     try {
       const npsRitual = await runTuesdayNpsRitual()
@@ -538,6 +568,7 @@ async function runDailySync() {
   }
 
   // ── Step 7a3: SEXTA — varredura consolidada dos feedbacks da semana (C.3) ─
+  await recordCronProgress('Step 7a3')
   if (isFriday) {
     try {
       const sweep = await runFridayFeedbackSweep()
@@ -548,6 +579,7 @@ async function runDailySync() {
   }
 
   // ── Step 7b: Contract expiry check ───────────────────────────────────────
+  await recordCronProgress('Step 7b')
   try {
     const expiryResult = await checkContractExpiry()
     summary.contractExpiry = { ok: true, alertsFired: expiryResult.alertsFired }
@@ -558,6 +590,7 @@ async function runDailySync() {
   // ── Step 7c: Contrato vencido → RENOVAÇÃO + alerta (adendo FUNDACAO) ───────
   // Substitui a renovação silenciosa: contrato que vence entra em RENOVACAO e
   // gera alerta ao cliente; a conclusão vem na reativação ou no Jurídico.
+  await recordCronProgress('Step 7c')
   try {
     const renewResult = await flagExpiredContractsForRenewal()
     summary.contractRenewal = { ok: true, ...renewResult }
@@ -573,6 +606,7 @@ async function runDailySync() {
   // Grava CRON_DAILY_LAST_RUN. A leitura (getCronHealth) alimenta o banner do
   // Cockpit, que avisa se esta rotina parar de rodar (dado velho ≠ dado atual).
   // NUNCA derruba o cron — recordCronHeartbeat trata seu próprio erro.
+  await recordCronProgress('CONCLUÍDO')
   await recordCronHeartbeat('DAILY')
 
   return summary
