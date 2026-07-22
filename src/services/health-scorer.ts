@@ -76,6 +76,10 @@ export type AggregatableSnapshot = {
   cpc:              unknown
   conversions:      unknown
   conversionValue:  unknown
+  // Receita LÍQUIDA do dia (Nuvemshop: total-frete de pedidos pagos; GA4Sync se a
+  // API expuser). Opcional: quando ausente/null, o faturamento de e-commerce cai no
+  // bruto (conversionValue), preservando 100% do comportamento anterior.
+  netRevenue?:      unknown
   impressions:      unknown
   reach:            unknown
   clicks:           unknown
@@ -116,9 +120,11 @@ export function aggregateSnapshots(
   // janela, ele é a fonte de verdade do faturamento (CR-1 da auditoria); senão,
   // cai no GA4 (atribuído). LOCAL/B2B NÃO usam GA4Sync (medem leads via Meta).
   const ga4sync = snapshots.filter((x) => x.platformAccount.platform === 'GA4SYNC')
-
-  // ga4Revenue removido: o faturamento ECOMMERCE agora vem de mergePerDay
-  // (GA4SYNC>GA4 por dia). ga4Purchases/ga4Sessions seguem para TAXA_CONVERSAO/CPS.
+  // NUVEMSHOP: dado REAL por-pedido da loja. Só entra na receita quando traz
+  // netRevenue (receita líquida = total - frete, pedidos pagos). Enquanto o campo
+  // não estiver preenchido (histórico antigo), o cliente é ignorado aqui — exatamente
+  // como antes (nenhuma regressão).
+  const nuvemshop = snapshots.filter((x) => x.platformAccount.platform === 'NUVEMSHOP')
   const ga4Purchases  = ga4.reduce((s, x) => s + toNum(x.conversions), 0)
   const ga4Sessions   = ga4.reduce((s, x) => s + toNum(x.clicks), 0)
 
@@ -136,26 +142,6 @@ export function aggregateSnapshots(
     const dt = d instanceof Date ? d : new Date(String(d))
     return Number.isNaN(dt.getTime()) ? `__bd${_nokey++}` : dt.toISOString().slice(0, 10)
   }
-  const mergePerDay = (field: (x: AggregatableSnapshot) => number): number => {
-    const byDay = new Map<string, { ga4: number; sync: number; hasSync: boolean }>()
-    for (const x of ga4) {
-      const k = dayKeyOf(x)
-      const e = byDay.get(k) ?? { ga4: 0, sync: 0, hasSync: false }
-      e.ga4 += field(x)
-      byDay.set(k, e)
-    }
-    for (const x of ga4sync) {
-      const k = dayKeyOf(x)
-      const e = byDay.get(k) ?? { ga4: 0, sync: 0, hasSync: false }
-      e.sync += field(x)
-      e.hasSync = true
-      byDay.set(k, e)
-    }
-    let total = 0
-    for (const e of byDay.values()) total += e.hasSync ? e.sync : e.ga4
-    return total
-  }
-
   const metaRevenue    = meta.reduce((s, x) => s + toNum(x.conversionValue), 0)
   const metaConv       = meta.reduce((s, x) => s + toNum(x.conversions), 0)
   const metaMensagens  = meta.reduce((s, x) => s + toNum(x.mensagens), 0)
@@ -171,12 +157,39 @@ export function aggregateSnapshots(
   // `isLocalLike` cobre LOCAL e B2B; ECOMMERCE segue GA4. A lógica ECOMMERCE/
   // LOCAL abaixo é preservada — só o roteamento do B2B muda (antes caía em GA4).
   const isLocalLike = businessType !== 'ECOMMERCE'
-  // ECOMMERCE: receita/pedidos por-dia com GA4SYNC>GA4 (loja real > atribuído).
-  // Para cliente sem NENHUMA linha GA4SYNC, mergePerDay retorna exatamente o
-  // ga4Revenue/ga4Purchases de antes (todos os dias caem no ramo GA4).
   // LOCAL/B2B: Meta, sem mudança.
-  const ecomRevenue   = mergePerDay((x) => toNum(x.conversionValue))
-  const ecomPurchases = mergePerDay((x) => toNum(x.conversions))
+  // ── Receita/pedidos de e-commerce com precedência de FONTE por dia ────────────
+  // NUVEMSHOP (dado real da loja, só quando traz receita LÍQUIDA) > GA4SYNC > GA4.
+  // Receita: cada tier usa seu melhor valor — NUVEMSHOP = netRevenue (líquida);
+  // GA4SYNC = netRevenue se a API expuser, senão bruto (conversionValue); GA4 = bruto.
+  // Assim o faturamento vira LÍQUIDO onde há dado real e permanece idêntico ao
+  // anterior enquanto nenhum netRevenue foi capturado (nenhuma regressão).
+  const nuvemNet = nuvemshop.filter((x) => toNum(x.netRevenue) > 0)
+  const ecomDayMerge = (
+    pick: (x: AggregatableSnapshot, tier: 'nuvem' | 'sync' | 'ga4') => number,
+  ): number => {
+    type Cell = { nuvem: number; sync: number; ga4: number; hasNuvem: boolean; hasSync: boolean }
+    const byDay = new Map<string, Cell>()
+    const cellOf = (k: string): Cell => {
+      const e = byDay.get(k) ?? { nuvem: 0, sync: 0, ga4: 0, hasNuvem: false, hasSync: false }
+      byDay.set(k, e)
+      return e
+    }
+    for (const x of nuvemNet) { const e = cellOf(dayKeyOf(x)); e.nuvem += pick(x, 'nuvem'); e.hasNuvem = true }
+    for (const x of ga4sync)  { const e = cellOf(dayKeyOf(x)); e.sync  += pick(x, 'sync');  e.hasSync  = true }
+    for (const x of ga4)      { const e = cellOf(dayKeyOf(x)); e.ga4   += pick(x, 'ga4') }
+    let total = 0
+    for (const e of byDay.values()) total += e.hasNuvem ? e.nuvem : e.hasSync ? e.sync : e.ga4
+    return total
+  }
+  const ecomRevenue = ecomDayMerge((x, tier) =>
+    tier === 'nuvem'
+      ? toNum(x.netRevenue)
+      : tier === 'sync'
+        ? (toNum(x.netRevenue) > 0 ? toNum(x.netRevenue) : toNum(x.conversionValue))
+        : toNum(x.conversionValue),
+  )
+  const ecomPurchases = ecomDayMerge((x) => toNum(x.conversions))
   const revenue   = isLocalLike ? metaRevenue : ecomRevenue
   const purchases = isLocalLike ? metaConv    : ecomPurchases
 

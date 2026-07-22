@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { requireSession } from '@/lib/dal'
 import { readCronHeartbeat, readCronProgress, CRON_STALE_HOURS, type CronName } from '@/lib/cron-heartbeat'
 import { formatCurrency, formatNumber, formatSaoPauloDateTime } from '@/lib/utils'
+import { getUnifiedClientHealth } from '@/lib/health-derive'
+import { electPrimaryLocalGoal, LOCAL_RESULT_METRICS } from '@/lib/metas/metricOptions'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,10 +33,35 @@ export default async function DiagnosticoFontesPage({
 
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
-    select: { id: true, name: true, slug: true },
+    select: { id: true, name: true, slug: true, businessType: true },
     orderBy: { name: 'asc' },
   })
   const client = slug ? clients.find((c) => c.slug === slug) ?? null : null
+
+  // Debug do selo mensal (caso 2026-07-22: local caindo no fallback FATURAMENTO
+  // mesmo com meta principal salva): metas MONTHLY cruas do cliente + eleição +
+  // o que getUnifiedClientHealth devolve. Evidência direta do banco de produção.
+  let goalDebug: {
+    goals: Array<{ metric: string; targetValue: number; startDate: Date; endDate: Date; updatedAt: Date; period: string }>
+    elected: { metric: string; goal: number } | null
+    pacing: { metric: string; meta: number | null; realizado: number | null } | null
+  } | null = null
+  if (client) {
+    const rawGoals = await prisma.goal.findMany({
+      where: { clientId: client.id, period: 'MONTHLY' },
+      orderBy: { updatedAt: 'asc' },
+      select: { metric: true, targetValue: true, startDate: true, endDate: true, updatedAt: true, period: true },
+      take: 40,
+    })
+    const unified = await getUnifiedClientHealth(client.id)
+    goalDebug = {
+      goals: rawGoals.map((g) => ({ ...g, targetValue: Number(g.targetValue) })),
+      elected: electPrimaryLocalGoal(rawGoals.map((g) => ({ metric: g.metric, targetValue: g.targetValue }))),
+      pacing: unified
+        ? { metric: unified.monthlyPacing.metric, meta: unified.monthlyPacing.meta, realizado: unified.monthlyPacing.realizado }
+        : null,
+    }
+  }
 
   let accounts: Array<{
     id: string; platform: string; externalId: string | null; name: string | null

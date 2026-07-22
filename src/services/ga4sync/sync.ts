@@ -107,13 +107,26 @@ export async function syncGa4SyncAccount(clientId: string): Promise<Ga4SyncAccou
       // conversions é Int no schema — arredonda para não estourar o upsert se a
       // API devolver fracionário.
       const orders = Number.isFinite(point.orders) ? Math.round(point.orders) : 0
+      // Receita LÍQUIDA por dia: só persiste se a API expuser (ver types.ts). Enquanto
+      // o timeline não trouxer, netRevenue fica null e o líquido de e-commerce vem da
+      // fonte real por-pedido (Nuvemshop). NUNCA inventamos desconto sobre o bruto.
+      const netRevenue =
+        typeof point.netRevenue === 'number' && Number.isFinite(point.netRevenue)
+          ? point.netRevenue
+          : null
+      const newCustomers =
+        typeof point.newCustomers === 'number' && Number.isFinite(point.newCustomers)
+          ? Math.round(point.newCustomers)
+          : null
 
       await prisma.metricSnapshot.upsert({
         where: { platformAccountId_date: { platformAccountId: account.id, date } },
         update: {
           conversions: orders,
           conversionValue: revenue,
-          rawData: { source: 'ga4sync', date: point.date, revenue, orders },
+          netRevenue,
+          newCustomers,
+          rawData: { source: 'ga4sync', date: point.date, revenue, orders, netRevenue, newCustomers },
           syncedAt: new Date(),
         },
         create: {
@@ -122,7 +135,9 @@ export async function syncGa4SyncAccount(clientId: string): Promise<Ga4SyncAccou
           date,
           conversions: orders,
           conversionValue: revenue,
-          rawData: { source: 'ga4sync', date: point.date, revenue, orders },
+          netRevenue,
+          newCustomers,
+          rawData: { source: 'ga4sync', date: point.date, revenue, orders, netRevenue, newCustomers },
         },
       })
       snapshotsUpserted++

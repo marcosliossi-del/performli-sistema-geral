@@ -173,10 +173,12 @@ export async function syncNuvemshopAccount(
         update: {
           conversions: day.orders,
           conversionValue: day.revenue,
+          netRevenue: day.netRevenue,
           rawData: {
             source: 'nuvemshop',
             orders: day.orders,
             revenue: day.revenue,
+            netRevenue: day.netRevenue,
             avgTicket: day.avgTicket,
             productsCount: day.productsCount,
             discount: day.discount,
@@ -190,10 +192,12 @@ export async function syncNuvemshopAccount(
           date: day.date,
           conversions: day.orders,
           conversionValue: day.revenue,
+          netRevenue: day.netRevenue,
           rawData: {
             source: 'nuvemshop',
             orders: day.orders,
             revenue: day.revenue,
+            netRevenue: day.netRevenue,
             avgTicket: day.avgTicket,
             productsCount: day.productsCount,
             discount: day.discount,

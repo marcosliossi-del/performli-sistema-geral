@@ -125,9 +125,13 @@ export function transformNuvemshopOrder(raw: NuvemshopRawOrder): NuvemshopTransf
 
 export interface NuvemshopDailyMetrics {
   date: Date
-  revenue: number        // soma total dos pedidos pagos
+  revenue: number        // RECEITA BRUTA: soma do total dos pedidos pagos (INCLUI frete)
+  netRevenue: number     // RECEITA LÍQUIDA: soma de (total - frete) dos pedidos pagos.
+                         // O frete é repasse à transportadora, não receita da loja; o
+                         // desconto já está embutido no `total`; cancelados/estornados
+                         // ficam de fora (só PAID). Fonte canônica do faturamento líquido.
   orders: number         // quantidade de pedidos pagos
-  avgTicket: number      // ticket médio
+  avgTicket: number      // ticket médio LÍQUIDO (netRevenue ÷ orders)
   productsCount: number  // total de itens vendidos
   discount: number       // total de descontos
   shipping: number       // total de frete
@@ -147,21 +151,25 @@ export function aggregateOrdersByDay(
     if (order.paymentStatus !== 'PAID') continue
 
     const dateKey = order.orderCreatedAt.toISOString().split('T')[0]
+    // Receita líquida do pedido: valor cobrado menos o frete (repasse).
+    const orderNet = order.total - order.shippingCost
     const existing = dailyMap.get(dateKey)
 
     if (existing) {
       existing.revenue += order.total
+      existing.netRevenue += orderNet
       existing.orders += 1
       existing.productsCount += order.productsCount
       existing.discount += order.discount
       existing.shipping += order.shippingCost
-      existing.avgTicket = existing.orders > 0 ? existing.revenue / existing.orders : 0
+      existing.avgTicket = existing.orders > 0 ? existing.netRevenue / existing.orders : 0
     } else {
       dailyMap.set(dateKey, {
         date: new Date(dateKey + 'T00:00:00Z'),
         revenue: order.total,
+        netRevenue: orderNet,
         orders: 1,
-        avgTicket: order.total,
+        avgTicket: orderNet,
         productsCount: order.productsCount,
         discount: order.discount,
         shipping: order.shippingCost,
