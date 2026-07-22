@@ -3366,6 +3366,158 @@ export const getAgencyOverview = cache(async (): Promise<AgencyOverview> => {
   }
 })
 
+// ─── Tempo de casa / LTV / Churn dos CANCELADOS (cards de /clients) ────────────
+//
+// Regra 0 (DADO AMARRADO): a data de cancelamento NÃO tem campo próprio no
+// Client (não existe churnedAt). A fonte MAIS confiável é o AuditLog de
+// offboarding (action 'client.offboarding'), gravado por runClientOffboarding no
+// momento em que o cliente vira CHURNED. Fallback: Contract.cancelledAt
+// (Jurídico). Sem NENHUM dos dois, o cliente é EXCLUÍDO das médias (nunca
+// inventamos data) — a base real vai no subtítulo ("média de N cancelados com
+// histórico").
+//
+// LTV por cliente — fonte MAIS REAL primeiro:
+//   1) Soma dos AsaasPayment RECEIVED/CONFIRMED do cliente (dinheiro REALMENTE
+//      pago). É a verdade financeira; usada quando existe ≥1 pagamento.
+//   2) Estimativa = meses de casa × mensalidade (feeAmount ?? contractValue),
+//      só quando não há pagamento real no Asaas.
+// avgLTV = média do LTV por cliente sobre os cancelados com dado computável.
+//
+// Taxa de churn (12m): cancelados nos últimos 12 meses ÷ (ativos hoje +
+// cancelados 12m). NÃO reusa AgencyOverview.churnRate porque aquele é ALL-TIME
+// (churnedTotal sobre toda a base histórica) — métrica diferente. Esta derivação
+// de 12m fica AQUI como ponto único; poderia ser consumida também em /agency se
+// o Marcos quiser padronizar a janela de 12m lá.
+export type ChurnLtvStats = {
+  // Tenure médio (meses, 1 casa) dos cancelados COM data confiável.
+  avgTenureMonths: number | null
+  // LTV médio (R$) dos cancelados computáveis.
+  avgLtv: number | null
+  // Quantos cancelados entraram na média de tenure (têm data + start).
+  baseComputados: number
+  // Quantos cancelados entraram na média de LTV (têm valor computável).
+  baseLtv: number
+  // Quantos cancelados no total (para transparência).
+  totalCancelados: number
+  // Quantos usaram Asaas (dinheiro real) vs estimativa.
+  ltvComAsaas: number
+  // Taxa de churn 12m (%), 1 casa.
+  churnRate12m: number | null
+  cancelados12m: number
+  ativosHoje: number
+}
+
+const MS_MES = 30.44 * 86_400_000 // média de dias/mês para tenure em meses
+
+export const getChurnLtvStats = cache(async (): Promise<ChurnLtvStats> => {
+  const now = new Date()
+  const dozeMesesAtras = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())
+
+  const [ativosHoje, churned] = await Promise.all([
+    prisma.client.count({ where: { status: 'ACTIVE' } }),
+    prisma.client.findMany({
+      where: { status: 'CHURNED' },
+      select: {
+        id: true,
+        contractStart: true,
+        createdAt: true,
+        updatedAt: true,
+        contractValue: true,
+        feeAmount: true,
+        asaasCustomer: {
+          select: {
+            payments: {
+              where: { status: { in: ['RECEIVED', 'CONFIRMED'] } },
+              select: { value: true },
+            },
+          },
+        },
+      },
+    }),
+  ])
+
+  const churnedIds = churned.map((c) => c.id)
+
+  // Data de cancelamento: AuditLog de offboarding (mais confiável) → 1º evento
+  // por cliente. Fallback: Contract.cancelledAt.
+  const offboardings = churnedIds.length
+    ? await prisma.auditLog.findMany({
+        where: { action: 'client.offboarding', clientId: { in: churnedIds } },
+        select: { clientId: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      })
+    : []
+  const cancelledContracts = churnedIds.length
+    ? await prisma.contract.findMany({
+        where: { clientId: { in: churnedIds }, status: 'CANCELADO', cancelledAt: { not: null } },
+        select: { clientId: true, cancelledAt: true },
+        orderBy: { cancelledAt: 'desc' },
+      })
+    : []
+
+  const offboardMap = new Map<string, Date>()
+  for (const a of offboardings) {
+    if (a.clientId && !offboardMap.has(a.clientId)) offboardMap.set(a.clientId, a.createdAt)
+  }
+  const contractCancelMap = new Map<string, Date>()
+  for (const c of cancelledContracts) {
+    if (c.clientId && c.cancelledAt && !contractCancelMap.has(c.clientId)) {
+      contractCancelMap.set(c.clientId, c.cancelledAt)
+    }
+  }
+
+  let somaTenure = 0
+  let somaLtv = 0
+  let baseComputados = 0
+  let baseLtv = 0 // só cancelados com LTV computável — denominador próprio do LTV
+  let ltvComAsaas = 0
+  let cancelados12m = 0
+
+  for (const c of churned) {
+    const churnDate = offboardMap.get(c.id) ?? contractCancelMap.get(c.id) ?? null
+    if (!churnDate) continue // sem data confiável → fora das médias (nunca inventa)
+
+    if (churnDate >= dozeMesesAtras) cancelados12m++
+
+    const start = c.contractStart ?? c.createdAt
+    const tenureMonths = Math.max(0, (churnDate.getTime() - start.getTime()) / MS_MES)
+
+    // LTV real (Asaas) tem precedência sobre a estimativa.
+    const pagamentos = c.asaasCustomer?.payments ?? []
+    const totalPago = pagamentos.reduce((s, p) => s + Number(p.value), 0)
+
+    let ltv: number | null = null
+    if (totalPago > 0) {
+      ltv = totalPago
+      ltvComAsaas++
+    } else {
+      const mensalidade = Number(c.feeAmount ?? c.contractValue ?? 0)
+      if (mensalidade > 0) ltv = tenureMonths * mensalidade
+    }
+
+    somaTenure += tenureMonths
+    baseComputados++
+    if (ltv !== null) {
+      somaLtv += ltv
+      baseLtv++
+    }
+  }
+
+  const totalAll = ativosHoje + cancelados12m
+
+  return {
+    avgTenureMonths: baseComputados > 0 ? Math.round((somaTenure / baseComputados) * 10) / 10 : null,
+    avgLtv: baseLtv > 0 ? Math.round(somaLtv / baseLtv) : null,
+    baseComputados,
+    baseLtv,
+    totalCancelados: churned.length,
+    ltvComAsaas,
+    churnRate12m: totalAll > 0 ? Math.round((cancelados12m / totalAll) * 1000) / 10 : null,
+    cancelados12m,
+    ativosHoje,
+  }
+})
+
 // ─── CRM Pipeline ─────────────────────────────────────────────────────────────
 
 export type PipelineClient = {
