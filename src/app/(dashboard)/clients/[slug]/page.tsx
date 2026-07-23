@@ -199,9 +199,9 @@ export default async function ClientDetailPage({
     getUnifiedClientHealth(client.id),
   ])
 
-  // GA4Sync (etiqueta "métricas líquidas"): fonte de CONFIGURAÇÃO é a loja
-  // Nuvemshop mapeada (resolveGa4SyncStoreId), não a PlatformAccount GA4SYNC —
-  // que só nasce após o 1º sync. Assim a etiqueta aparece mesmo antes da conta.
+  // GA4Sync (etiqueta "métricas líquidas"): fonte de CONFIGURAÇÃO é o storeId
+  // resolvido (resolveGa4SyncStoreId): vínculo direto GA4SYNC auto-casado por
+  // nome (decisão 2026-07-23) ou fallback legado da loja Nuvemshop mapeada.
   const ga4SyncStoreId = await resolveGa4SyncStoreId(client.id)
   const hasGa4Sync = ga4SyncStoreId != null
 
@@ -455,18 +455,10 @@ export default async function ClientDetailPage({
               <LinkAccountModal clientId={client.id} clientSlug={slug} />
               <LinkGA4Modal clientId={client.id} />
               <LinkGoogleAdsModal clientId={client.id} />
-              {/* Vincular a loja Nuvemshop AO CLIENTE EXISTENTE (state assinado
-                  com clientId → callback anexa aqui, sem criar Client duplicado).
-                  É este vínculo que liga o GA4Sync/métricas líquidas do cliente
-                  (resolveGa4SyncStoreId mapeia via NuvemshopStore). */}
-              {!hasGa4Sync && (
-                <a
-                  href={`/api/nuvemshop/auth?clientId=${client.id}`}
-                  className="text-[11px] font-medium text-[#22D3EE] hover:underline whitespace-nowrap"
-                >
-                  + Vincular Nuvemshop
-                </a>
-              )}
+              {/* Vínculo manual Nuvemshop REMOVIDO (decisão Marcos 2026-07-23,
+                  regra 12): o GA4Sync agora casa a loja ao cliente por NOME
+                  automaticamente (ga4sync/auto-link.ts) no sync. Nada a vincular
+                  manualmente — cliente novo de e-commerce entra no padrão sozinho. */}
             </div>
           </div>
           <div className="mt-2 space-y-2">

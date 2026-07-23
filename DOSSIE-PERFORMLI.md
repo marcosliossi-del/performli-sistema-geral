@@ -763,6 +763,38 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-23 — Auto-vínculo GA4Sync↔Cliente por NOME (esquece vínculo manual Nuvemshop; padrão para todos os e-commerces)
+Print/decisão do Marcos: a "Receita Líquida" do Looker dele vem do conector
+**GA4 SYNC** (nossa API `src/services/ga4sync`), não da GA4 Data API nativa — e
+esse deve ser o padrão para TODOS os e-commerces. A régua net-aware atual
+(`aggregateSnapshots`: NUVEMSHOP líquido > GA4SYNC líquido > GA4 bruto) está
+**correta e permanece** — nada de trocar para `purchaseRevenue` nativa (GA4
+nativo segue como fallback de quem ainda não está no conector).
+
+Problema real resolvido: o mapa cliente↔loja (`resolveGa4SyncStoreId`) dependia
+de uma `PlatformAccount(NUVEMSHOP)` — o dono mandou **esquecer** esse vínculo
+manual. Substituição (**regra 12**):
+- **Novo `src/services/ga4sync/auto-link.ts`** (`autoLinkGa4SyncStores`): lista
+  as lojas do GA4Sync (`GET /stores`) e casa com os clientes ECOMMERCE ativos
+  por **nome normalizado** (minúsculo, sem acento, só alfanumérico). Match único
+  e novo cria a `PlatformAccount(platform=GA4SYNC, externalId=storeId)` — a mesma
+  conta que o sync já usa. Ambíguos (homônimos ou loja↔cliente disputados) e
+  sem-match ficam FORA e vão para o relatório. Toda vinculação gera `AuditLog`
+  (`action='ga4sync.autolink'`, regra 8).
+- **`resolveGa4SyncStoreId`**: precedência nova = (1) vínculo direto GA4SYNC
+  ativo → `externalId`; (2) fallback legado da loja Nuvemshop mapeada (não quebra
+  quem já estava vinculado).
+- **Automação:** `syncAllGa4SyncAccounts` roda o auto-vínculo ANTES do loop (cron
+  e sync manual geral). O sync manual de UM cliente (`syncGa4SyncAccount`) tenta
+  o auto-vínculo uma vez quando o cliente ainda não está resolvido (batch usa
+  `skipAutoLink`). Falha do auto-vínculo NÃO derruba o sync (degrade honesto).
+- **UI (`clients/[slug]`):** o link "+ Vincular Nuvemshop" foi **removido** (não
+  há mais vínculo manual). A etiqueta de header "GA4Sync · métricas líquidas"
+  permanece como informativa da fonte conectada.
+
+Ação do Marcos: apenas clicar **Sincronizar** (ou aguardar o cron) — os clientes
+de e-commerce cujo nome casa com uma loja GA4Sync são vinculados sozinhos.
+
 ### 2026-07-23 — Régua ÚNICA de 8 métricas para TODO e-commerce (decisão Marcos; SUBSTITUI o rótulo condicional bruto×líquido)
 Regra do Marcos (verbatim): "faça padrão para todos os ecommerces essas métricas
 na hora de calcular, todos: receita líquida, investimento total, roas líquido,
