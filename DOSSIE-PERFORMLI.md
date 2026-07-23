@@ -763,6 +763,44 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-23 — Régua ÚNICA de 8 métricas para TODO e-commerce (decisão Marcos; SUBSTITUI o rótulo condicional bruto×líquido)
+Regra do Marcos (verbatim): "faça padrão para todos os ecommerces essas métricas
+na hora de calcular, todos: receita líquida, investimento total, roas líquido,
+projeção de faturamento líquido, pedidos, clientes novos, taxa de conversão,
+ticket médio líquido. Todos clientes da base e novos que forem ecommerces devem
+seguir esse cálculo." Um conjunto ÚNICO de 8 números para todo e-commerce, em
+todas as telas; sem UI condicional, sem régua alternativa. O motor já é
+net-aware (aggregateSnapshots: NUVEMSHOP líquido > GA4SYNC líquido > GA4) — quando
+a fonte não entrega líquido, o melhor valor disponível entra na MESMA métrica.
+
+Esta decisão **SUBSTITUI (regra 12)** o "rótulo dinâmico da fonte de receita"
+(fonte: GA4Sync líquido / GA4 bruto) introduzido MAIS CEDO no MESMO dia (item
+logo abaixo). O rótulo condicional some; o sub da receita agora é uniforme
+("receita líquida do período"). Sem perda de função: a etiqueta de header
+"GA4Sync · métricas líquidas" e o link "+ Vincular Nuvemshop" (sobre CONEXÃO de
+fonte, não sobre cálculo) permanecem.
+
+Mudanças:
+- **Client 360 (KPIs de e-commerce):** linha principal padronizada para os 8,
+  nesta ordem e nomes: Receita líquida · Investimento total · ROAS líquido ·
+  Projeção de faturamento líquido · Pedidos · Clientes novos · Taxa de conversão ·
+  Ticket médio líquido (`src/app/(dashboard)/clients/[slug]/page.tsx`). Cards de
+  apoio (Sessões, CPA, CAC) descem para uma linha secundária "Apoio"; breakdown
+  por plataforma (Invest./ROAS Meta/Google/TikTok) mantido. Nenhuma função
+  removida.
+- **`getClientKPIs` (`src/lib/dal.ts`):** PEDIDOS passam a sair da régua canônica
+  `aggregateSnapshots(CONVERSIONS)` (net-aware, NUVEMSHOP>GA4SYNC>GA4 por dia) em
+  vez da contagem GA4-only inline — taxa de conversão (pedidos÷sessões) e ticket
+  médio líquido (receita líquida÷pedidos) derivam desses building blocks
+  canônicos, sem conta paralela (regra 0). Novos campos
+  `clientesNovos`/`clientesNovosTrend`: soma de `MetricSnapshot.newCustomers`
+  (precedência NUVEMSHOP > GA4SYNC no período); `null` quando a fonte ainda não
+  captura → UI mostra "—" com sub "fonte ainda não captura" (nunca zero falso).
+- **Não tocado:** Locais/B2B (medem pela métrica principal deles — outra régua);
+  Cockpit/saúde (já net-aware). `aggregateSnapshots`/pace.ts inalterados (só
+  reuso). Campo `ClientKPIs.hasNetRevenue` permanece no tipo mas não é mais
+  consumido pela UI de receita.
+
 ### 2026-07-23 — GA4Sync embutido no "Sincronizar" do GA4 + etiqueta (padronização Marcos)
 Regra do Marcos (verbatim): "criar uma etiqueta 'GA4Sync' — cliente com GA4Sync
 calcula com base nos resultados LÍQUIDOS; quando não, segue o padrão GA4/bruto.

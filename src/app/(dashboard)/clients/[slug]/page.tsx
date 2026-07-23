@@ -566,37 +566,58 @@ export default async function ClientDetailPage({
             </div>
           ) : (
             <div className="space-y-3">
-              {/* Row 1 — Financeiro */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+              {/* Régua ÚNICA de e-commerce — os 8 números-padrão, nesta ordem
+                  (decisão do Marcos 2026-07-23). Todos saem da régua canônica
+                  net-aware (aggregateSnapshots/projectMonth); sem UI condicional
+                  bruto×líquido. Ver DOSSIE §15. */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
                 <KpiCard
-                  label="Receita (GA4)"
+                  label="Receita líquida"
                   value={kpis.faturamento > 0 ? formatCurrency(kpis.faturamento) : '—'}
                   trend={kpis.faturamentoTrend}
-                  sub={hasGa4Sync && kpis.hasNetRevenue ? 'fonte: GA4Sync (líquido)' : 'fonte: GA4 (bruto)'}
+                  sub="receita líquida do período"
                 />
                 <KpiCard
-                  label="Investimento Total"
+                  label="Investimento total"
                   value={kpis.investimento > 0 ? formatCurrency(kpis.investimento) : '—'}
                   trend={kpis.investimentoTrend}
                   lowerIsBetter
                   sub="Meta + Google + TikTok"
                 />
                 <KpiCard
-                  label="ROAS Total"
+                  label="ROAS líquido"
                   value={kpis.roas !== null ? `${kpis.roas.toFixed(2)}x` : '—'}
                   trend={kpis.roasTrend}
-                  sub="GA4 receita / invest. total"
+                  sub="receita líquida / invest. total"
                 />
                 <KpiCard
-                  label="Compras (GA4)"
-                  value={kpis.compras > 0 ? kpis.compras.toLocaleString('pt-BR') : '—'}
-                  trend={kpis.comprasTrend}
-                  sub="fonte: GA4"
-                />
-                <KpiCard
-                  label="Projeção do Mês"
+                  label="Projeção de faturamento líquido"
                   value={kpis.projecaoMes !== null ? formatCurrency(kpis.projecaoMes) : '—'}
                   sub={kpis.projecaoMes !== null ? `${kpis.daysElapsed}d de dados` : undefined}
+                />
+                <KpiCard
+                  label="Pedidos"
+                  value={kpis.compras > 0 ? kpis.compras.toLocaleString('pt-BR') : '—'}
+                  trend={kpis.comprasTrend}
+                  sub="pedidos no período"
+                />
+                <KpiCard
+                  label="Clientes novos"
+                  value={kpis.clientesNovos !== null ? kpis.clientesNovos.toLocaleString('pt-BR') : '—'}
+                  trend={kpis.clientesNovos !== null ? kpis.clientesNovosTrend : undefined}
+                  sub={kpis.clientesNovos !== null ? 'novas 1ªs compras' : 'fonte ainda não captura'}
+                />
+                <KpiCard
+                  label="Taxa de conversão"
+                  value={kpis.taxaConversao !== null ? `${kpis.taxaConversao.toFixed(2)}%` : '—'}
+                  trend={kpis.taxaConversaoTrend}
+                  sub="pedidos / sessões"
+                />
+                <KpiCard
+                  label="Ticket médio líquido"
+                  value={kpis.ticketMedio !== null ? formatCurrency(kpis.ticketMedio) : '—'}
+                  trend={kpis.ticketMedioTrend}
+                  sub="receita líquida / pedidos"
                 />
               </div>
 
@@ -624,22 +645,15 @@ export default async function ClientDetailPage({
                 </div>
               )}
 
-              {/* Row 3 — Eficiência */}
+              {/* Row 3 — Apoio (não faz parte da régua-padrão; contexto de
+                  eficiência). Sessões sustenta a taxa de conversão. */}
+              <p className="text-[10px] text-[#87919E] uppercase tracking-wide pt-1">Apoio</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
                 <KpiCard
                   label="Sessões"
                   value={kpis.sessoes > 0 ? kpis.sessoes.toLocaleString('pt-BR') : '—'}
                   trend={kpis.sessoesTrend}
-                />
-                <KpiCard
-                  label="Taxa de Conversão"
-                  value={kpis.taxaConversao !== null ? `${kpis.taxaConversao.toFixed(2)}%` : '—'}
-                  trend={kpis.taxaConversaoTrend}
-                />
-                <KpiCard
-                  label="Ticket Médio"
-                  value={kpis.ticketMedio !== null ? formatCurrency(kpis.ticketMedio) : '—'}
-                  trend={kpis.ticketMedioTrend}
+                  sub="base da taxa de conversão"
                 />
                 <KpiCard
                   label="CPA (Custo por Venda)"
