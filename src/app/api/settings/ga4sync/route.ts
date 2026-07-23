@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/session'
-import { getStores, Ga4SyncError } from '@/services/ga4sync/client'
+import { getStores, getTimeline, getKpis, Ga4SyncError } from '@/services/ga4sync/client'
 import { Ga4SyncConfigError } from '@/services/ga4sync/config'
 import { z } from 'zod'
 
@@ -25,10 +25,30 @@ const saveSchema = z.object({
 })
 
 /** GET — status atual (chave MASCARADA, nunca em claro). */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await getSession()
   if (!session || session.role !== 'ADMIN') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // DEBUG ADMIN (caso My Muse 2026-07-23: timeline gravando 0 registros):
+  // ?debugStore=<storeId> devolve as respostas CRUAS de /timeline e /kpis
+  // do período this_month, para conferir o formato real da API contra os
+  // nossos types. Read-only, sem chave no output, só ADMIN.
+  const debugStore = request.nextUrl.searchParams.get('debugStore')
+  if (debugStore) {
+    const out: Record<string, unknown> = {}
+    try {
+      out.timeline = await getTimeline(debugStore, 'this_month')
+    } catch (err) {
+      out.timelineError = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+    }
+    try {
+      out.kpis = await getKpis(debugStore, 'this_month')
+    } catch (err) {
+      out.kpisError = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+    }
+    return NextResponse.json(out)
   }
 
   const rows = await prisma.integrationSetting.findMany({
