@@ -634,6 +634,10 @@ export type ClientKPIs = {
   // Financeiro (receita sempre do GA4)
   faturamento: number
   faturamentoTrend: number | null
+  // GA4Sync: há receita LÍQUIDA (GA4SYNC.netRevenue) no período? Rotula a fonte
+  // do KPI de receita como "líquido" vs "bruto" na UI. NÃO altera a agregação
+  // canônica (aggregateSnapshots já dá precedência ao líquido).
+  hasNetRevenue: boolean
   // Investimento total + breakdown por plataforma
   investimento: number
   investimentoTrend: number | null
@@ -750,6 +754,11 @@ export const getClientKPIs = cache(async (
     // Receita canônica via fonte única (roteia GA4/GA4SYNC p/ ECOMMERCE, Meta p/
     // LOCAL/B2B). Para ECOMMERCE sem GA4SYNC, retorna exatamente a soma GA4 de antes.
     const revenue  = aggregateSnapshots(snaps.map(toAgg), 'FATURAMENTO', businessType) ?? 0
+    // Receita LÍQUIDA autoritativa do GA4Sync (só p/ rótulo de fonte; a agregação
+    // canônica acima já aplica a precedência líquido > bruto).
+    const netRevenue = snaps
+      .filter((x) => x.platformAccount.platform === 'GA4SYNC')
+      .reduce((s, x) => s + Number(x.netRevenue ?? 0), 0)
     const purchases = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
     const sessions  = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
     const newUsers  = ga4.reduce((s, x) => s + (x.newUsers ?? 0), 0)
@@ -793,7 +802,7 @@ export const getClientKPIs = cache(async (
 
     return {
       spend: totalSpend, metaSpend, googleSpend, tiktokSpend,
-      sessions, purchases, revenue, adImpr, newUsers,
+      sessions, purchases, revenue, netRevenue, adImpr, newUsers,
       roas, roasMeta, roasGoogle, roasTiktok,
       ctrLink, cpcLink,
       adLeads:          effectiveLeads > 0 ? effectiveLeads : null,
@@ -854,6 +863,7 @@ export const getClientKPIs = cache(async (
     daysInMonth,
     faturamento: curr.revenue,
     faturamentoTrend: pctChange(curr.revenue, prev.revenue),
+    hasNetRevenue: curr.netRevenue > 0,
     investimento: curr.spend,
     investimentoTrend: pctChange(curr.spend, prev.spend),
     investimentoMeta:   curr.metaSpend,

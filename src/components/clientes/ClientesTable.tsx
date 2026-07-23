@@ -149,7 +149,7 @@ const PLATFORM_CONFIG: Record<string, { label: string; color: string }> = {
   TIKTOK_ADS: { label: 'TikTok Ads', color: '#EE1D52' },
   GA4:        { label: 'GA4',         color: '#E37400' },
   NUVEMSHOP:  { label: 'Nuvemshop',   color: '#2D9CDB' },
-  GA4SYNC:    { label: 'GA4',         color: '#E37400' },
+  GA4SYNC:    { label: 'GA4Sync',     color: '#22D3EE' },
 }
 
 function fmtDate(iso: string | null): string {

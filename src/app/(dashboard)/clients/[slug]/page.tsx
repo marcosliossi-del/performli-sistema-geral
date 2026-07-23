@@ -24,6 +24,7 @@ import { HealthStatus } from '@prisma/client'
 import { formatCurrency, formatNumber, timeAgo, getWeekRange, getMonthRange, tabSlug } from '@/lib/utils'
 import { deriveOverallStatus, getUnifiedClientHealth } from '@/lib/health-derive'
 import { getRealizadoForMetrics } from '@/lib/metas/realizado'
+import { resolveGa4SyncStoreId } from '@/services/ga4sync/store-resolver'
 import { computeAchievementPct, LOWER_IS_BETTER } from '@/services/health-scorer'
 import { Target, BookOpen, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { ClientContractCard } from '@/components/clients/ClientContractCard'
@@ -33,7 +34,6 @@ import { LinkAccountModal } from '@/components/clients/LinkAccountModal'
 import { LinkGA4Modal } from '@/components/clients/LinkGA4Modal'
 import { MetaSyncButton } from '@/components/clients/MetaSyncButton'
 import { GA4SyncButton } from '@/components/clients/GA4SyncButton'
-import { Ga4SyncStoreButton } from '@/components/clients/Ga4SyncStoreButton'
 import { GoogleAdsSyncButton } from '@/components/clients/GoogleAdsSyncButton'
 import { LinkGoogleAdsModal } from '@/components/clients/LinkGoogleAdsModal'
 import { MetricsChartsGrid } from '@/components/clients/MetricsChartsGrid'
@@ -198,6 +198,12 @@ export default async function ClientDetailPage({
     // Saúde unificada (fonte única) — selo + ROAS da semana rotulado no cabeçalho.
     getUnifiedClientHealth(client.id),
   ])
+
+  // GA4Sync (etiqueta "métricas líquidas"): fonte de CONFIGURAÇÃO é a loja
+  // Nuvemshop mapeada (resolveGa4SyncStoreId), não a PlatformAccount GA4SYNC —
+  // que só nasce após o 1º sync. Assim a etiqueta aparece mesmo antes da conta.
+  const ga4SyncStoreId = await resolveGa4SyncStoreId(client.id)
+  const hasGa4Sync = ga4SyncStoreId != null
 
   // Ficha de CS / check-in — staff amplo (ADMIN/CS/SUPERVISOR/ANALISTA) edita
   // qualquer cliente; GESTOR_TRAFEGO só a carteira.
@@ -434,7 +440,17 @@ export default async function ClientDetailPage({
 
         <Card>
           <div className="flex items-center justify-between">
-            <CardTitle>Plataformas</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle>Plataformas</CardTitle>
+              {hasGa4Sync && (
+                <span
+                  title="Cliente mede resultados LÍQUIDOS (GA4Sync). Sem GA4Sync o padrão é GA4/bruto."
+                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#22D3EE]/10 text-[#22D3EE] border border-[#22D3EE]/30 whitespace-nowrap"
+                >
+                  GA4Sync · métricas líquidas
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-3">
               <LinkAccountModal clientId={client.id} clientSlug={slug} />
               <LinkGA4Modal clientId={client.id} />
@@ -463,7 +479,9 @@ export default async function ClientDetailPage({
                     {acc.platform === 'META_ADS'   && <MetaSyncButton platformAccountId={acc.id} />}
                     {acc.platform === 'GA4'        && <GA4SyncButton platformAccountId={acc.id} />}
                     {acc.platform === 'GOOGLE_ADS' && <GoogleAdsSyncButton platformAccountId={acc.id} clientId={client.id} />}
-                    {acc.platform === 'GA4SYNC'    && <Ga4SyncStoreButton clientId={client.id} />}
+                    {/* GA4SYNC: sem botão próprio — o líquido é sincronizado JUNTO
+                        com o "Sincronizar" do GA4 (decisão de padronização Marcos
+                        2026-07-23). A etiqueta acima sinaliza que o cliente é líquido. */}
                     <RemovePlatformButton
                       platformAccountId={acc.id}
                       platformName={platformNames[acc.platform] ?? acc.platform}
@@ -542,7 +560,7 @@ export default async function ClientDetailPage({
                   label="Receita (GA4)"
                   value={kpis.faturamento > 0 ? formatCurrency(kpis.faturamento) : '—'}
                   trend={kpis.faturamentoTrend}
-                  sub="fonte: GA4"
+                  sub={hasGa4Sync && kpis.hasNetRevenue ? 'fonte: GA4Sync (líquido)' : 'fonte: GA4 (bruto)'}
                 />
                 <KpiCard
                   label="Investimento Total"

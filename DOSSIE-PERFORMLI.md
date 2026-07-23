@@ -763,6 +763,41 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-23 — GA4Sync embutido no "Sincronizar" do GA4 + etiqueta (padronização Marcos)
+Regra do Marcos (verbatim): "criar uma etiqueta 'GA4Sync' — cliente com GA4Sync
+calcula com base nos resultados LÍQUIDOS; quando não, segue o padrão GA4/bruto.
+SEM necessidade de clicar num terceiro botão — o sistema tem que ser padronizado
+e simples". Motivador: no My Muse a conta GA4SYNC ainda não existia (nasce só no
+1º sync), então o `Ga4SyncStoreButton` (do dia 2026-07-22) ficava invisível — o
+líquido nunca era disparado manualmente.
+
+Mudanças:
+- **Sync embutido:** `POST /api/sync/ga4` (branches `platformAccountId` e
+  `clientId`), após o sync do GA4, dispara TAMBÉM `syncGa4SyncAccount(clientId)`
+  em try/catch ISOLADO (`triggerGa4SyncEmbedded`) — falha do GA4Sync nunca
+  derruba a resposta do GA4; `syncGa4SyncAccount` já faz skip sem erro quando o
+  cliente não tem loja. Auth da rota GA4 inalterada. Um botão só, líquido junto.
+- **Botão removido (regra 12/CLAUDE.md):** `Ga4SyncStoreButton` sai da UI do
+  Client 360 (card Plataformas). O componente e a rota `POST /api/sync/ga4sync`
+  PERMANECEM (a rota serve automação/cron/disparo direto). Justificativa: o botão
+  foi criado e removido no MESMO ciclo por decisão de padronização — o disparo
+  manual foi ABSORVIDO pelo "Sincronizar" do GA4. Sem perda de função.
+- **Etiqueta "GA4Sync · métricas líquidas":** badge cyan no header do card
+  Plataformas do Client 360 quando `resolveGa4SyncStoreId(clientId) != null`
+  (fonte de CONFIGURAÇÃO, aparece mesmo antes da conta GA4SYNC existir). Sem
+  GA4Sync: nada (bruto é o padrão, não precisa rótulo).
+- **Rótulo dinâmico da fonte de receita:** KPI "Receita (GA4)" do Client 360
+  passa a exibir "fonte: GA4Sync (líquido)" quando `hasGa4Sync && kpis.hasNetRevenue`,
+  senão "fonte: GA4 (bruto)". Novo campo `ClientKPIs.hasNetRevenue` (soma de
+  `GA4SYNC.netRevenue` no período > 0) — só rótulo, NÃO altera `aggregateSnapshots`
+  (a precedência líquido>bruto já estava correta).
+- **Tabela /clients:** badge `GA4SYNC` passa de label "GA4"/laranja para
+  "GA4Sync"/cyan (`#22D3EE`) — distingue da conta GA4 crua. Eventual-consistente:
+  o badge aparece após a conta GA4SYNC existir (1º sync do GA4 ou cron); loja
+  configurada sem conta ainda não pinta o badge na tabela (aceito e documentado).
+- **Não tocado:** `aggregateSnapshots`/`health-scorer` (precedência líquida já
+  certa). Mudança é UI + orquestração de sync.
+
 ### 2026-07-22 — GA4Sync: sync manual da loja (rota + botão no Client 360)
 Caso My Muse: cliente com GA4Sync seguia registrando bruto após o deploy das
 métricas líquidas porque o sync do GA4Sync só rodava dentro do cron diário —
