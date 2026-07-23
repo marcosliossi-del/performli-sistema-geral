@@ -189,5 +189,18 @@ export async function autoLinkGa4SyncStores(): Promise<Ga4SyncLinkReport> {
     report.linked.push({ clientId: client.id, clientName: client.name, storeId, storeName })
   }
 
+  // Persiste o último relatório para o painel do /diagnostico-fontes (caso
+  // My Muse 2026-07-23: sem visibilidade dos nomes das lojas do conector, era
+  // impossível saber POR QUE um cliente não casou). Nunca derruba o fluxo.
+  try {
+    await prisma.integrationSetting.upsert({
+      where: { key: 'GA4SYNC_AUTOLINK_REPORT' },
+      create: { key: 'GA4SYNC_AUTOLINK_REPORT', value: JSON.stringify({ at: new Date().toISOString(), ...report }) },
+      update: { value: JSON.stringify({ at: new Date().toISOString(), ...report }) },
+    })
+  } catch (err) {
+    console.warn('[ga4sync/auto-link] falha ao persistir relatório:', err)
+  }
+
   return report
 }
