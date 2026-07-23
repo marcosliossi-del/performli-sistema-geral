@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { syncGA4Account, syncAllGA4Accounts } from '@/services/ga4/sync'
+import { syncGa4SyncAccount } from '@/services/ga4sync/sync'
 import { getSession } from '@/lib/session'
 import { isCronAuthorized } from '@/lib/cron-auth'
 import { z } from 'zod'
@@ -10,6 +11,26 @@ const bodySchema = z.object({
   platformAccountId: z.string().optional(),
   clientId: z.string().optional(),
 })
+
+/**
+ * Dispara o sync GA4Sync (receita LÍQUIDA da loja) EMBUTIDO no Sincronizar do GA4.
+ * Decisão Marcos 2026-07-23 (padronização): um botão só — quem tem loja GA4Sync
+ * recebe o líquido junto, sem clicar num segundo botão. try/catch ISOLADO: falha
+ * do GA4Sync NUNCA derruba a resposta do GA4. syncGa4SyncAccount já faz skip sem
+ * erro quando o cliente não tem loja (resolveGa4SyncStoreId == null).
+ */
+async function triggerGa4SyncEmbedded(clientId: string): Promise<void> {
+  try {
+    await syncGa4SyncAccount(clientId)
+  } catch (err) {
+    // syncGa4SyncAccount já é degrade-por-cliente (não relança); este catch é
+    // defesa extra para não vazar erro do GA4Sync na rota do GA4.
+    console.warn(
+      `[ga4] GA4Sync embutido falhou para clientId=${clientId}:`,
+      err instanceof Error ? err.message : String(err),
+    )
+  }
+}
 
 /**
  * POST /api/sync/ga4
@@ -81,6 +102,14 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await syncGA4Account(platformAccountId, options)
+
+    // GA4Sync embutido: resolve o clientId da conta e dispara o líquido junto.
+    const owner = await prisma.platformAccount.findUnique({
+      where: { id: platformAccountId },
+      select: { clientId: true },
+    })
+    if (owner) await triggerGa4SyncEmbedded(owner.clientId)
+
     return NextResponse.json({ ok: true, results: [result] })
   }
 
@@ -101,6 +130,10 @@ export async function POST(request: NextRequest) {
     })
 
     const results = await Promise.all(accounts.map((a) => syncGA4Account(a.id, options)))
+
+    // GA4Sync embutido: um clientId conhecido → dispara o líquido junto.
+    await triggerGa4SyncEmbedded(clientId)
+
     return NextResponse.json({ ok: true, results })
   }
 

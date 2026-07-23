@@ -29,6 +29,12 @@ OPE-06 (4.39) · CSX-12 (4.32) · CRM-18 (4.19) · ONB-05 (4.09). Detalhe em
 | demais 15 | mapeados, aguardando fatia |
 
 ## MUDANÇAS DE UI SEM REMOÇÃO DE FUNCIONALIDADE (regra 12)
+- 2026-07-23 — Client 360: `Ga4SyncStoreButton` removido da UI (card Plataformas).
+  Componente e rota `POST /api/sync/ga4sync` MANTIDOS (a rota serve automação/cron).
+  Disparo manual do líquido foi ABSORVIDO pelo "Sincronizar" do GA4 (embutido em
+  `POST /api/sync/ga4`). Botão criado e removido no mesmo ciclo por decisão de
+  padronização do Marcos ("um botão só, sem terceiro botão"). Sem perda de função.
+  Detalhe no DOSSIE §15. Aguardando veredito do `guardiao`.
 - 2026-07-21 — Cockpit "Saúde por cliente": render trocado de `ClientHealthGrid`
   para `ClientHealthViews` (toggle Últimos 7 dias × Resultado do mês, design
   limpo por diretriz do Marcos). `ClientHealthGrid.tsx` mantido (não removido).
