@@ -36,6 +36,7 @@ import { prisma } from '@/lib/prisma'
 import { getTimeline, getKpis } from './client'
 import { getGa4SyncConfig, Ga4SyncConfigError } from './config'
 import { resolveGa4SyncStoreId } from './store-resolver'
+import { autoLinkGa4SyncStores, type Ga4SyncLinkReport } from './auto-link'
 
 /**
  * Razão RECEITA LÍQUIDA ÷ BRUTA + novos clientes do período (decisão Marcos
@@ -83,6 +84,8 @@ export interface Ga4SyncAllResult {
   skipped: number
   failed: number
   results: Ga4SyncAccountResult[]
+  /** Resultado do auto-vínculo loja↔cliente executado antes do sync. */
+  autoLink?: Ga4SyncLinkReport
 }
 
 /** Converte 'YYYY-MM-DD' em meia-noite UTC do dia (compatível com @db.Date). */
@@ -94,10 +97,25 @@ function toUtcDate(dateStr: string): Date {
  * Sincroniza a receita diária do GA4Sync de UM cliente para o MetricSnapshot.
  * clientId SEMPRE vem do chamador.
  */
-export async function syncGa4SyncAccount(clientId: string): Promise<Ga4SyncAccountResult> {
-  const storeId = await resolveGa4SyncStoreId(clientId)
+export async function syncGa4SyncAccount(
+  clientId: string,
+  options: { skipAutoLink?: boolean } = {},
+): Promise<Ga4SyncAccountResult> {
+  let storeId = await resolveGa4SyncStoreId(clientId)
 
-  // Cliente sem loja Nuvemshop conectada → não usa GA4Sync. Skip sem erro.
+  // Sync manual de UM cliente ainda não vinculado: tenta o auto-vínculo por nome
+  // uma vez e re-resolve. No batch (skipAutoLink) o auto-vínculo já rodou antes.
+  if (!storeId && !options.skipAutoLink) {
+    try {
+      await autoLinkGa4SyncStores()
+      storeId = await resolveGa4SyncStoreId(clientId)
+    } catch {
+      // degrade honesto: sem vínculo, cai no skip abaixo.
+    }
+  }
+
+  // Cliente sem loja GA4Sync resolvível (sem match de nome nem loja Nuvemshop) →
+  // não usa GA4Sync. Skip sem erro.
   if (!storeId) {
     return { clientId, skipped: true, status: 'SKIPPED' }
   }
@@ -230,6 +248,19 @@ export async function syncAllGa4SyncAccounts(): Promise<Ga4SyncAllResult> {
     throw err
   }
 
+  // AUTO-VÍNCULO (decisão Marcos 2026-07-23): antes de sincronizar, casar as lojas
+  // do GA4Sync com os clientes ECOMMERCE por nome e criar os vínculos diretos
+  // faltantes. Assim cliente novo de e-commerce entra no padrão sozinho. Falha
+  // aqui NÃO derruba o sync (degrade honesto: quem já estava vinculado segue).
+  let autoLink: Ga4SyncLinkReport | undefined
+  try {
+    autoLink = await autoLinkGa4SyncStores()
+  } catch (err) {
+    console.warn(
+      `[ga4sync] auto-vínculo falhou (sync segue): ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
     select: { id: true },
@@ -242,7 +273,7 @@ export async function syncAllGa4SyncAccounts(): Promise<Ga4SyncAllResult> {
 
   for (const client of clients) {
     try {
-      const result = await syncGa4SyncAccount(client.id)
+      const result = await syncGa4SyncAccount(client.id, { skipAutoLink: true })
       results.push(result)
       if (result.status === 'SUCCESS') synced++
       else if (result.status === 'SKIPPED') skipped++
@@ -256,5 +287,5 @@ export async function syncAllGa4SyncAccounts(): Promise<Ga4SyncAllResult> {
     }
   }
 
-  return { synced, skipped, failed, results }
+  return { synced, skipped, failed, results, autoLink }
 }
