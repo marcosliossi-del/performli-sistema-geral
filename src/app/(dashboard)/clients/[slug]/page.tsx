@@ -455,6 +455,18 @@ export default async function ClientDetailPage({
               <LinkAccountModal clientId={client.id} clientSlug={slug} />
               <LinkGA4Modal clientId={client.id} />
               <LinkGoogleAdsModal clientId={client.id} />
+              {/* Vincular a loja Nuvemshop AO CLIENTE EXISTENTE (state assinado
+                  com clientId → callback anexa aqui, sem criar Client duplicado).
+                  É este vínculo que liga o GA4Sync/métricas líquidas do cliente
+                  (resolveGa4SyncStoreId mapeia via NuvemshopStore). */}
+              {!hasGa4Sync && (
+                <a
+                  href={`/api/nuvemshop/auth?clientId=${client.id}`}
+                  className="text-[11px] font-medium text-[#22D3EE] hover:underline whitespace-nowrap"
+                >
+                  + Vincular Nuvemshop
+                </a>
+              )}
             </div>
           </div>
           <div className="mt-2 space-y-2">
