@@ -142,9 +142,15 @@ export interface Ga4SyncTimelinePoint {
   newCustomers?: number
 }
 
-export interface Ga4SyncTimelineData {
-  points: Ga4SyncTimelinePoint[]
-}
+/**
+ * CONTRATO REAL confirmado em produção (debugStore My Muse, 2026-07-23): o
+ * envelope do /timeline traz os pontos DIRETO em `data` (array), não em
+ * `data.points` — o shape antigo lia points de um campo inexistente e o sync
+ * gravava "SUCCESS · 0 registros". Campos reais por ponto: date, revenue,
+ * orders, avgTicket, prevRevenue, prevOrders (sem netRevenue/newCustomers por
+ * dia — o líquido continua derivado da razão do /kpis).
+ */
+export type Ga4SyncTimelineData = Ga4SyncTimelinePoint[]
 
 // ─── channels ─────────────────────────────────────────────────────────────────
 

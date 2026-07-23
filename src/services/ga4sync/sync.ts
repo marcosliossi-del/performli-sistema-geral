@@ -68,7 +68,9 @@ async function loadGa4SyncNetContext(storeId: string): Promise<{
 }
 
 /** Janela sincronizada a cada rodada (preset da API). */
-const SYNC_PRESET = 'last_90d' as const
+// 'this_month' é o preset CONFIRMADO em produção (debugStore 2026-07-23) e o
+// que a régua consome (MTD). 'last_90d' nunca foi validado contra a API real.
+const SYNC_PRESET = 'this_month' as const
 
 export interface Ga4SyncAccountResult {
   clientId: string
@@ -147,7 +149,8 @@ export async function syncGa4SyncAccount(
 
   try {
     const envelope = await getTimeline(storeId, SYNC_PRESET)
-    const points = envelope.data?.points ?? []
+    // Contrato real (debugStore 2026-07-23): data É o array de pontos.
+    const points = envelope.data ?? []
 
     // Contexto de receita LÍQUIDA do período (razão líquido/bruto + novos clientes).
     const netCtx = await loadGa4SyncNetContext(storeId)
