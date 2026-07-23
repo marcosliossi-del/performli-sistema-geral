@@ -651,9 +651,13 @@ export type ClientKPIs = {
   roasGoogle: number | null
   roasTiktok: number | null
   projecaoMes: number | null
-  // Conversão (sempre GA4)
+  // Conversão — PEDIDOS canônicos (CONVERSIONS net-aware via aggregateSnapshots)
   compras: number
   comprasTrend: number | null
+  // Clientes novos (1ª compra) no período — soma de newCustomers das snaps
+  // (NUVEMSHOP > GA4SYNC). null = a fonte ainda não captura (UI mostra "—").
+  clientesNovos: number | null
+  clientesNovosTrend: number | null
   taxaConversao: number | null
   taxaConversaoTrend: number | null
   ticketMedio: number | null
@@ -745,6 +749,8 @@ export const getClientKPIs = cache(async (
     const meta   = snaps.filter((x) => x.platformAccount.platform === 'META_ADS')
     const google = snaps.filter((x) => x.platformAccount.platform === 'GOOGLE_ADS')
     const tiktok = snaps.filter((x) => x.platformAccount.platform === 'TIKTOK_ADS')
+    const ga4sync   = snaps.filter((x) => x.platformAccount.platform === 'GA4SYNC')
+    const nuvemshop = snaps.filter((x) => x.platformAccount.platform === 'NUVEMSHOP')
 
     const metaSpend   = meta.reduce((s, x) => s + Number(x.spend ?? 0), 0)
     const googleSpend = google.reduce((s, x) => s + Number(x.spend ?? 0), 0)
@@ -759,9 +765,33 @@ export const getClientKPIs = cache(async (
     const netRevenue = snaps
       .filter((x) => x.platformAccount.platform === 'GA4SYNC')
       .reduce((s, x) => s + Number(x.netRevenue ?? 0), 0)
-    const purchases = ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
+    // PEDIDOS canônicos (só ECOMMERCE — régua-padrão dos 8): mesma fonte net-aware
+    // da receita (NUVEMSHOP > GA4SYNC > GA4 por dia) via aggregateSnapshots, sem
+    // contagem paralela (regra 0). LOCAL/B2B ficam INTOCADOS (GA4 inline como antes).
+    const purchases = businessType === 'ECOMMERCE'
+      ? (aggregateSnapshots(snaps.map(toAgg), 'CONVERSIONS', businessType) ?? 0)
+      : ga4.reduce((s, x) => s + (x.conversions ?? 0), 0)
     const sessions  = ga4.reduce((s, x) => s + (x.clicks ?? 0), 0)
     const newUsers  = ga4.reduce((s, x) => s + (x.newUsers ?? 0), 0)
+    // Clientes novos (1ª compra): `newCustomers` das snaps de RECEITA real da
+    // loja com precedência POR DIA (NUVEMSHOP > GA4SYNC — mesma mecânica do
+    // ecomDayMerge do FATURAMENTO; precedência por janela subcontaria dias em
+    // que só uma das fontes capturou). null quando nenhuma fonte captura → UI
+    // mostra "—" (nunca zero falso).
+    const ncByDay = new Map<string, { nuvem: number | null; sync: number | null }>()
+    for (const x of [...nuvemshop, ...ga4sync]) {
+      if (x.newCustomers == null) continue
+      const key = x.date.toISOString().slice(0, 10)
+      const day = ncByDay.get(key) ?? { nuvem: null, sync: null }
+      if (x.platformAccount.platform === 'NUVEMSHOP') day.nuvem = (day.nuvem ?? 0) + x.newCustomers
+      else day.sync = (day.sync ?? 0) + x.newCustomers
+      ncByDay.set(key, day)
+    }
+    let newCustomers: number | null = null
+    for (const day of ncByDay.values()) {
+      const v = day.nuvem ?? day.sync
+      if (v != null) newCustomers = (newCustomers ?? 0) + v
+    }
     const adImpr    = meta.reduce((s, x) => s + (x.impressions ?? 0), 0)
     // Link CTR = ad clicks / impressions (not stored ctr which is CTR All)
     const ads            = snaps.filter((x) => x.platformAccount.platform !== 'GA4')
@@ -802,7 +832,7 @@ export const getClientKPIs = cache(async (
 
     return {
       spend: totalSpend, metaSpend, googleSpend, tiktokSpend,
-      sessions, purchases, revenue, netRevenue, adImpr, newUsers,
+      sessions, purchases, revenue, netRevenue, adImpr, newUsers, newCustomers,
       roas, roasMeta, roasGoogle, roasTiktok,
       ctrLink, cpcLink,
       adLeads:          effectiveLeads > 0 ? effectiveLeads : null,
@@ -877,6 +907,8 @@ export const getClientKPIs = cache(async (
     projecaoMes,
     compras: curr.purchases,
     comprasTrend: pctChange(curr.purchases, prev.purchases),
+    clientesNovos: curr.newCustomers,
+    clientesNovosTrend: pctChange(curr.newCustomers, prev.newCustomers),
     taxaConversao: curr.taxaConversao,
     taxaConversaoTrend: pctChange(curr.taxaConversao, prev.taxaConversao),
     ticketMedio: curr.ticketMedio,
