@@ -763,6 +763,16 @@ Registro cronológico de upgrades, correções e bugs. **Toda** mudança entra a
 no mesmo PR (regra do topo deste dossiê e do `CLAUDE.md`). Correções derivadas
 da `AUDITORIA-PERFORMLI.md` citam o ID do achado.
 
+### 2026-07-22 — GA4Sync: sync manual da loja (rota + botão no Client 360)
+Caso My Muse: cliente com GA4Sync seguia registrando bruto após o deploy das
+métricas líquidas porque o sync do GA4Sync só rodava dentro do cron diário —
+não havia disparo manual para reprocessar o mês. Novo `POST /api/sync/ga4sync`
+(session ADMIN/MANAGER ou `x-cron-secret`; body `{clientId?}` → uma loja, `{}`
+→ todas; zod; mesmo padrão de `/api/sync/ga4`) chamando
+`syncGa4SyncAccount/syncAllGa4SyncAccounts`, + botão **"Sincronizar loja"** ao
+lado da conta GA4SYNC no Client 360 (`Ga4SyncStoreButton`, timeout 65s,
+router.refresh). Nenhuma mudança no service — só exposição do disparo.
+
 ### 2026-07-22 — Diagnóstico de Fontes: debug do selo mensal (metas cruas + eleição)
 Caso: locais com meta principal salva na grade `/agency/metas` (print do Marcos)
 seguiam caindo no fallback FATURAMENTO no Cockpit mesmo após o deploy da eleição
