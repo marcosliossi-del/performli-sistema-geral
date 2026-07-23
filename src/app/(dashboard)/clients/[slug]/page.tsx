@@ -33,6 +33,7 @@ import { LinkAccountModal } from '@/components/clients/LinkAccountModal'
 import { LinkGA4Modal } from '@/components/clients/LinkGA4Modal'
 import { MetaSyncButton } from '@/components/clients/MetaSyncButton'
 import { GA4SyncButton } from '@/components/clients/GA4SyncButton'
+import { Ga4SyncStoreButton } from '@/components/clients/Ga4SyncStoreButton'
 import { GoogleAdsSyncButton } from '@/components/clients/GoogleAdsSyncButton'
 import { LinkGoogleAdsModal } from '@/components/clients/LinkGoogleAdsModal'
 import { MetricsChartsGrid } from '@/components/clients/MetricsChartsGrid'
@@ -462,6 +463,7 @@ export default async function ClientDetailPage({
                     {acc.platform === 'META_ADS'   && <MetaSyncButton platformAccountId={acc.id} />}
                     {acc.platform === 'GA4'        && <GA4SyncButton platformAccountId={acc.id} />}
                     {acc.platform === 'GOOGLE_ADS' && <GoogleAdsSyncButton platformAccountId={acc.id} clientId={client.id} />}
+                    {acc.platform === 'GA4SYNC'    && <Ga4SyncStoreButton clientId={client.id} />}
                     <RemovePlatformButton
                       platformAccountId={acc.id}
                       platformName={platformNames[acc.platform] ?? acc.platform}
