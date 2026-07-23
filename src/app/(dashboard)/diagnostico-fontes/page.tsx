@@ -31,6 +31,23 @@ export default async function DiagnosticoFontesPage({
     readCronProgress(),
   ])
 
+  // Último relatório do auto-vínculo GA4Sync (caso My Muse: por que não casou?).
+  const autolinkRow = await prisma.integrationSetting.findUnique({
+    where: { key: 'GA4SYNC_AUTOLINK_REPORT' },
+  })
+  let autolink: {
+    at?: string
+    linked?: Array<{ clientName: string; storeName: string }>
+    ambiguous?: Array<{ storeName: string; reason: string }>
+    unmatchedStores?: Array<{ storeName: string }>
+    configured?: boolean
+  } | null = null
+  try {
+    autolink = autolinkRow?.value ? JSON.parse(autolinkRow.value) : null
+  } catch {
+    autolink = null
+  }
+
   const clients = await prisma.client.findMany({
     where: { status: 'ACTIVE' },
     select: { id: true, name: true, slug: true, businessType: true },
@@ -175,6 +192,49 @@ export default async function DiagnosticoFontesPage({
           (checar CRON_SECRET nas variáveis de ambiente + Settings → Cron Jobs). Os
           botões manuais NÃO atualizam estes carimbos — aqui só conta execução automática.
         </p>
+      </div>
+
+      {/* Auto-vínculo GA4Sync — quais lojas do conector casaram com clientes */}
+      <div className="bg-[#0D2137] border border-[#38435C] rounded-2xl p-4">
+        <h2 className="text-sm font-semibold text-[#EBEBEB] mb-2">
+          GA4Sync — casamento loja ↔ cliente (última execução{autolink?.at ? ` · ${formatSaoPauloDateTime(new Date(autolink.at))}` : ''})
+        </h2>
+        {!autolink ? (
+          <p className="text-sm text-[#87919E]">
+            Ainda sem relatório — rode um Sincronizar (ou aguarde o robô das 8h) para o
+            casamento automático executar e listar aqui as lojas do conector.
+          </p>
+        ) : (
+          <div className="text-[12px] space-y-1.5">
+            {(autolink.linked?.length ?? 0) > 0 && (
+              <p className="text-[#22C55E]">
+                Vinculados agora: {autolink.linked!.map((l) => `${l.clientName} ↔ "${l.storeName}"`).join(' · ')}
+              </p>
+            )}
+            {(autolink.unmatchedStores?.length ?? 0) > 0 && (
+              <p className="text-[#EAB308]">
+                Lojas do conector SEM cliente correspondente (o nome precisa ser idêntico ao do
+                cliente no Performli — renomeie o cliente ou me informe o par):{' '}
+                {autolink.unmatchedStores!.map((s) => `"${s.storeName}"`).join(' · ')}
+              </p>
+            )}
+            {(autolink.ambiguous?.length ?? 0) > 0 && (
+              <p className="text-[#EF4444]">
+                Ambíguos (não vinculei por segurança):{' '}
+                {autolink.ambiguous!.map((a) => `"${a.storeName}" (${a.reason})`).join(' · ')}
+              </p>
+            )}
+            {(autolink.linked?.length ?? 0) === 0 &&
+              (autolink.unmatchedStores?.length ?? 0) === 0 &&
+              (autolink.ambiguous?.length ?? 0) === 0 && (
+                <p className="text-[#87919E]">
+                  {autolink.configured === false
+                    ? 'Chave do GA4Sync não configurada em Configurações.'
+                    : 'Nenhuma loja nova para vincular — todas as lojas do conector já estão casadas.'}
+                </p>
+              )}
+          </div>
+        )}
       </div>
 
       {/* Seletor simples por links (server-side, sem JS) */}
