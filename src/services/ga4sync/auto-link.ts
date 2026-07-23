@@ -32,6 +32,27 @@ export interface Ga4SyncLinkReport {
   configured: boolean
 }
 
+/**
+ * MAPA OFICIAL storeId → cliente (lista enviada pelo Marcos em 2026-07-23 com
+ * print do painel do conector). Os nomes das lojas NÃO batem exatos com os
+ * clientes ("Lavinny Store"×"Lavinny", "Lazuli"×"Lazulli", "outletmaua"×
+ * "Outlet Mauá", "Tayna Mota"×"Tayna Moda Feminina", "Barbara Issas"×"Espaço
+ * Barbara Issas") — o vínculo determinístico por storeId tem PRECEDÊNCIA sobre
+ * o casamento por nome. O valor é um fragmento normalizado que deve casar com
+ * UM único cliente ECOMMERCE ativo (contains sobre nome normalizado); zero ou
+ * 2+ matches caem no relatório, nunca vinculam errado.
+ */
+const STORE_OVERRIDES: Record<string, string> = {
+  '6709574': 'barbara issas', // Espaço Barbara Issas
+  '1550515': 'lalluzi',
+  '6482832': 'lavinny',
+  '2741546': 'lazul',         // Lazulli / Use Lazuli
+  '6863724': 'michelle rossi',
+  '4745277': 'my muse',
+  '1384812': 'tayna',         // Tayna Moda Feminina
+  '2214069': 'outlet maua',
+}
+
 /** Normaliza um nome para casamento: minúsculo, sem acento, só alfanumérico. */
 export function normalizeName(name: string): string {
   // NFD decompõe acentos (é → e + marca); a limpeza [^a-z0-9] remove as marcas
@@ -121,8 +142,19 @@ export async function autoLinkGa4SyncStores(): Promise<Ga4SyncLinkReport> {
       continue
     }
 
-    const key = normalizeName(storeName)
-    const matches = key ? clientsByNorm.get(key) : undefined
+    // 1º: mapa oficial por storeId (fragmento deve casar com UM único cliente).
+    // 2º: fallback igualdade exata do nome normalizado.
+    const override = STORE_OVERRIDES[storeId]
+    let matches: Array<{ id: string; name: string }> | undefined
+    if (override) {
+      const frag = normalizeName(override)
+      const hits = clients.filter((c) => normalizeName(c.name).includes(frag))
+      matches = hits.length > 0 ? hits : undefined
+    }
+    if (!matches) {
+      const key = normalizeName(storeName)
+      matches = key ? clientsByNorm.get(key) : undefined
+    }
 
     if (!matches || matches.length === 0) {
       report.unmatchedStores.push({ storeId, storeName })
